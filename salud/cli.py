@@ -61,6 +61,7 @@ def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
         if (
             not settings.url_publica
             or not settings.cuentas_google
+            or settings.google_oauth is None
             or not settings.google_oauth.is_file()
         ):
             raise ConfigError(

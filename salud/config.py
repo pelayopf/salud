@@ -50,7 +50,7 @@ class Settings:
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
     cuentas_google: frozenset[str] = frozenset()
     url_publica: str = ""
-    google_oauth: Path = Path("~/.config/salud/google-oauth.json").expanduser()
+    google_oauth: Path | None = None  # JSON con client_id y client_secret
 
 
 def _ruta(valor: str) -> Path:

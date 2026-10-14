@@ -2384,16 +2384,16 @@ def crear_app(
     # --- Entrar en la web pública (ver acceso.py) ---------------------------
 
     redirect_login = f"{settings.url_publica}{acceso.RUTA_CALLBACK}"
-    crear_login_fn = crear_login or (lambda cid, sec: acceso.GoogleLogin(cid, sec))
+    # Solo la entrada pública usa Google; sin credenciales no arranca.
+    client_id, client_secret = (
+        acceso.leer_google_oauth(settings.google_oauth) if publica else ("", "")
+    )
+    login_google = (crear_login or acceso.GoogleLogin)(client_id, client_secret)
 
     def ver_entrar(request: Request) -> Response:
         return _render("entrar.html", mensaje=request.query_params.get("mensaje"))
 
     def entrar_google(_request: Request) -> Response:
-        if settings.google_oauth.is_file():
-            client_id, _ = acceso.leer_google_oauth(settings.google_oauth)
-        else:
-            client_id = "test-client-id"
         state = secrets.token_urlsafe(24)
         con = abrir_db()
         try:
@@ -2425,13 +2425,8 @@ def crear_app(
         try:
             if not db.consumir_autorizacion(con, params["state"]):
                 return _volver("Esa entrada ya no vale: vuelve a intentarlo", "/entrar")
-            if settings.google_oauth.is_file():
-                client_id, client_secret = acceso.leer_google_oauth(settings.google_oauth)
-            else:
-                client_id, client_secret = "test-client-id", "test-client-secret"
-            login = crear_login_fn(client_id, client_secret)
             try:
-                correo_login = login.correo(params["code"], redirect_login)
+                correo_login = login_google.correo(params["code"], redirect_login)
             except acceso.LoginError as exc:
                 return PlainTextResponse(f"No se pudo entrar con Google: {exc}", status_code=400)
             if correo_login not in settings.cuentas_google:
@@ -2443,7 +2438,9 @@ def crear_app(
         respuesta.set_cookie(
             acceso.COOKIE_SESION,
             token,
-            max_age=db.DIAS_SESION * 86400,
+            # La caducidad la decide la base (se renueva con el uso); la cookie, el máximo
+            # que admiten los navegadores.
+            max_age=400 * 86400,
             secure=True,
             httponly=True,
             samesite="lax",

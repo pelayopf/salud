@@ -105,21 +105,18 @@ def url_login(client_id: str, redirect: str, state: str) -> str:
     )
 
 
-def leer_google_oauth(ruta: Path) -> tuple[str, str]:
-    """Lee el client_id y client_secret de un fichero JSON."""
-    if not ruta.is_file():
+def leer_google_oauth(ruta: Path | None) -> tuple[str, str]:
+    """El client_id y el client_secret del JSON `{"client_id", "client_secret"}`."""
+    if ruta is None or not ruta.is_file():
         raise ConfigError(f"No existe el fichero de OAuth de Google: {ruta}")
     try:
         datos = json.loads(ruta.read_text())
-        client_id = datos.get("client_id") or datos.get("web", {}).get("client_id", "")
-        client_secret = datos.get("client_secret") or datos.get("web", {}).get("client_secret", "")
-        if not client_id or not client_secret:
-            raise ValueError("faltan client_id o client_secret")
-        return str(client_id), str(client_secret)
-    except Exception as exc:
-        if isinstance(exc, ConfigError):
-            raise
-        raise ConfigError(f"Fichero de OAuth de Google inválido: {ruta} ({exc})") from exc
+        client_id, client_secret = str(datos["client_id"]), str(datos["client_secret"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ConfigError(f"Fichero de OAuth de Google inválido: {ruta}") from exc
+    if not client_id or not client_secret:
+        raise ConfigError(f"Fichero de OAuth de Google sin client_id o client_secret: {ruta}")
+    return client_id, client_secret
 
 
 class Login(Protocol):

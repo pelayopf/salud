@@ -57,10 +57,13 @@ class LoginFalso:
 
 
 @pytest.fixture
-def publica(settings):
+def publica(settings, tmp_path):
     """La web pública con cuentas de Google autorizadas."""
+    oauth = tmp_path / "google-oauth.json"
+    oauth.write_text(json.dumps({"client_id": "id", "client_secret": "secreto"}))
     ajustes = dataclasses.replace(
         settings,
+        google_oauth=oauth,
         url_publica=PUBLICA,
         cuentas_google=frozenset({"ana@example.com", "pelayo@example.com"}),
     )
