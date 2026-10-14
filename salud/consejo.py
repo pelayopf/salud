@@ -21,6 +21,10 @@ objetivos del día y lo que tiene planificado.
 
 Reglas:
 - Usa solo los datos que te doy. No inventes lo que ha comido.
+- Si no hay nada apuntado o parece poco para la hora que es, no supongas que está en \
+ayunas: es probable que no lo haya apuntado. Dilo en una frase y aconseja según lo \
+planificado y lo que le queda del objetivo.
+- El resumen, una sola frase.
 - Cantidades concretas: gramos o medidas caseras (1 plátano, 2 tostadas, un yogur).
 - Tiempos respecto al ejercicio: qué tomar ahora, cuánto antes de empezar, durante \
 (solo si dura más de 60 min o es muy intenso; si no, deja "durante" vacío) y después.

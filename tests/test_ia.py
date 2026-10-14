@@ -555,3 +555,42 @@ def test_motor_claude_modelo_override(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     resultado = motor_claude(tarea, settings)
     assert resultado == {"ok": True}
+
+
+def test_motor_agy_reintenta_una_vez_sin_datos(tmp_path, monkeypatch):
+    token = tmp_path / "token"
+    token.write_text("x")
+    settings = Settings(db_path=tmp_path / "s.db", agy="agy", agy_token=token)
+    tarea = Tarea(nombre="t", instrucciones="hola", esquema={"type": "object"})
+    respuestas = [
+        json.dumps({"status": "SUCCESS", "response": ""}),
+        json.dumps({"status": "SUCCESS", "structured_output": {"ok": 1}}),
+    ]
+    prompts: list[str] = []
+
+    def falso(orden, **_kw):
+        prompts.append(orden[orden.index("-p") + 1])
+        return subprocess.CompletedProcess(orden, 0, stdout=respuestas.pop(0), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    assert motor_agy(tarea, settings) == {"ok": 1}
+    assert len(prompts) == 2
+    assert prompts[0].startswith("Responde directamente")
+
+
+def test_motor_agy_sin_datos_dos_veces_falla(tmp_path, monkeypatch):
+    token = tmp_path / "token"
+    token.write_text("x")
+    settings = Settings(db_path=tmp_path / "s.db", agy="agy", agy_token=token)
+    tarea = Tarea(nombre="t", instrucciones="hola", esquema={"type": "object"})
+    vacia = json.dumps({"status": "SUCCESS", "response": ""})
+    llamadas: list[int] = []
+
+    def falso(orden, **_kw):
+        llamadas.append(1)
+        return subprocess.CompletedProcess(orden, 0, stdout=vacia, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    with pytest.raises(ErrorIA, match="no devolvió los datos"):
+        motor_agy(tarea, settings)
+    assert len(llamadas) == 2

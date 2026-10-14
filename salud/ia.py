@@ -47,6 +47,11 @@ Unidad = Literal["g", "ml"]
 SOLO_ADJUNTOS = (
     "No uses ninguna otra herramienta: ni órdenes, ni búsquedas en internet, ni otros ficheros."
 )
+# Sin adjuntos, a veces intenta una orden, se la deniegan y termina sin responder.
+SIN_HERRAMIENTAS = (
+    "Responde directamente con los datos pedidos. No uses ninguna herramienta: "
+    "ni órdenes, ni búsquedas en internet, ni ficheros."
+)
 
 EXTENSIONES = {
     "image/jpeg": "jpg",
@@ -57,6 +62,10 @@ EXTENSIONES = {
 
 class ErrorIA(Exception):
     """La IA no ha podido hacer la tarea. El mensaje se enseña tal cual en la web."""
+
+
+class SinDatos(ErrorIA):
+    """agy terminó bien pero sin devolver los datos pedidos (fallo intermitente)."""
 
 
 class IAOcupada(ErrorIA):
@@ -137,7 +146,7 @@ def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
 
     structured = datos.get("structured_output")
     if not isinstance(structured, dict):
-        raise ErrorIA("agy no devolvió los datos pedidos")
+        raise SinDatos("agy no devolvió los datos pedidos")
 
     denied = datos.get("denied_actions")
     if isinstance(denied, list) and denied:
@@ -181,7 +190,7 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             )
             prompt = f"Lee {menciones}. {SOLO_ADJUNTOS}\n\n{tarea.instrucciones}"
         else:
-            prompt = tarea.instrucciones
+            prompt = f"{SIN_HERRAMIENTAS}\n\n{tarea.instrucciones}"
 
         orden = [
             settings.agy,
@@ -204,22 +213,30 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             "LANG": "C.UTF-8",
         }
 
-        try:
-            proceso = subprocess.run(
-                orden,
-                cwd=trabajo,
-                env=entorno,
-                capture_output=True,
-                text=True,
-                timeout=TIEMPO_MAXIMO_S + 15,
-                stdin=subprocess.DEVNULL,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise ErrorIA(f"La IA tardó más de {TIEMPO_MAXIMO_S} s") from exc
-        except OSError as exc:
-            raise ErrorIA("No se pudo lanzar agy") from exc
-
-        return interpretar_agy(proceso.stdout, proceso.stderr)
+        inicio = time.monotonic()
+        for intento in (1, 2):
+            try:
+                proceso = subprocess.run(
+                    orden,
+                    cwd=trabajo,
+                    env=entorno,
+                    capture_output=True,
+                    text=True,
+                    timeout=TIEMPO_MAXIMO_S + 15,
+                    stdin=subprocess.DEVNULL,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ErrorIA(f"La IA tardó más de {TIEMPO_MAXIMO_S} s") from exc
+            except OSError as exc:
+                raise ErrorIA("No se pudo lanzar agy") from exc
+            try:
+                return interpretar_agy(proceso.stdout, proceso.stderr)
+            except SinDatos:
+                # Un solo reintento, y solo si da tiempo dentro de lo que espera la web.
+                if intento == 2 or time.monotonic() - inicio > TIEMPO_MAXIMO_S / 2:
+                    raise
+                log.warning("agy terminó sin los datos pedidos; se reintenta una vez")
+        raise AssertionError("inalcanzable")
 
 
 def interpretar_claude(salida: str) -> dict[str, Any]:
