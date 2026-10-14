@@ -1,13 +1,15 @@
 """Conexión con Garmin Connect (librería no oficial `garminconnect`).
 
 Solo se guardan los tokens de la sesión, nunca la contraseña. La sesión se
-crea una vez con `salud garmin-entrar` (pide el código de verificación si la
-cuenta lo tiene activado) y la librería la renueva sola.
+crea una vez, desde Conexiones en la web o con `salud garmin-entrar` (las
+dos piden el código de verificación si la cuenta lo tiene activado), y la
+librería la renueva sola.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -62,28 +64,74 @@ def conectar(tokens: Path) -> FuenteGarmin:
     """Abre la sesión guardada; si no vale, `GarminNoConectado`."""
     from garminconnect import Garmin
 
-    if not (tokens / "garmin_tokens.json").exists() and not tokens.is_file():
-        raise GarminNoConectado(f"No hay sesión de Garmin en {tokens}: usa `salud garmin-entrar`")
+    if not fichero_tokens(tokens).is_file():
+        raise GarminNoConectado("No hay sesión de Garmin: entra desde Conexiones")
     cliente = Garmin()
     try:
         cliente.login(str(tokens))
     except Exception as exc:  # la librería lanza varios tipos según el fallo
-        raise GarminNoConectado(f"La sesión de Garmin no vale ({exc}): usa `salud garmin-entrar`")
+        raise GarminNoConectado(f"La sesión de Garmin no vale ({exc}): entra desde Conexiones")
     return cliente
 
 
-def entrar(tokens: Path, correo: str, contrasena: str, pedir_codigo: Callable[[], str]) -> str:
-    """Entra con usuario y contraseña (y código si hace falta) y guarda la sesión.
+def fichero_tokens(tokens: Path) -> Path:
+    """El fichero de la sesión dentro de `tokens` (o `tokens` si ya es el fichero)."""
+    return tokens if tokens.suffix == ".json" else tokens / "garmin_tokens.json"
 
-    Devuelve el nombre de la cuenta de Garmin.
-    """
+
+# --- Entrar en dos pasos -------------------------------------------------------
+#
+# Con `return_on_mfa` la librería no pide el código por consola: devuelve
+# "needs_mfa" y deja la sesión a medias en el propio cliente, que se completa
+# con `resume_login`. Así sirve igual para la terminal y para la web. En ese
+# modo no guarda los tokens ni carga el perfil: lo hace `_guardar`.
+
+
+def cliente_nuevo(correo: str, contrasena: str) -> Any:
+    """Un `garminconnect.Garmin` listo para entrar en dos pasos."""
     from garminconnect import Garmin
 
+    return Garmin(correo, contrasena, return_on_mfa=True)
+
+
+@dataclass
+class Pendiente:
+    """Entrada a falta del código de verificación (solo en memoria)."""
+
+    cliente: Any
+
+
+def empezar_entrada(
+    tokens: Path,
+    correo: str,
+    contrasena: str,
+    crear: Callable[[str, str], Any] = cliente_nuevo,
+) -> Pendiente | None:
+    """Primer paso: correo y contraseña.
+
+    Si Garmin no pide código, guarda la sesión y devuelve None; si lo pide,
+    devuelve la entrada pendiente para `terminar_entrada`. La contraseña no
+    se queda en el cliente en ningún caso.
+    """
+    cliente = crear(correo, contrasena)
+    try:
+        estado, _ = cliente.login()
+    finally:
+        cliente.password = None
+    if estado == "needs_mfa":
+        return Pendiente(cliente)
+    _guardar(cliente, tokens)
+    return None
+
+
+def terminar_entrada(tokens: Path, pendiente: Pendiente, codigo: str) -> None:
+    """Segundo paso: el código de verificación. Si falla, se puede reintentar."""
+    pendiente.cliente.resume_login({}, codigo)
+    _guardar(pendiente.cliente, tokens)
+
+
+def _guardar(cliente: Any, tokens: Path) -> None:
+    """Escribe los tokens (directorio 700, fichero 600: lo asegura la librería)."""
     tokens.mkdir(parents=True, exist_ok=True)
     tokens.chmod(0o700)
-    cliente = Garmin(correo, contrasena, prompt_mfa=pedir_codigo)
-    cliente.login(str(tokens))
-    fichero = tokens / "garmin_tokens.json"
-    if fichero.exists():
-        fichero.chmod(0o600)
-    return str(getattr(cliente, "full_name", "") or getattr(cliente, "display_name", "") or correo)
+    cliente.client.dump(str(tokens))

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}Conexiones · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+<h1>Conexiones</h1>
+
+<section class="panel conexion" aria-labelledby="titulo-garmin">
+  <div class="cabecera">
+    <h2 id="titulo-garmin">Garmin</h2>
+    {% if sesion_desde %}
+    <span class="etiqueta estado-verde">Conectado</span>
+    {% else %}
+    <span class="etiqueta estado-ambar">Sin conectar</span>
+    {% endif %}
+  </div>
+  <p class="suave">
+    {% if sesion_desde %}Sesión guardada {{ sesion_desde | hace }}{% else %}No hay sesión guardada{% endif %}
+    · {% if sync %}última sincronización {{ sync.hecha | hace }}{% if sync.estado != 'ok' %} ({{ sync.estado }}){% endif %}{% else %}sin sincronizar todavía{% endif %}
+  </p>
+
+  {% if id_codigo %}
+  <form class="formulario" method="post" action="/conexiones/garmin/codigo">
+    <p>Garmin te ha mandado un código de verificación. Tienes 10 minutos para escribirlo.</p>
+    <input type="hidden" name="id" value="{{ id_codigo }}">
+    <label for="codigo">Código de verificación</label>
+    <input id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+    <div class="acciones">
+      <button class="boton">Entrar</button>
+      <a href="/conexiones">Cancelar</a>
+    </div>
+  </form>
+  {% elif bloqueado_min %}
+  <p>Demasiados intentos fallidos. Podrás volver a intentarlo en {{ bloqueado_min }} minutos.</p>
+  {% else %}
+  {% if sesion_desde %}
+  <form method="post" action="/conexiones/garmin/probar" class="acciones">
+    <button class="boton secundario">Probar conexión</button>
+  </form>
+  {% endif %}
+  <details{% if not sesion_desde or error %} open{% endif %}>
+    <summary>{% if sesion_desde %}Volver a entrar{% else %}Entrar en Garmin{% endif %}</summary>
+    <form class="formulario" method="post" action="/conexiones/garmin/entrar">
+      <label for="correo">Correo de Garmin</label>
+      <input id="correo" name="correo" type="email" autocomplete="username" required>
+      <label for="contrasena">Contraseña</label>
+      <input id="contrasena" name="contrasena" type="password" autocomplete="current-password" required>
+      <p class="suave">La contraseña solo se usa para entrar: se guardan los tokens de la sesión, nunca la contraseña.</p>
+      <div class="acciones"><button class="boton">Entrar</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+<p class="suave nota-conexiones">FatSecret y Strava se podrán conectar aquí más adelante.</p>
+{% endblock %}

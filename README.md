@@ -36,9 +36,12 @@ Plan por fases, decisiones y pendientes: [docs/plan.md](docs/plan.md).
   histórico (5 peticiones por día, con pausa para que Garmin no corte).
 - Un fallo de Garmin en una petición no para el resto: la sincronización
   queda "parcial" con el detalle.
-- **Sesión de Garmin**: solo tokens, nunca la contraseña.
-  `salud garmin-entrar` pide correo, contraseña y el código de verificación
-  y guarda la sesión en `SALUD_GARMIN_TOKENS`. Para la primera prueba se
+- **Sesión de Garmin**: solo tokens, nunca la contraseña. Se entra desde
+  **Conexiones** en la web (correo y contraseña y, si Garmin lo pide, el
+  código de verificación en un segundo paso que caduca a los 10 minutos) o
+  con `salud garmin-entrar`; las dos usan el mismo código y guardan la
+  sesión en `SALUD_GARMIN_TOKENS`. Tras 5 fallos seguidos la web no deja
+  intentarlo durante 15 minutos. Para la primera prueba se
   puede apuntar a la de fitness-tracker (`~/.garminconnect`): comparten
   sesión, igual que ya hacen sus scripts.
 
@@ -66,6 +69,8 @@ iniciada en calamar, no con la API:
 
 - `salud serve` en `127.0.0.1:8791`, detrás de Tailscale Serve. Solo pasan
   los logins de `SALUD_USUARIOS`; formularios de otras webs rechazados.
+- Conexiones (`/conexiones`, icono de la cabecera): estado de la sesión de
+  Garmin, probarla y volver a entrar. FatSecret y Strava, más adelante.
 - Gráficas en SVG hechas en el servidor, de una serie cada una: línea de
   2 px, valor final rotulado, cursor con tooltip y tabla debajo. La franja
   gris de la VFC es la equilibrada según Garmin.

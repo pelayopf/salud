@@ -1,29 +1,34 @@
-"""Web de la app: Hoy, Tendencias, Actividades y Lecturas."""
+"""Web de la app: Hoy, Tendencias, Actividades, Lecturas y Conexiones."""
 
 from __future__ import annotations
 
 import hashlib
+import logging
+import secrets
 import sqlite3
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from statistics import mean
 from typing import Any
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import db, graficas, lectura, sync
+from . import db, garmin, graficas, lectura, sync
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -39,6 +44,13 @@ DIAS_SPARK = 14
 DIAS_MEDIA = 28
 PERIODOS = (30, 90, 180, 365)
 DIAS_SYNC_WEB = 2
+
+# Entrar en Garmin desde Conexiones.
+CADUCIDAD_CODIGO_S = 10 * 60
+MAX_FALLOS = 5
+BLOQUEO_S = 15 * 60
+
+log = logging.getLogger(__name__)
 
 
 def _version_estaticos() -> str:
@@ -106,6 +118,23 @@ def _volver(mensaje: str, destino: str = "/") -> RedirectResponse:
 
     separador = "&" if "?" in destino else "?"
     return RedirectResponse(f"{destino}{separador}{urlencode({'mensaje': mensaje})}", 303)
+
+
+async def _formulario(request: Request) -> dict[str, str]:
+    """Campos de un formulario normal (sin ficheros), sin depender de python-multipart."""
+    cuerpo = (await request.body()).decode("utf-8", errors="replace")
+    return {k: v[0] for k, v in parse_qs(cuerpo, keep_blank_values=True).items()}
+
+
+@dataclass
+class _EntradaGarmin:
+    """Entrada en Garmin desde la web. Solo en memoria: nada de esto va a disco."""
+
+    pendiente: garmin.Pendiente | None = None
+    id_pendiente: str = ""
+    caduca: float = 0.0
+    fallos: int = 0
+    bloqueado_hasta: float = 0.0
 
 
 # --- Tarjetas de Hoy -----------------------------------------------------------
@@ -357,9 +386,13 @@ def crear_app(
     lector: Callable[[sqlite3.Connection, date], dict[str, Any]] | None = None,
     *,
     hoy: Callable[[], date] = lambda: datetime.now(ZONA).date(),
+    crear_cliente_garmin: Callable[[str, str], Any] = garmin.cliente_nuevo,
+    reloj: Callable[[], float] = time.monotonic,
 ) -> Starlette:
     """Construye la aplicación web."""
     generando = threading.Lock()
+    entrando = threading.Lock()
+    entrada = _EntradaGarmin()
 
     def _leer(con: sqlite3.Connection, fecha: date) -> dict[str, Any]:
         if lector is not None:
@@ -536,6 +569,132 @@ def crear_app(
         threading.Thread(target=trabajo, daemon=True).start()
         return _volver("Preparando la lectura: tarda un minuto o dos")
 
+    # --- Conexiones ----------------------------------------------------------
+
+    def _conexiones(
+        request: Request,
+        *,
+        error: str | None = None,
+        id_codigo: str | None = None,
+    ) -> HTMLResponse:
+        fichero = garmin.fichero_tokens(settings.garmin_tokens)
+        desde = (
+            datetime.fromtimestamp(fichero.stat().st_mtime, UTC).isoformat(timespec="seconds")
+            if fichero.is_file()
+            else None
+        )
+        restante = entrada.bloqueado_hasta - reloj()
+        con = abrir_db()
+        try:
+            sync_garmin = db.ultima_sincronizacion(con, GARMIN)
+        finally:
+            con.close()
+        return _render(
+            "conexiones.html",
+            seccion="conexiones",
+            sesion_desde=desde,
+            sync=sync_garmin,
+            bloqueado_min=int(restante // 60) + 1 if restante > 0 else 0,
+            id_codigo=id_codigo,
+            error=error,
+            mensaje=request.query_params.get("mensaje"),
+        )
+
+    def _bloqueado() -> str | None:
+        restante = entrada.bloqueado_hasta - reloj()
+        if restante <= 0:
+            return None
+        return f"Demasiados intentos fallidos: espera {int(restante // 60) + 1} minutos"
+
+    def _fallo(exc: Exception) -> None:
+        # Solo el tipo: el mensaje de la librería no hace falta en el log.
+        log.warning("Garmin ha rechazado la entrada desde la web (%s)", type(exc).__name__)
+        entrada.fallos += 1
+        if entrada.fallos >= MAX_FALLOS:
+            entrada.bloqueado_hasta = reloj() + BLOQUEO_S
+            entrada.fallos = 0
+            entrada.pendiente = None
+
+    def _hecho() -> Response:
+        entrada.pendiente = None
+        entrada.fallos = 0
+        return _volver("Sesión de Garmin guardada", "/conexiones")
+
+    def ver_conexiones(request: Request) -> Response:
+        return _conexiones(request)
+
+    async def garmin_entrar(request: Request) -> Response:
+        datos = await _formulario(request)
+        correo = datos.get("correo", "").strip()
+        contrasena = datos.get("contrasena", "")
+        if not correo or not contrasena:
+            return _conexiones(request, error="Escribe el correo y la contraseña de Garmin")
+        if bloqueo := _bloqueado():
+            return _conexiones(request, error=bloqueo)
+        if not entrando.acquire(blocking=False):
+            return _conexiones(request, error="Ya hay una entrada en Garmin en curso")
+        try:
+            pendiente = await run_in_threadpool(
+                garmin.empezar_entrada,
+                settings.garmin_tokens,
+                correo,
+                contrasena,
+                crear_cliente_garmin,
+            )
+        except Exception as exc:  # la librería lanza varios tipos según el fallo
+            _fallo(exc)
+            return _conexiones(
+                request,
+                error=_bloqueado()
+                or "Garmin no ha aceptado el correo o la contraseña (o no responde ahora)",
+            )
+        finally:
+            entrando.release()
+        if pendiente is None:
+            return _hecho()
+        entrada.pendiente = pendiente
+        entrada.id_pendiente = secrets.token_urlsafe(16)
+        entrada.caduca = reloj() + CADUCIDAD_CODIGO_S
+        return _conexiones(request, id_codigo=entrada.id_pendiente)
+
+    async def garmin_codigo(request: Request) -> Response:
+        datos = await _formulario(request)
+        id_ = datos.get("id", "")
+        codigo = datos.get("codigo", "").strip()
+        if bloqueo := _bloqueado():
+            return _conexiones(request, error=bloqueo)
+        pendiente = entrada.pendiente
+        if (
+            pendiente is None
+            or not secrets.compare_digest(id_, entrada.id_pendiente)
+            or reloj() > entrada.caduca
+        ):
+            entrada.pendiente = None
+            return _conexiones(request, error="El código ha caducado: vuelve a empezar")
+        if not codigo:
+            return _conexiones(request, error="Escribe el código", id_codigo=id_)
+        if not entrando.acquire(blocking=False):
+            return _conexiones(request, error="Ya hay una entrada en Garmin en curso")
+        try:
+            await run_in_threadpool(
+                garmin.terminar_entrada, settings.garmin_tokens, pendiente, codigo
+            )
+        except Exception as exc:  # la librería lanza varios tipos según el fallo
+            _fallo(exc)
+            if bloqueo := _bloqueado():
+                return _conexiones(request, error=bloqueo)
+            return _conexiones(request, error="Garmin no ha aceptado el código", id_codigo=id_)
+        finally:
+            entrando.release()
+        return _hecho()
+
+    async def garmin_probar(_request: Request) -> Response:
+        try:
+            await run_in_threadpool(conectar_garmin)
+        except GarminNoConectado as exc:
+            return _volver(str(exc), "/conexiones")
+        return _volver("La sesión de Garmin funciona", "/conexiones")
+
     def manifiesto(_request: Request) -> Response:
         return FileResponse(
             ESTATICOS / "manifest.webmanifest", media_type="application/manifest+json"
@@ -556,6 +715,10 @@ def crear_app(
             Route("/lecturas", ver_lecturas),
             Route("/sincronizar", sincronizar, methods=["POST"]),
             Route("/lectura", pedir_lectura, methods=["POST"]),
+            Route("/conexiones", ver_conexiones),
+            Route("/conexiones/garmin/entrar", garmin_entrar, methods=["POST"]),
+            Route("/conexiones/garmin/codigo", garmin_codigo, methods=["POST"]),
+            Route("/conexiones/garmin/probar", garmin_probar, methods=["POST"]),
             Route("/manifest.webmanifest", manifiesto),
             Route("/sw.js", service_worker),
             Mount("/estaticos", StaticFiles(directory=ESTATICOS), name="estaticos"),

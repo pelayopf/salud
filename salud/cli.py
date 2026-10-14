@@ -105,16 +105,14 @@ def cmd_garmin_entrar(settings: Settings, _args: argparse.Namespace) -> int:
     correo = input("Correo de Garmin: ").strip()
     contrasena = getpass.getpass("Contraseña (no se guarda): ")
     try:
-        nombre = garmin.entrar(
-            settings.garmin_tokens,
-            correo,
-            contrasena,
-            lambda: input("Código de verificación que te ha mandado Garmin: ").strip(),
-        )
+        pendiente = garmin.empezar_entrada(settings.garmin_tokens, correo, contrasena)
+        if pendiente is not None:
+            codigo = input("Código de verificación que te ha mandado Garmin: ").strip()
+            garmin.terminar_entrada(settings.garmin_tokens, pendiente, codigo)
     except Exception as exc:  # la librería lanza varios tipos según el fallo
         print(f"No se pudo entrar: {exc}", file=sys.stderr)
         return 1
-    print(f"Sesión de Garmin guardada en {settings.garmin_tokens} ({nombre})")
+    print(f"Sesión de Garmin guardada en {settings.garmin_tokens}")
     return 0
 
 

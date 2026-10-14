@@ -68,6 +68,12 @@ a { color: var(--marca); }
 }
 .nav-escritorio a:hover { background: rgb(255 255 255 / 8%); color: #fff; }
 .nav-escritorio a[aria-current="page"] { background: rgb(255 255 255 / 14%); color: #fff; }
+.ajustes {
+  margin-left: auto; display: grid; place-items: center; width: 36px; height: 36px;
+  border-radius: 999px; color: #d6e4e8;
+}
+.ajustes svg { width: 20px; height: 20px; }
+.ajustes:hover, .ajustes[aria-current="page"] { background: rgb(255 255 255 / 14%); color: #fff; }
 
 .nav-inferior {
   position: fixed; inset: auto 0 0 0; z-index: 10;
@@ -94,6 +100,7 @@ main {
 
 @media (min-width: 760px) {
   .nav-escritorio { display: flex; }
+  .ajustes { margin-left: 4px; }
   .nav-inferior { display: none; }
   main { padding-bottom: 40px; }
 }
@@ -121,6 +128,7 @@ p.panel { margin: 0; }
   background: var(--cuidado-fondo); color: var(--cuidado);
   border-radius: 12px; padding: 11px 14px; margin: 0 0 14px; font-size: .92rem;
 }
+.aviso.error { background: var(--mal-fondo); color: var(--mal); }
 
 .boton {
   background: var(--marca); color: #fff; border: 0; border-radius: 999px;
@@ -237,3 +245,18 @@ th { color: var(--suave); font-weight: 500; }
   font-size: .8rem; line-height: 1.3; box-shadow: var(--sombra); white-space: nowrap;
 }
 .tooltip strong { display: block; font-size: .95rem; }
+
+/* --- Conexiones ----------------------------------------------------------- */
+
+.conexion > .suave { margin: 0 0 12px; }
+.formulario { display: grid; gap: 6px; max-width: 380px; margin-top: 12px; }
+.formulario p { margin: 0 0 6px; }
+.formulario label { font-size: .85rem; font-weight: 500; margin-top: 6px; }
+.formulario input {
+  font: inherit; padding: 9px 12px; border: 1px solid var(--borde); border-radius: 10px;
+  background: var(--crema); color: var(--texto);
+}
+.formulario input:focus { outline: 2px solid var(--marca); outline-offset: 1px; background: var(--panel); }
+.acciones { display: flex; align-items: center; gap: 14px; margin: 8px 0 0; }
+.acciones a { font-size: .9rem; }
+.nota-conexiones { margin-top: 16px; }
