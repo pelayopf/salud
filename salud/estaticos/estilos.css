@@ -607,6 +607,179 @@ th { color: var(--suave); font-weight: 500; }
   color: var(--marca);
 }
 
+.tarjeta-tratamiento-salud {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tratamiento-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tratamiento-titulos {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.tratamiento-titulos strong {
+  font-size: 17px;
+}
+.tratamiento-titulos span {
+  font-size: 13px;
+  color: var(--suave);
+}
+.tratamiento-enlace-pauta {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 4px;
+  text-decoration: none;
+  color: var(--marca);
+}
+.tratamiento-enlace-pauta:hover {
+  color: var(--marca-hover);
+}
+.ciclo-tira {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 4px;
+}
+.ciclo-columna {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ciclo-letra {
+  font-size: 11px;
+  color: var(--suave);
+  font-weight: 600;
+}
+.ciclo-letra.hoy {
+  color: var(--marca);
+  font-weight: 800;
+}
+.ciclo-numero {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--suave);
+  box-sizing: border-box;
+}
+.ciclo-numero.puesta {
+  background: var(--violeta);
+  color: #ffffff;
+  font-weight: 800;
+}
+.ciclo-numero.puede {
+  background: var(--violeta-fondo);
+  color: var(--violeta);
+  font-weight: 700;
+}
+.ciclo-numero.toca {
+  border: 2px dashed var(--violeta);
+  box-sizing: border-box;
+  color: var(--violeta);
+  font-weight: 800;
+}
+.ciclo-numero.hoy {
+  border: 2px solid var(--marca);
+  box-sizing: border-box;
+  color: var(--marca);
+  font-weight: 800;
+}
+.ciclo-numero.puesta.hoy {
+  background: var(--violeta);
+  border: 2px solid var(--marca);
+  box-sizing: border-box;
+  color: #ffffff;
+}
+.ciclo-numero.puede.hoy {
+  background: var(--violeta-fondo);
+  border: 2px solid var(--marca);
+  box-sizing: border-box;
+  color: var(--violeta);
+}
+.ciclo-numero.toca.hoy {
+  border: 2px solid var(--marca);
+  box-sizing: border-box;
+  color: var(--violeta);
+}
+.ciclo-leyenda {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--suave);
+  flex-wrap: wrap;
+}
+.ciclo-leyenda-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ciclo-punto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.ciclo-punto.puesta {
+  background: var(--violeta);
+}
+.ciclo-punto.puede {
+  background: var(--violeta-fondo);
+  border: 1px solid #c9bfea;
+}
+.ciclo-punto.toca {
+  border: 2px dashed var(--violeta);
+}
+.esquema-zonas {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f4f6f5;
+  border-radius: 16px;
+  padding: 12px;
+}
+.esquema-zonas-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.esquema-zonas-info span {
+  font-size: 13px;
+  color: var(--suave);
+}
+.esquema-zonas-info strong {
+  font-size: 15px;
+}
+.boton-violeta {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  height: 48px;
+  border-radius: 14px;
+  border: 0;
+  background: var(--violeta);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  width: 100%;
+}
+.boton-violeta:hover {
+  filter: brightness(1.08);
+  color: #ffffff;
+}
+
 /* --- Salud: peso y analíticas ------------------------------------------- */
 
 .peso-composicion {

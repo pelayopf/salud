@@ -344,7 +344,8 @@ def test_web_tratamiento_flujo_completo(settings, con):
 
     r_salud_post = c.get("/salud")
     assert r_salud_post.status_code == 200
-    assert "Zona sugerida: muslo derecho" in r_salud_post.text
+    assert "Próxima: muslo derecho" in r_salud_post.text
+    assert "Última: muslo izquierdo" in r_salud_post.text
     assert "Apuntar dosis" in r_salud_post.text
 
     # 6. Guardar pauta
@@ -368,3 +369,53 @@ def test_web_tratamiento_flujo_completo(settings, con):
     r_borrar = c.post(f"/tratamiento/dosis/{dosis_creadas[0].id}/borrar")
     assert r_borrar.status_code == 303
     assert len(db.dosis(con)) == 0
+
+
+def test_dias_ciclo_casos():
+    p = db.Pauta(intervalo_dias=7, separacion_min_dias=3, margen_olvido_dias=4)
+    # Sin dosis -> lista vacía
+    assert tratamiento.dias_ciclo(p, None, date(2026, 10, 12)) == []
+
+    u = db.Dosis(
+        id=1,
+        fecha="2026-10-12",
+        farmaco="Mounjaro",
+        dosis_mg=5.0,
+        zona="muslo izquierdo",
+    )
+    # 1. Inicio: hoy es el día de la última dosis
+    dias_inicio = tratamiento.dias_ciclo(p, u, hoy=date(2026, 10, 12))
+    assert len(dias_inicio) == 8
+    assert dias_inicio[0].estado == "puesta"
+    assert dias_inicio[0].letra == "L"
+    assert dias_inicio[0].numero == 12
+    assert dias_inicio[0].es_hoy is True
+    assert dias_inicio[1].es_hoy is False
+
+    # 2. Adelantar: desde separacion_min_dias (jueves 15) se puede adelantar
+    dias_adelantar = tratamiento.dias_ciclo(p, u, hoy=date(2026, 10, 15))
+    assert dias_adelantar[1].estado == "esperar"
+    assert dias_adelantar[2].estado == "esperar"
+    assert dias_adelantar[3].estado == "puede"
+    assert dias_adelantar[3].numero == 15
+    assert dias_adelantar[3].es_hoy is True
+    assert dias_adelantar[4].estado == "puede"
+    assert dias_adelantar[5].estado == "puede"
+    assert dias_adelantar[6].estado == "puede"
+
+    # 3. Día que toca: día 7 (lunes 19) es "toca"
+    dias_toca = tratamiento.dias_ciclo(p, u, hoy=date(2026, 10, 19))
+    assert dias_toca[7].estado == "toca"
+    assert dias_toca[7].numero == 19
+    assert dias_toca[7].es_hoy is True
+
+    # 4. Intervalo de 10 días: 11 casillas
+    p10 = db.Pauta(intervalo_dias=10, separacion_min_dias=3, margen_olvido_dias=4)
+    dias_10 = tratamiento.dias_ciclo(p10, u, hoy=date(2026, 10, 14))
+    assert len(dias_10) == 11
+    assert dias_10[0].estado == "puesta"
+    assert dias_10[1].estado == "esperar"
+    assert dias_10[2].estado == "esperar"
+    assert dias_10[3].estado == "puede"
+    assert dias_10[9].estado == "puede"
+    assert dias_10[10].estado == "toca"

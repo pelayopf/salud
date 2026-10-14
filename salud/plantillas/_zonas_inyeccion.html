@@ -1,0 +1,30 @@
+{# Esquema de zonas de inyección con silueta SVG. Espera `t` con `ultima` y `zona_sugerida`. #}
+{% set u_zona = t.ultima.zona if t.ultima else '' %}
+{% set p_zona = t.zona_sugerida %}
+<div class="esquema-zonas">
+  <svg class="esquema-zonas-svg" width="54" height="70" viewBox="0 0 54 70" role="img" aria-label="Última: {{ u_zona }}. Próxima: {{ p_zona }}">
+    <path class="silueta-cuerpo" d="M14 4 h26 l6 6 v18 h-4 v-14 l-3 12 l-4 40 h-8 l-4 -32 l-4 32 h-8 l-4 -40 l-3 -12 v14 h-4 v-18 z" fill="#E3E9E7"/>
+    {% set coords = {
+      'muslo izquierdo': (18, 46, 4.5, 7),
+      'muslo derecho': (36, 46, 4.5, 7),
+      'abdomen izquierdo': (21, 24, 4, 4),
+      'abdomen derecho': (33, 24, 4, 4),
+      'brazo izquierdo': (9, 18, 3, 5),
+      'brazo derecho': (45, 18, 3, 5)
+    } %}
+    {% if u_zona in coords %}
+      {% set cx, cy, rx, ry = coords[u_zona] %}
+      <ellipse class="zona-marca ultima" cx="{{ cx }}" cy="{{ cy }}" rx="{{ rx }}" ry="{{ ry }}" fill="#5A6970" opacity="0.45"/>
+    {% endif %}
+    {% if p_zona in coords %}
+      {% set cx, cy, rx, ry = coords[p_zona] %}
+      <ellipse class="zona-marca proxima" cx="{{ cx }}" cy="{{ cy }}" rx="{{ rx }}" ry="{{ ry }}" fill="none" stroke="#5B44A0" stroke-width="2" stroke-dasharray="3 2"/>
+    {% endif %}
+  </svg>
+  <div class="esquema-zonas-info">
+    {% if u_zona %}
+    <span class="suave">Última: {{ u_zona }}</span>
+    {% endif %}
+    <strong>Próxima: {{ p_zona }}</strong>
+  </div>
+</div>

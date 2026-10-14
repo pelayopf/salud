@@ -28,6 +28,20 @@ _OPUESTOS = {
 }
 
 EstadoProxima = Literal["esperar", "puede_adelantar", "hoy", "retrasada", "saltar"]
+EstadoDiaCiclo = Literal["puesta", "esperar", "puede", "toca", "margen", "hoy"]
+
+LETRAS_SEMANA = ("L", "M", "X", "J", "V", "S", "D")
+
+
+@dataclass(frozen=True)
+class DiaCiclo:
+    """Un día en la tira del ciclo de tratamiento semanal."""
+
+    fecha: date
+    letra: str
+    numero: int
+    estado: EstadoDiaCiclo
+    es_hoy: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +110,52 @@ def proxima(pauta: db.Pauta, ultima: db.Dosis | None, hoy: date) -> Proxima | No
         dias_desde_ultima=dias_desde_ultima,
         zona_sugerida=zona_sugerida(ultima.zona),
     )
+
+
+def dias_ciclo(pauta: db.Pauta, ultima: db.Dosis | None, hoy: date) -> list[DiaCiclo]:
+    """Tira de días del ciclo desde la última dosis hasta la fecha prevista.
+
+    Genera los días del ciclo (8 días para intervalo de 7 días, o hasta 14 días
+    como máximo si el intervalo es mayor), categorizando cada día según su estado
+    farmacológico ("puesta", "esperar", "puede", "toca", "margen") y marcando si
+    coincide con la fecha de hoy.
+    """
+    if ultima is None:
+        return []
+
+    u_fecha = date.fromisoformat(ultima.fecha)
+    prevista = u_fecha + timedelta(days=pauta.intervalo_dias)
+    adelantar_desde = u_fecha + timedelta(days=pauta.separacion_min_dias)
+    limite = prevista + timedelta(days=pauta.margen_olvido_dias)
+
+    num_dias = min(pauta.intervalo_dias, 13)
+    fechas = [u_fecha + timedelta(days=i) for i in range(num_dias + 1)]
+
+    resultado: list[DiaCiclo] = []
+    for d in fechas:
+        if d == u_fecha:
+            estado: EstadoDiaCiclo = "puesta"
+        elif d < adelantar_desde:
+            estado = "esperar"
+        elif d < prevista:
+            estado = "puede"
+        elif d == prevista:
+            estado = "toca"
+        elif d <= limite:
+            estado = "margen"
+        else:
+            estado = "esperar"
+
+        resultado.append(
+            DiaCiclo(
+                fecha=d,
+                letra=LETRAS_SEMANA[d.weekday()],
+                numero=d.day,
+                estado=estado,
+                es_hoy=(d == hoy),
+            )
+        )
+    return resultado
 
 
 def pauta_desde_formulario(datos: dict[str, str]) -> db.Pauta:

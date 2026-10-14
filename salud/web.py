@@ -152,15 +152,19 @@ def dia_corto(fecha: str | date) -> str:
 
 
 def _tratamiento(con: sqlite3.Connection, dia: date) -> dict[str, Any]:
-    """Pauta, última dosis, próxima y zona sugerida, para `_tarjeta_tratamiento.html`."""
+    """Pauta, última dosis, próxima, zona sugerida, dosis hechas y días del ciclo."""
     pauta = db.pauta(con)
     recientes = db.dosis(con, limite=1)
     ultima = recientes[0] if recientes else None
+    dosis_hechas = db.contar_dosis(con, farmaco=pauta.farmaco, dosis_mg=pauta.dosis_mg)
+    dias = tratamiento.dias_ciclo(pauta, ultima, dia)
     return {
         "pauta": pauta,
         "ultima": ultima,
         "prox": tratamiento.proxima(pauta, ultima, dia),
         "zona_sugerida": tratamiento.zona_sugerida(ultima.zona if ultima else None),
+        "dosis_hechas": dosis_hechas,
+        "dias_ciclo": dias,
     }
 
 
