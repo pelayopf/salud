@@ -55,3 +55,62 @@ def test_columnas():
     assert g.svg.count('class="columna"') == 3
     assert 'data-tip="8/1: 800"' in g.svg
     assert g.filas[0] == ("15/1", "450")
+
+
+def test_anillo_progreso_y_recorte():
+    g0 = graficas.anillo(0.0, clase="preparacion", etiqueta="Preparación 0")
+    assert "<svg" in g0 and 'aria-label="Preparación 0"' in g0
+    assert "anillo-fondo preparacion" in g0
+
+    g5 = graficas.anillo(0.5, clase="preparacion", etiqueta="Preparación 50")
+    assert "anillo-valor preparacion" in g5
+    assert 'role="img"' in g5
+
+    g10 = graficas.anillo(1.0, clase="preparacion", etiqueta="Preparación 100")
+    g13 = graficas.anillo(1.3, clase="preparacion", etiqueta="Preparación 100")
+    # 1.3 se recorta a 1.0, generando el mismo trazo de valor
+    assert "anillo-valor preparacion" in g13
+    assert g13.count("stroke-dasharray") == g10.count("stroke-dasharray")
+
+    gn = graficas.anillo(None, clase="preparacion", etiqueta="Sin dato")
+    assert "anillo-fondo" in gn
+    assert "anillo-valor" not in gn
+
+    oculto = graficas.anillo(0.5, clase="preparacion", etiqueta="")
+    assert 'aria-hidden="true"' in oculto
+
+
+def test_anillos_concentricos():
+    an = graficas.anillos(
+        0.6, 0.4, clase_ext="proteina", clase_int="kcal", etiqueta="Comida de hoy"
+    )
+    assert "<svg" in an
+    assert 'role="img"' in an and 'aria-label="Comida de hoy"' in an
+    assert "anillo-valor proteina" in an
+    assert "anillo-valor kcal" in an
+
+
+def test_fases_sueno_suman_ancho_total():
+    import re
+
+    fs = graficas.fases_sueno(45.0, 90.0, 200.0, 15.0)
+    assert "<svg" in fs
+    assert 'aria-hidden="true"' in fs
+    anchos = [float(w) for w in re.findall(r'<rect [^>]*width="([\d.]+)"', fs)]
+    assert round(sum(anchos), 1) == 100.0
+    assert graficas.fases_sueno(None, None, None, None) == ""
+
+
+def test_rango_dentro_y_fuera():
+    r_dentro = graficas.rango(50.0, 45.0, 60.0)
+    assert "<svg" in r_dentro
+    assert 'aria-hidden="true"' in r_dentro or "aria-label" in r_dentro
+    assert "rango-punto dentro" in r_dentro
+
+    r_fuera_bajo = graficas.rango(39.0, 45.0, 60.0)
+    assert "rango-punto fuera" in r_fuera_bajo
+
+    r_fuera_alto = graficas.rango(72.0, 45.0, 60.0)
+    assert "rango-punto fuera" in r_fuera_alto
+
+    assert graficas.rango(50.0, None, 60.0) == ""

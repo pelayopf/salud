@@ -72,6 +72,221 @@ def sparkline(valores: Sequence[float | None], ancho: int = 112, alto: int = 30)
     )
 
 
+def anillo(
+    fraccion: float | None,
+    *,
+    clase: str,
+    tamano: int = 76,
+    grosor: int = 8,
+    texto: str = "",
+    subtexto: str = "",
+    etiqueta: str,
+) -> Markup:
+    """Anillo de progreso (0–1, recortado a [0, 1]; None = solo el fondo)."""
+    c = tamano / 2
+    r = (tamano - grosor) / 2
+    circ = 2 * math.pi * r
+    f = max(0.0, min(1.0, float(fraccion))) if fraccion is not None else 0.0
+
+    partes = [
+        f'<circle class="anillo-fondo {escape(clase)}" cx="{c:.1f}" cy="{c:.1f}"'
+        f' r="{r:.1f}" stroke-width="{grosor}"/>'
+    ]
+    if fraccion is not None and f > 0:
+        arco = f * circ
+        partes.append(
+            f'<circle class="anillo-valor {escape(clase)}" cx="{c:.1f}" cy="{c:.1f}" r="{r:.1f}"'
+            f' stroke-width="{grosor}" stroke-linecap="round"'
+            f' stroke-dasharray="{arco:.1f} {circ:.1f}" transform="rotate(-90 {c:.1f} {c:.1f})"/>'
+        )
+    if texto and subtexto:
+        partes.append(
+            f'<text class="anillo-texto {escape(clase)}" x="{c:.1f}" y="{c - 2:.1f}"'
+            f' text-anchor="middle">{escape(texto)}</text>'
+        )
+        partes.append(
+            f'<text class="anillo-subtexto {escape(clase)}" x="{c:.1f}" y="{c + 13:.1f}"'
+            f' text-anchor="middle">{escape(subtexto)}</text>'
+        )
+    elif texto:
+        partes.append(
+            f'<text class="anillo-texto {escape(clase)}" x="{c:.1f}" y="{c + 6:.1f}"'
+            f' text-anchor="middle">{escape(texto)}</text>'
+        )
+    elif subtexto:
+        partes.append(
+            f'<text class="anillo-subtexto {escape(clase)}" x="{c:.1f}" y="{c + 4:.1f}"'
+            f' text-anchor="middle">{escape(subtexto)}</text>'
+        )
+
+    aria = f'role="img" aria-label="{escape(etiqueta)}"' if etiqueta else 'aria-hidden="true"'
+    return Markup(
+        f'<svg class="anillo {escape(clase)}" width="{tamano}" height="{tamano}"'
+        f' viewBox="0 0 {tamano} {tamano}" {aria}>' + "".join(partes) + "</svg>"
+    )
+
+
+def anillos(
+    exterior: float | None,
+    interior: float | None,
+    *,
+    clase_ext: str,
+    clase_int: str,
+    tamano: int = 64,
+    texto: str = "",
+    subtexto: str = "",
+    etiqueta: str,
+) -> Markup:
+    """Dos anillos concéntricos (exterior e interior)."""
+    c = tamano / 2
+    g_ext = max(2.0, tamano * 7.0 / 64.0)
+    g_int = max(2.0, tamano * 5.0 / 64.0)
+    r_ext = tamano * 26.0 / 64.0
+    r_int = tamano * 17.0 / 64.0
+    circ_ext = 2 * math.pi * r_ext
+    circ_int = 2 * math.pi * r_int
+
+    f_ext = max(0.0, min(1.0, float(exterior))) if exterior is not None else 0.0
+    f_int = max(0.0, min(1.0, float(interior))) if interior is not None else 0.0
+
+    partes = [
+        f'<circle class="anillo-fondo {escape(clase_ext)}" cx="{c:.1f}" cy="{c:.1f}"'
+        f' r="{r_ext:.1f}" stroke-width="{g_ext:.1f}"/>'
+    ]
+    if exterior is not None and f_ext > 0:
+        arco_ext = f_ext * circ_ext
+        partes.append(
+            f'<circle class="anillo-valor {escape(clase_ext)}" cx="{c:.1f}" cy="{c:.1f}"'
+            f' r="{r_ext:.1f}" stroke-width="{g_ext:.1f}" stroke-linecap="round"'
+            f' stroke-dasharray="{arco_ext:.1f} {circ_ext:.1f}"'
+            f' transform="rotate(-90 {c:.1f} {c:.1f})"/>'
+        )
+    partes.append(
+        f'<circle class="anillo-fondo {escape(clase_int)}" cx="{c:.1f}" cy="{c:.1f}"'
+        f' r="{r_int:.1f}" stroke-width="{g_int:.1f}"/>'
+    )
+    if interior is not None and f_int > 0:
+        arco_int = f_int * circ_int
+        partes.append(
+            f'<circle class="anillo-valor {escape(clase_int)}" cx="{c:.1f}" cy="{c:.1f}"'
+            f' r="{r_int:.1f}" stroke-width="{g_int:.1f}" stroke-linecap="round"'
+            f' stroke-dasharray="{arco_int:.1f} {circ_int:.1f}"'
+            f' transform="rotate(-90 {c:.1f} {c:.1f})"/>'
+        )
+
+    if texto and subtexto:
+        partes.append(
+            f'<text class="anillo-texto" x="{c:.1f}" y="{c - 2:.1f}"'
+            f' text-anchor="middle">{escape(texto)}</text>'
+        )
+        partes.append(
+            f'<text class="anillo-subtexto" x="{c:.1f}" y="{c + 11:.1f}"'
+            f' text-anchor="middle">{escape(subtexto)}</text>'
+        )
+    elif texto:
+        partes.append(
+            f'<text class="anillo-texto" x="{c:.1f}" y="{c + 5:.1f}"'
+            f' text-anchor="middle">{escape(texto)}</text>'
+        )
+    elif subtexto:
+        partes.append(
+            f'<text class="anillo-subtexto" x="{c:.1f}" y="{c + 3:.1f}"'
+            f' text-anchor="middle">{escape(subtexto)}</text>'
+        )
+
+    aria = f'role="img" aria-label="{escape(etiqueta)}"' if etiqueta else 'aria-hidden="true"'
+    return Markup(
+        f'<svg class="anillos" width="{tamano}" height="{tamano}"'
+        f' viewBox="0 0 {tamano} {tamano}" {aria}>' + "".join(partes) + "</svg>"
+    )
+
+
+def fases_sueno(
+    profundo: float | None,
+    rem: float | None,
+    ligero: float | None,
+    despierto: float | None,
+) -> Markup:
+    """Barra horizontal de 6 px partida en tramos proporcionales."""
+    fases = [
+        ("fase-profundo", profundo),
+        ("fase-rem", rem),
+        ("fase-ligero", ligero),
+        ("fase-despierto", despierto),
+    ]
+    validas = [(clase, v) for clase, v in fases if v is not None and v > 0]
+    if not validas:
+        return Markup("")
+
+    total = sum(v for _, v in validas)
+    if total <= 0:
+        return Markup("")
+
+    ancho = 100.0
+    alto = 6
+    partes: list[str] = []
+    x = 0.0
+    for i, (clase, v) in enumerate(validas):
+        if i == len(validas) - 1:
+            w = ancho - x
+        else:
+            w = round((v / total) * ancho, 2)
+        partes.append(f'<rect class="{clase}" x="{x:.2f}" y="0" width="{w:.2f}" height="{alto}"/>')
+        x += w
+
+    return Markup(
+        f'<svg class="fases-sueno" width="100%" height="{alto}" viewBox="0 0 {int(ancho)} {alto}"'
+        f' aria-hidden="true" focusable="false">' + "".join(partes) + "</svg>"
+    )
+
+
+def rango(valor: float | None, bajo: float | None, alto: float | None) -> Markup:
+    """Barra con la franja [bajo, alto] y un punto en el valor."""
+    if bajo is None or alto is None:
+        return Markup("")
+
+    ancho = 140
+    alto_svg = 22
+    vals = [bajo, alto]
+    if valor is not None:
+        vals.append(valor)
+    v_min = min(vals)
+    v_max = max(vals)
+    delta = v_max - v_min
+    if delta <= 0:
+        delta = 1.0
+
+    margen = 0.20 * delta
+    e_min = v_min - margen
+    e_max = v_max + margen
+    e_rango = e_max - e_min
+
+    def x_pos(v: float) -> float:
+        return (v - e_min) / e_rango * ancho
+
+    x_bajo = max(0.0, x_pos(bajo))
+    x_alto = min(float(ancho), x_pos(alto))
+    w_franja = max(0.0, x_alto - x_bajo)
+
+    partes = [
+        f'<rect class="rango-fondo" x="0" y="6" width="{ancho}" height="10" rx="5"/>',
+        f'<rect class="rango-franja" x="{x_bajo:.1f}" y="6" width="{w_franja:.1f}"'
+        f' height="10" rx="5"/>',
+    ]
+
+    if valor is not None:
+        cx = max(0.0, min(float(ancho), x_pos(valor)))
+        clase_punto = "dentro" if bajo <= valor <= alto else "fuera"
+        partes.append(f'<circle class="rango-punto {clase_punto}" cx="{cx:.1f}" cy="11" r="6"/>')
+
+    return Markup(
+        f'<svg class="rango" width="100%" height="{alto_svg}" viewBox="0 0 {ancho} {alto_svg}"'
+        f' preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+        + "".join(partes)
+        + "</svg>"
+    )
+
+
 @dataclass(frozen=True)
 class Grafica:
     """Una gráfica lista para la plantilla: el SVG y las filas de su tabla."""

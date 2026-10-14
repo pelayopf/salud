@@ -285,6 +285,37 @@ textarea:focus {
 .spark-linea { fill: none; stroke: var(--serie-suave); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .spark-punto { fill: var(--serie); stroke: var(--panel); stroke-width: 2; }
 
+/* Anillos de progreso */
+.anillo, .anillos { display: block; flex: none; }
+.anillo-fondo { fill: none; }
+.anillo-valor { fill: none; }
+.anillo-texto { font-family: Manrope, system-ui, sans-serif; font-weight: 800; }
+.anillo-subtexto { font-family: Manrope, system-ui, sans-serif; }
+
+.anillo-fondo.preparacion { stroke: rgba(255, 255, 255, .15); }
+.anillo-valor.preparacion { stroke: var(--acento); }
+.anillo-texto.preparacion { fill: #f4f7f6; font-size: 20px; }
+
+.anillo-fondo.proteina { stroke: var(--proteina-fondo); }
+.anillo-valor.proteina { stroke: var(--proteina); }
+.anillo-fondo.kcal { stroke: var(--kcal-fondo); }
+.anillo-valor.kcal { stroke: var(--marca); }
+
+/* Fases de sueño */
+.fases-sueno { display: block; border-radius: 4px; overflow: hidden; }
+.fase-profundo { fill: #3b2c78; }
+.fase-rem { fill: #7c66c9; }
+.fase-ligero { fill: #c7bdeb; }
+.fase-despierto { fill: #e7e4f4; }
+
+/* Rango */
+.rango { display: block; overflow: visible; }
+.rango-fondo { fill: #eef1f0; }
+.rango-franja { fill: #cfe6da; }
+.rango-punto { stroke: #ffffff; stroke-width: 2; }
+.rango-punto.dentro { fill: var(--verde); }
+.rango-punto.fuera { fill: var(--rojo); }
+
 /* --- Listas ------------------------------------------------------------- */
 
 .lista { padding: 4px 16px; }
