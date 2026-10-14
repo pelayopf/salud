@@ -72,6 +72,8 @@ class Producto:
     hidratos: float | None
     grasas: float | None
     preparado: bool = False
+    origen: str = "off"
+    id_propio: int | None = None
 
     @property
     def incompleto(self) -> bool:
@@ -264,6 +266,24 @@ def producto_desde_fila(fila: sqlite3.Row) -> Producto:
     )
 
 
+def producto_desde_propio(fila: sqlite3.Row, nutriscore: str | None = None) -> Producto:
+    """Construye un Producto a partir de una fila de la tabla productos_propios."""
+    return Producto(
+        codigo=fila["codigo"] or "",
+        nombre=fila["nombre"],
+        marca=fila["marca"],
+        nutriscore=nutriscore,
+        unidad=fila["unidad"],
+        kcal=fila["kcal"],
+        proteinas=fila["proteinas"],
+        hidratos=fila["hidratos"],
+        grasas=fila["grasas"],
+        preparado=False,
+        origen=fila["origen"],
+        id_propio=fila["id"],
+    )
+
+
 def obtener_producto(
     con: sqlite3.Connection,
     codigo: str,
@@ -282,6 +302,12 @@ def obtener_producto(
     codigo = normalizar_codigo(codigo)
     if not codigo_valido(codigo):
         raise CodigoInvalido(f"código de barras no válido: {codigo!r}")
+
+    propio = db.producto_propio_por_codigo(con, codigo)
+    if propio is not None:
+        fila_off = db.leer_producto(con, codigo)
+        nutriscore = fila_off["nutriscore"] if fila_off is not None else None
+        return ResultadoProducto(producto_desde_propio(propio, nutriscore), desde_cache=True)
 
     fila = db.leer_producto(con, codigo)
     if fila is not None and fila["consultado"]:
