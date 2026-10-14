@@ -62,10 +62,11 @@ def test_lecturas(con):
 
 
 def test_cache_productos(con):
-    from salud.alimentos import Producto
+    import json
 
-    prod = Producto(
-        codigo="2000000000008",
+    db.guardar_producto(
+        con,
+        "2000000000008",
         nombre="Cereal inventado",
         marca="Marca Test",
         nutriscore="B",
@@ -76,42 +77,43 @@ def test_cache_productos(con):
         grasas=5.0,
         datos={"test": 123},
     )
-    db.guardar_producto(con, prod)
 
-    leido = db.leer_producto(con, "2000000000008")
-    assert leido is not None
-    assert leido.codigo == "2000000000008"
-    assert leido.nombre == "Cereal inventado"
-    assert leido.marca == "Marca Test"
-    assert leido.nutriscore == "B"
-    assert leido.unidad == "g"
-    assert leido.kcal == 380.0
-    assert leido.proteinas == 10.0
-    assert leido.hidratos == 70.0
-    assert leido.grasas == 5.0
-    assert leido.desde_cache is True
-    assert leido.consultado is not None
-    assert leido.datos == {"test": 123}
+    fila = db.leer_producto(con, "2000000000008")
+    assert fila is not None
+    assert fila["codigo"] == "2000000000008"
+    assert fila["nombre"] == "Cereal inventado"
+    assert fila["marca"] == "Marca Test"
+    assert fila["nutriscore"] == "B"
+    assert fila["unidad"] == "g"
+    assert fila["kcal"] == 380.0
+    assert fila["proteinas"] == 10.0
+    assert fila["hidratos"] == 70.0
+    assert fila["grasas"] == 5.0
+    assert fila["consultado"] is not None
+    assert json.loads(fila["datos"]) == {"test": 123}
 
     assert db.leer_producto(con, "20000004") is None
 
-    # Actualizar producto
-    prod_act = Producto(
-        codigo="2000000000008",
-        nombre="Cereal actualizado",
-        marca="Marca Test",
-        nutriscore="A",
-        unidad="g",
-        kcal=370.0,
-        proteinas=11.0,
-        hidratos=68.0,
-        grasas=4.5,
+    # Actualizar producto pasando un diccionario
+    db.guardar_producto(
+        con,
+        {
+            "codigo": "2000000000008",
+            "nombre": "Cereal actualizado",
+            "marca": "Marca Test",
+            "nutriscore": "A",
+            "unidad": "g",
+            "kcal": 370.0,
+            "proteinas": 11.0,
+            "hidratos": 68.0,
+            "grasas": 4.5,
+            "datos": {"test": 456},
+        },
     )
-    db.guardar_producto(con, prod_act)
-    leido2 = hay(db.leer_producto(con, "2000000000008"))
-    assert leido2.nombre == "Cereal actualizado"
-    assert leido2.nutriscore == "A"
-    assert leido2.kcal == 370.0
+    fila2 = hay(db.leer_producto(con, "2000000000008"))
+    assert fila2["nombre"] == "Cereal actualizado"
+    assert fila2["nutriscore"] == "A"
+    assert fila2["kcal"] == 370.0
 
 
 def test_diario_comidas(con):
@@ -171,6 +173,28 @@ def test_diario_comidas(con):
     assert db.borrar_comida(con, id3) is True
 
 
+def test_anadir_comida_validaciones(con):
+    import pytest
+
+    # Nombre vacío
+    with pytest.raises(ValueError, match="vacío"):
+        db.anadir_comida(con, "2026-01-10", "desayuno", "   ", 100.0, "g")
+
+    # Momento no válido
+    with pytest.raises(ValueError, match="momento no válido"):
+        db.anadir_comida(con, "2026-01-10", "picoteo", "Manzana", 100.0, "g")
+
+    # Unidad no válida
+    with pytest.raises(ValueError, match="unidad no válida"):
+        db.anadir_comida(con, "2026-01-10", "desayuno", "Zumo", 200.0, "vasos")
+
+    # Cantidad <= 0
+    with pytest.raises(ValueError, match="mayor que 0"):
+        db.anadir_comida(con, "2026-01-10", "desayuno", "Pan", 0.0, "g")
+    with pytest.raises(ValueError, match="mayor que 0"):
+        db.anadir_comida(con, "2026-01-10", "desayuno", "Pan", -10.0, "g")
+
+
 def test_totales_dia_y_momento(con):
     # Desayuno completo
     db.anadir_comida(
@@ -202,16 +226,16 @@ def test_totales_dia_y_momento(con):
     db.anadir_comida(con, "2026-01-10", "cena", "Guiso desconocido", 200.0, "g")
 
     totales = db.totales_dia(con, "2026-01-10")
-    assert totales.kcal == 220.0  # 90 + 130
-    assert totales.sin_kcal == 1
-    assert totales.proteinas == 1.0
-    assert totales.sin_proteinas == 2
-    assert totales.hidratos == 47.0
-    assert totales.sin_hidratos == 1
-    assert totales.grasas == 0.3
-    assert totales.sin_grasas == 2
-    assert totales.entradas == 3
-    assert totales.incompletas == 2
+    assert totales.total.kcal == 220.0  # 90 + 130
+    assert totales.total.sin_kcal == 1
+    assert totales.total.proteinas == 1.0
+    assert totales.total.sin_proteinas == 2
+    assert totales.total.hidratos == 47.0
+    assert totales.total.sin_hidratos == 1
+    assert totales.total.grasas == 0.3
+    assert totales.total.sin_grasas == 2
+    assert totales.total.entradas == 3
+    assert totales.total.incompletas == 2
 
     # Desempaquetado como (por_momento, total)
     por_momento, total = totales
@@ -230,6 +254,6 @@ def test_totales_dia_y_momento(con):
 
     # Día vacío
     vacio = db.totales_dia(con, "2026-01-01")
-    assert vacio.kcal == 0.0
-    assert vacio.entradas == 0
-    assert vacio.incompletas == 0
+    assert vacio.total.kcal == 0.0
+    assert vacio.total.entradas == 0
+    assert vacio.total.incompletas == 0

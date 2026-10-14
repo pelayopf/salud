@@ -141,7 +141,7 @@ def cmd_producto(settings: Settings, args: argparse.Namespace) -> int:
     """Muestra un producto de Open Food Facts (o de la caché)."""
     con = db.conectar(settings.db_path)
     try:
-        prod = alimentos.obtener_producto(con, args.codigo)
+        prod, desde_cache = alimentos.obtener_producto(con, args.codigo)
     except alimentos.CodigoInvalido as exc:
         print(f"Código no válido: {exc}", file=sys.stderr)
         return 1
@@ -154,7 +154,7 @@ def cmd_producto(settings: Settings, args: argparse.Namespace) -> int:
     finally:
         con.close()
 
-    origen = "caché" if prod.desde_cache else "Open Food Facts"
+    origen = "caché" if desde_cache else "Open Food Facts"
     nombre = prod.nombre or "Sin nombre"
     marca = f" · {prod.marca}" if prod.marca else ""
     print(f"[{prod.codigo}] {nombre}{marca} ({origen})")

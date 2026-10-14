@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 import pytest
 
-from salud import alimentos
+from salud import alimentos, db
 from salud.alimentos import (
     CodigoInvalido,
     OpenFoodFactsNoDisponible,
@@ -210,16 +210,16 @@ def test_obtener_producto_usa_cache_y_red(con):
     )
 
     # 1. Primera consulta: no está en caché, consulta Open Food Facts y lo guarda
-    p1 = alimentos.obtener_producto(con, EAN13, cliente=cliente)
+    p1, desde_cache1 = alimentos.obtener_producto(con, EAN13, cliente=cliente)
     assert p1.nombre == "Galletas inventadas"
-    assert p1.desde_cache is False
+    assert desde_cache1 is False
     assert len(peticiones) == 1
 
     # 2. Segunda consulta: está en caché, no toca la red
     cliente_sin_red, peticiones2 = cliente_falso(lambda _: httpx.Response(500))
-    p2 = alimentos.obtener_producto(con, EAN13, cliente=cliente_sin_red)
+    p2, desde_cache2 = alimentos.obtener_producto(con, EAN13, cliente=cliente_sin_red)
     assert p2.nombre == "Galletas inventadas"
-    assert p2.desde_cache is True
+    assert desde_cache2 is True
     assert len(peticiones2) == 0
 
     # 3. Caché caducada (> 30 días): vuelve a consultar Open Food Facts
@@ -238,10 +238,45 @@ def test_obtener_producto_usa_cache_y_red(con):
             ),
         )
     )
-    p3 = alimentos.obtener_producto(con, EAN13, cliente=cliente_refresco)
+    p3, desde_cache3 = alimentos.obtener_producto(con, EAN13, cliente=cliente_refresco)
     assert p3.nombre == "Galletas inventadas (nueva fórmula)"
-    assert p3.desde_cache is False
+    assert desde_cache3 is False
     assert len(peticiones3) == 1
+
+
+def test_obtener_producto_caducado_falla_off_devuelve_cache(con):
+    from datetime import UTC, datetime, timedelta
+
+    hace_40_dias = (datetime.now(UTC) - timedelta(days=40)).isoformat()
+    db.guardar_producto(
+        con,
+        EAN13,
+        nombre="Cereal antiguo",
+        marca="Bio",
+        nutriscore="A",
+        unidad="g",
+        kcal=350.0,
+        proteinas=9.0,
+        hidratos=65.0,
+        grasas=3.0,
+        datos={"raw": "antiguo"},
+        consultado=hace_40_dias,
+    )
+
+    def caer(peticion: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("sin conexión", request=peticion)
+
+    cliente_caido, _ = cliente_falso(caer)
+
+    # OFF falla pero hay caché caducada: devuelve la caché en vez de fallar
+    prod, desde_cache = alimentos.obtener_producto(con, EAN13, cliente=cliente_caido)
+    assert prod.nombre == "Cereal antiguo"
+    assert prod.kcal == 350.0
+    assert desde_cache is True
+
+    # Si no hay caché en absoluto, sí lanza la excepción
+    with pytest.raises(OpenFoodFactsNoDisponible):
+        alimentos.obtener_producto(con, EAN8, cliente=cliente_caido)
 
 
 def test_calcular_nutrientes():

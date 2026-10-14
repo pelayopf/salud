@@ -70,14 +70,18 @@ class Producto:
     proteinas: float | None
     hidratos: float | None
     grasas: float | None
-    datos: dict[str, Any] | None = None
-    consultado: str | None = None
-    desde_cache: bool = False
 
     @property
     def incompleto(self) -> bool:
         """Falta alguno de los valores nutricionales básicos."""
         return any(v is None for v in (self.kcal, self.proteinas, self.hidratos, self.grasas))
+
+
+class ResultadoProducto(NamedTuple):
+    """Resultado de consultar un producto, indicando si proviene de la caché."""
+
+    producto: Producto
+    desde_cache: bool
 
 
 class Nutrientes(NamedTuple):
@@ -92,11 +96,6 @@ class Nutrientes(NamedTuple):
     def incompleto(self) -> bool:
         """Falta alguno de los valores nutricionales básicos."""
         return any(v is None for v in (self.kcal, self.proteinas, self.hidratos, self.grasas))
-
-
-def ahora() -> str:
-    """Marca de tiempo en UTC con segundos."""
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def user_agent() -> str:
@@ -123,18 +122,10 @@ def codigo_valido(codigo: str) -> bool:
     return (10 - suma % 10) % 10 == control
 
 
-def buscar_producto(codigo: str, cliente: httpx.Client | None = None) -> Producto:
-    """Consulta un producto en Open Food Facts por su código de barras.
-
-    Args:
-        codigo: EAN-8, EAN-13 o UPC-A (se ignoran espacios y guiones).
-        cliente: cliente HTTP a usar (en los tests, uno con transporte falso).
-
-    Raises:
-        CodigoInvalido: el código no tiene un formato o dígito de control válido.
-        ProductoNoEncontrado: Open Food Facts no tiene el producto.
-        OpenFoodFactsNoDisponible: error de red o respuesta inesperada.
-    """
+def consultar_open_food_facts(
+    codigo: str, cliente: httpx.Client | None = None
+) -> tuple[Producto, dict[str, Any]]:
+    """Consulta Open Food Facts y devuelve el Producto y el JSON crudo del producto."""
     codigo = normalizar_codigo(codigo)
     if not codigo_valido(codigo):
         raise CodigoInvalido(f"código de barras no válido: {codigo!r}")
@@ -166,19 +157,26 @@ def buscar_producto(codigo: str, cliente: httpx.Client | None = None) -> Product
     producto = datos.get("product")
     if datos.get("status") != 1 or not isinstance(producto, dict):
         raise ProductoNoEncontrado(f"Open Food Facts no tiene el producto {codigo}")
-    return producto_desde_json(
-        codigo, producto, datos=producto, consultado=ahora(), desde_cache=False
-    )
+    return producto_desde_json(codigo, producto), producto
 
 
-def producto_desde_json(
-    codigo: str,
-    p: dict[str, Any],
-    *,
-    datos: dict[str, Any] | None = None,
-    consultado: str | None = None,
-    desde_cache: bool = False,
-) -> Producto:
+def buscar_producto(codigo: str, cliente: httpx.Client | None = None) -> Producto:
+    """Consulta un producto en Open Food Facts por su código de barras.
+
+    Args:
+        codigo: EAN-8, EAN-13 o UPC-A (se ignoran espacios y guiones).
+        cliente: cliente HTTP a usar (en los tests, uno con transporte falso).
+
+    Raises:
+        CodigoInvalido: el código no tiene un formato o dígito de control válido.
+        ProductoNoEncontrado: Open Food Facts no tiene el producto.
+        OpenFoodFactsNoDisponible: error de red o respuesta inesperada.
+    """
+    producto, _ = consultar_open_food_facts(codigo, cliente=cliente)
+    return producto
+
+
+def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
     """Convierte el `product` de la API de Open Food Facts en un `Producto`."""
     nutrientes = p.get("nutriments")
     n: dict[str, Any] = nutrientes if isinstance(nutrientes, dict) else {}
@@ -196,9 +194,21 @@ def producto_desde_json(
         proteinas=_numero(n.get("proteins_100g")),
         hidratos=_numero(n.get("carbohydrates_100g")),
         grasas=_numero(n.get("fat_100g")),
-        datos=datos,
-        consultado=consultado,
-        desde_cache=desde_cache,
+    )
+
+
+def producto_desde_fila(fila: sqlite3.Row) -> Producto:
+    """Construye un Producto a partir de una fila de la tabla productos."""
+    return Producto(
+        codigo=fila["codigo"],
+        nombre=fila["nombre"],
+        marca=fila["marca"],
+        nutriscore=fila["nutriscore"],
+        unidad=fila["unidad"],
+        kcal=fila["kcal"],
+        proteinas=fila["proteinas"],
+        hidratos=fila["hidratos"],
+        grasas=fila["grasas"],
     )
 
 
@@ -208,36 +218,52 @@ def obtener_producto(
     cliente: httpx.Client | None = None,
     *,
     dias_max: int = DIAS_CACHE,
-) -> Producto:
+) -> ResultadoProducto:
     """Devuelve un producto usando primero la caché y solo si no está consulta Open Food Facts.
 
     Si el producto está en la base de datos y su fecha de consulta es de hace menos
     de `dias_max` días (30 por defecto), se devuelve directamente de la caché.
-    En caso contrario, se consulta Open Food Facts y se guarda en la base de datos.
+    Si la caché ha caducado o no existe, se consulta Open Food Facts. Si Open Food
+    Facts no está disponible pero existe una entrada en caché (aunque esté caducada),
+    se devuelve la versión en caché en lugar de fallar.
     """
     codigo = normalizar_codigo(codigo)
     if not codigo_valido(codigo):
         raise CodigoInvalido(f"código de barras no válido: {codigo!r}")
 
-    guardado = db.leer_producto(con, codigo)
-    if guardado is not None and guardado.consultado:
+    fila = db.leer_producto(con, codigo)
+    if fila is not None and fila["consultado"]:
         try:
-            fecha_consulta = datetime.fromisoformat(guardado.consultado)
+            fecha_consulta = datetime.fromisoformat(fila["consultado"])
             if fecha_consulta.tzinfo is None:
                 fecha_consulta = fecha_consulta.replace(tzinfo=UTC)
             if (datetime.now(UTC) - fecha_consulta) < timedelta(days=dias_max):
-                return guardado
+                return ResultadoProducto(producto_desde_fila(fila), desde_cache=True)
         except ValueError:
             pass
 
-    producto_off = buscar_producto(codigo, cliente=cliente)
+    try:
+        producto_off, datos_crudos = consultar_open_food_facts(codigo, cliente=cliente)
+    except OpenFoodFactsNoDisponible:
+        if fila is not None:
+            return ResultadoProducto(producto_desde_fila(fila), desde_cache=True)
+        raise
+
     db.guardar_producto(
-        con, producto_off, datos=producto_off.datos, consultado=producto_off.consultado
+        con,
+        codigo=producto_off.codigo,
+        nombre=producto_off.nombre,
+        marca=producto_off.marca,
+        nutriscore=producto_off.nutriscore,
+        unidad=producto_off.unidad,
+        kcal=producto_off.kcal,
+        proteinas=producto_off.proteinas,
+        hidratos=producto_off.hidratos,
+        grasas=producto_off.grasas,
+        datos=datos_crudos,
+        consultado=db.ahora(),
     )
-    return producto_off
-
-
-producto = obtener_producto
+    return ResultadoProducto(producto_off, desde_cache=False)
 
 
 def calcular_nutrientes(producto: Producto, cantidad: float) -> Nutrientes:
