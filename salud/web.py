@@ -712,9 +712,11 @@ def crear_app(
     lector_etiqueta: Callable[[bytes], ia.Etiqueta] | None = None,
     cliente_calendario: httpx.Client | None = None,
     pedir_consejo: Callable[[sqlite3.Connection, str], dict[str, Any]] | None = None,
+    estimar: Callable[[str], ia.Estimacion] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
+    estimar_fn = estimar or (lambda texto: ia.estimar_alimento(settings, texto))
     generando = threading.Lock()
     entrando = threading.Lock()
     entrada = _EntradaGarmin()
@@ -1279,6 +1281,182 @@ def crear_app(
         momento_elegido = momento_valido(request.query_params.get("momento"))
         return _pagina_comida(request, _fecha(request), momento_elegido=momento_elegido)
 
+    async def buscar_comida(request: Request) -> Response:
+        fecha = _fecha(request)
+        fecha_str = fecha.isoformat()
+        q = request.query_params.get("q", "").strip()
+        momento_elegido = momento_valido(request.query_params.get("momento"))
+        momento_qs = f"&{urlencode({'momento': momento_elegido})}" if momento_elegido else ""
+
+        if not q:
+            return RedirectResponse(f"/comida?fecha={fecha_str}{momento_qs}", status_code=303)
+
+        cod_norm = alimentos.normalizar_codigo(q)
+        if cod_norm.isdigit() and len(cod_norm) in alimentos.LONGITUDES_VALIDAS:
+            params = {"codigo": cod_norm, "fecha": fecha_str}
+            if momento_elegido:
+                params["momento"] = momento_elegido
+            return RedirectResponse(f"/comida/producto?{urlencode(params)}", status_code=303)
+
+        def _buscar_local() -> tuple[list[dict[str, Any]], list[db.Comida]]:
+            con = abrir_db()
+            try:
+                propios = db.buscar_productos(con, q)
+                anteriores = db.comidas_anteriores(con, q, hasta=fecha_str)
+                return propios, anteriores
+            finally:
+                con.close()
+
+        productos_locales, anteriores = await run_in_threadpool(_buscar_local)
+        genericos = ciqual.buscar(q)
+
+        off_error: str | None = None
+        off_productos: list[alimentos.ResultadoBusqueda] = []
+        try:
+            off_productos = await run_in_threadpool(alimentos.buscar_off, q, cliente_off)
+        except (alimentos.OpenFoodFactsNoDisponible, httpx.HTTPError):
+            off_error = "Open Food Facts no responde ahora; prueba en un minuto"
+
+        return _render(
+            "comida_buscar.html",
+            seccion="comida",
+            fecha=fecha_str,
+            momento=momento_elegido,
+            q=q,
+            productos_locales=productos_locales,
+            comidas_anteriores=anteriores,
+            genericos=genericos,
+            ciqual_fuente=ciqual.FUENTE,
+            off_productos=off_productos,
+            off_error=off_error,
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    async def repetir_comida(request: Request) -> Response:
+        datos = await _formulario(request)
+        id_raw = datos.get("id", "").strip()
+        fecha_raw = datos.get("fecha", "").strip()
+        momento_raw = datos.get("momento", "").strip()
+
+        try:
+            id_ = int(id_raw)
+        except ValueError:
+            return _volver("Comida no encontrada", "/comida")
+
+        try:
+            fecha_dt = date.fromisoformat(fecha_raw) if fecha_raw else hoy()
+        except ValueError:
+            return _volver("Fecha no válida", "/comida")
+
+        if fecha_dt > hoy():
+            return _volver("La fecha no puede ser posterior a hoy", "/comida")
+        fecha_str = fecha_dt.isoformat()
+
+        momento = momento_valido(momento_raw)
+        if momento is None:
+            return _volver("Momento no válido", f"/comida?fecha={fecha_str}")
+
+        def _repetir() -> str:
+            con = abrir_db()
+            try:
+                c = db.leer_comida(con, id_)
+                if c is None:
+                    raise ValueError("Comida no encontrada")
+                db.anadir_comida(
+                    con,
+                    fecha=fecha_str,
+                    momento=momento,
+                    nombre=c.nombre,
+                    cantidad=c.cantidad,
+                    unidad=c.unidad,
+                    kcal=c.kcal,
+                    proteinas=c.proteinas,
+                    hidratos=c.hidratos,
+                    grasas=c.grasas,
+                    codigo=c.codigo,
+                )
+                return c.nombre
+            finally:
+                con.close()
+
+        try:
+            nombre = await run_in_threadpool(_repetir)
+            return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha_str}")
+        except ValueError as exc:
+            return _volver(str(exc), f"/comida?fecha={fecha_str}")
+
+    async def estimar_comida_web(request: Request) -> Response:
+        datos = await _formulario(request)
+        q = datos.get("q", "").strip()
+        fecha_raw = datos.get("fecha", "").strip()
+        try:
+            fecha_dt = date.fromisoformat(fecha_raw) if fecha_raw else hoy()
+        except ValueError:
+            fecha_dt = hoy()
+        fecha_str = fecha_dt.isoformat()
+
+        momento_elegido = momento_valido(datos.get("momento"))
+        momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
+        qs_params = {"q": q, "fecha": fecha_str}
+        if momento_elegido:
+            qs_params["momento"] = momento_elegido
+        url_retorno = f"/comida/buscar?{urlencode(qs_params)}"
+
+        try:
+            est = await run_in_threadpool(estimar_fn, q)
+        except (ia.ErrorIA, ia.IAOcupada) as exc:
+            return _volver(str(exc), url_retorno)
+
+        prod_estimado = alimentos.Producto(
+            codigo="",
+            nombre=est.nombre,
+            marca=None,
+            nutriscore=None,
+            unidad=est.unidad,
+            kcal=est.kcal,
+            proteinas=est.proteinas,
+            hidratos=est.hidratos,
+            grasas=est.grasas,
+            racion_g=est.racion_g,
+            racion_nombre=est.racion_nombre,
+        )
+
+        marcas_ia: set[str] = set()
+        if est.nombre:
+            marcas_ia.add("nombre")
+        if est.unidad:
+            marcas_ia.add("unidad")
+        if est.kcal is not None:
+            marcas_ia.add("kcal")
+        if est.proteinas is not None:
+            marcas_ia.add("proteinas")
+        if est.hidratos is not None:
+            marcas_ia.add("hidratos")
+        if est.grasas is not None:
+            marcas_ia.add("grasas")
+        if est.racion_g is not None:
+            marcas_ia.add("racion_g")
+        if est.racion_nombre:
+            marcas_ia.add("racion_nombre")
+
+        return _render(
+            "comida_nuevo.html",
+            seccion="comida",
+            fecha=fecha_str,
+            codigo="",
+            p=prod_estimado,
+            origen=None,
+            aviso=None,
+            avisos=est.avisos,
+            mensaje=None,
+            error=None,
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_defecto,
+            ia="1",
+            marcas_ia=marcas_ia,
+        )
+
     def ver_comida_objetivos(request: Request) -> Response:
         con = abrir_db()
         try:
@@ -1759,6 +1937,9 @@ def crear_app(
             Route("/calendario/titulo", calendario_titulo_web, methods=["POST"]),
             Route("/lecturas", ver_lecturas),
             Route("/comida", ver_comida),
+            Route("/comida/buscar", buscar_comida),
+            Route("/comida/repetir", repetir_comida, methods=["POST"]),
+            Route("/comida/estimar", estimar_comida_web, methods=["POST"]),
             Route("/comida/consejo", pedir_consejo_web, methods=["POST"]),
             Route("/comida/objetivos", ver_comida_objetivos),
             Route("/comida/objetivos", guardar_comida_objetivos, methods=["POST"]),

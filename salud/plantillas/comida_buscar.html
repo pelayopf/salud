@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block titulo %}Buscar alimento · Salud{% endblock %}
+{% block contenido %}
+<p><a class="suave" href="/comida?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}">‹ Volver a Comida</a></p>
+
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+{% if momento %}
+<p class="suave">Añadiendo a: {{ momento | capitalize }}</p>
+{% endif %}
+
+{% if productos_locales %}
+<section class="panel">
+  <h2>Tus productos</h2>
+  <div class="lista">
+    {% for prod in productos_locales %}
+    <div class="fila">
+      <div>
+        {% if prod.tipo == 'propio' and not prod.codigo %}
+        <a href="/comida/propio/{{ prod.id }}?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ prod.nombre }}</strong></a>
+        {% else %}
+        <a href="/comida/producto?codigo={{ prod.codigo }}&fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ prod.nombre }}</strong></a>
+        {% endif %}
+        {% if prod.marca %}<span class="suave">· {{ prod.marca }}</span>{% endif %}
+        {% if prod.kcal is not none %}<div class="suave">{{ prod.kcal | cifra }} kcal/100 g</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if comidas_anteriores %}
+<section class="panel">
+  <h2>Lo que has apuntado antes</h2>
+  <div class="lista">
+    {% for c in comidas_anteriores %}
+    <div class="fila">
+      <div>
+        <strong>{{ c.nombre }}</strong>
+        <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
+        {% if c.kcal is not none %}<div class="suave">{{ c.kcal | cifra }} kcal</div>{% endif %}
+      </div>
+      <form method="post" action="/comida/repetir">
+        <input type="hidden" name="id" value="{{ c.id }}">
+        <input type="hidden" name="fecha" value="{{ fecha }}">
+        {% if momento %}<input type="hidden" name="momento" value="{{ momento }}">{% endif %}
+        <button type="submit" class="boton secundario pequeno">Repetir</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if genericos %}
+<section class="panel">
+  <h2>Alimentos genéricos</h2>
+  <div class="lista">
+    {% for g in genericos %}
+    <div class="fila">
+      <div>
+        <a href="/comida/generico/{{ g.codigo }}?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ g.nombre }}</strong></a>
+        {% if g.kcal is not none %}<div class="suave">{{ g.kcal | cifra }} kcal/100 g</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="suave">Fuente: {{ ciqual_fuente }}</p>
+</section>
+{% endif %}
+
+{% if off_productos or off_error %}
+<section class="panel">
+  <h2>Open Food Facts (España)</h2>
+  {% if off_error %}
+  <p class="suave">{{ off_error }}</p>
+  {% else %}
+  <div class="lista">
+    {% for p in off_productos %}
+    <div class="fila">
+      <div>
+        <a href="/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ p.nombre }}</strong></a>
+        {% if p.marca %}<span class="suave">· {{ p.marca }}</span>{% endif %}
+        {% if p.kcal is not none %}<div class="suave">{{ p.kcal | cifra }} kcal/100 g</div>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% set hay_resultados = (productos_locales | length > 0) or (comidas_anteriores | length > 0) or (genericos | length > 0) or (off_productos | length > 0) or off_error %}
+{% if not hay_resultados %}
+<p class="aviso">No hay resultados para «{{ q }}»</p>
+{% endif %}
+
+<section class="panel">
+  <h2>¿No lo encuentras?</h2>
+  <form class="formulario" method="post" action="/comida/estimar">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="fecha" value="{{ fecha }}">
+    {% if momento %}<input type="hidden" name="momento" value="{{ momento }}">{% endif %}
+    <div class="acciones">
+      <button type="submit" class="boton">Estimar con IA (unos 10 s)</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

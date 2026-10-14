@@ -62,13 +62,13 @@
   {% if momento_elegido %}
   <p class="suave">Añadiendo a: {{ momento_elegido | capitalize }}</p>
   {% endif %}
-  <form class="formulario" method="get" action="/comida/producto">
+  <form class="formulario" method="get" action="/comida/buscar">
     <input type="hidden" name="fecha" value="{{ fecha }}">
     {% if momento_elegido %}
     <input type="hidden" name="momento" value="{{ momento_elegido }}">
     {% endif %}
-    <label for="codigo">Buscar producto por código de barras</label>
-    <input id="codigo" name="codigo" inputmode="numeric" placeholder="Ej. 8410000000000" value="{{ codigo_buscado | default('') }}" required>
+    <label for="codigo">Buscar alimento o código de barras</label>
+    <input id="codigo" name="q" placeholder="Plátano, pan de centeno Aldi, 8410…" value="{{ codigo_buscado | default('') }}" required>
     <div class="acciones">
       <button type="submit" class="boton">Buscar</button>
       <button type="button" class="boton secundario" data-escanear hidden>Escanear</button>

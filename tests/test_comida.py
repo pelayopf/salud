@@ -10,7 +10,7 @@ import pytest
 from conftest import GarminFalso
 from starlette.testclient import TestClient
 
-from salud import alimentos, db
+from salud import alimentos, ciqual, db, ia
 from salud.config import Settings
 from salud.metricas import Metrica
 from salud.web import crear_app, datos_producto, momento_por_hora, momento_valido
@@ -21,12 +21,19 @@ EAN13_BIS = "2000000000015"
 
 def cliente_off_mock(
     productos: dict[str, Any] | None = None,
+    busqueda: dict[str, Any] | int | None = None,
 ) -> tuple[httpx.Client, list[httpx.Request]]:
     peticiones: list[httpx.Request] = []
     datos = productos or {}
 
     def manejar(peticion: httpx.Request) -> httpx.Response:
         peticiones.append(peticion)
+        if "/cgi/search.pl" in peticion.url.path:
+            if busqueda is not None:
+                if isinstance(busqueda, int):
+                    return httpx.Response(busqueda)
+                return httpx.Response(200, json=busqueda)
+            return httpx.Response(200, json={"count": 0, "products": []})
         for codigo, respuesta in datos.items():
             if f"/api/v2/product/{codigo}.json" in peticion.url.path:
                 if isinstance(respuesta, int):
@@ -42,6 +49,7 @@ def cliente_web(
     cliente_off: httpx.Client | None = None,
     hoy: date = date(2026, 1, 10),
     lector_etiqueta: Any = None,
+    estimar: Any = None,
 ) -> TestClient:
     app = crear_app(
         settings,
@@ -50,6 +58,7 @@ def cliente_web(
         hoy=lambda: hoy,
         cliente_off=cliente_off,
         lector_etiqueta=lector_etiqueta,
+        estimar=estimar,
     )
     return TestClient(app, follow_redirects=False)
 
@@ -1131,3 +1140,217 @@ def test_web_comida_generico_ciqual(settings, con, monkeypatch):
     assert "Manzana reineta" in r_nuevo.text
     assert 'value="52.0"' in r_nuevo.text or 'value="52"' in r_nuevo.text
     assert 'name="origen" value="ciqual"' in r_nuevo.text
+
+
+def test_buscar_comida_codigo_barras(settings):
+    c = cliente_web(settings)
+    r = c.get("/comida/buscar?q=8410297112041&fecha=2026-01-10&momento=comida")
+    assert r.status_code == 303
+    assert (
+        r.headers["location"]
+        == "/comida/producto?codigo=8410297112041&fecha=2026-01-10&momento=comida"
+    )
+
+
+def test_buscar_comida_vacio(settings):
+    c = cliente_web(settings)
+    r = c.get("/comida/buscar?q=&fecha=2026-01-10&momento=comida")
+    assert r.status_code == 303
+    assert r.headers["location"] == "/comida?fecha=2026-01-10&momento=comida"
+
+
+def test_buscar_comida_cuatro_grupos(settings, con, monkeypatch):
+    # 1. Tu producto
+    db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Plátano de Canarias",
+        marca="Canarias",
+        unidad="g",
+        kcal=90.0,
+        proteinas=1.0,
+        hidratos=20.0,
+        grasas=0.2,
+        origen="manual",
+    )
+    # 2. Comida anterior
+    db.anadir_comida(
+        con,
+        fecha="2026-01-08",
+        momento="merienda",
+        nombre="Plátano frito",
+        cantidad=100.0,
+        unidad="g",
+        kcal=140.0,
+        codigo=None,
+    )
+    # 3. Genérico CIQUAL
+    monkeypatch.setattr(
+        ciqual,
+        "buscar",
+        lambda _q, *_args, **_kwargs: [
+            ciqual.Generico(
+                codigo="13000",
+                nombre="Plátano, crudo",
+                nombre_original="Banana, raw",
+                grupo="Frutas",
+                kcal=89.0,
+                proteinas=1.1,
+                hidratos=22.8,
+                grasas=0.3,
+                fibra=2.6,
+                azucares=12.2,
+                sal=0.01,
+            )
+        ],
+    )
+    # 4. Open Food Facts
+    cliente_off, _ = cliente_off_mock(
+        busqueda={
+            "count": 1,
+            "products": [
+                {
+                    "code": EAN13,
+                    "product_name": "Plátano desecado",
+                    "brands": "Bio",
+                    "nutriments": {"energy-kcal_100g": 320.0},
+                }
+            ],
+        }
+    )
+
+    c = cliente_web(settings, cliente_off=cliente_off)
+    r = c.get("/comida/buscar?q=platano&fecha=2026-01-10&momento=comida")
+    assert r.status_code == 200
+
+    # Aparecen los cuatro títulos
+    assert "Tus productos" in r.text
+    assert "Lo que has apuntado antes" in r.text
+    assert "Alimentos genéricos" in r.text
+    assert "Open Food Facts (España)" in r.text
+
+    # Aparece el botón / sección "Estimar con IA"
+    assert "Estimar con IA" in r.text
+    assert "Repetir" in r.text
+    assert ciqual.FUENTE in r.text
+
+
+def test_buscar_comida_off_caido(settings, con):
+    # OFF devuelve 500
+    cliente_off, _ = cliente_off_mock(busqueda=500)
+    db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Pan de centeno propio",
+        marca=None,
+        unidad="g",
+        kcal=220.0,
+        proteinas=8.0,
+        hidratos=45.0,
+        grasas=1.0,
+        origen="manual",
+    )
+
+    c = cliente_web(settings, cliente_off=cliente_off)
+    r = c.get("/comida/buscar?q=centeno&fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "Tus productos" in r.text
+    assert "no responde ahora" in r.text
+
+
+def test_buscar_comida_sin_nada(settings, monkeypatch):
+    monkeypatch.setattr(ciqual, "buscar", lambda _q, *_args, **_kwargs: [])
+    cliente_off, _ = cliente_off_mock(busqueda={"count": 0, "products": []})
+
+    c = cliente_web(settings, cliente_off=cliente_off)
+    r = c.get("/comida/buscar?q=inexistente&fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "No hay resultados" in r.text
+    assert "Estimar con IA" in r.text
+
+
+def test_repetir_comida(settings, con):
+    id_orig = db.anadir_comida(
+        con,
+        fecha="2026-01-05",
+        momento="cena",
+        nombre="Tortilla francesa",
+        cantidad=100.0,
+        unidad="g",
+        kcal=140.0,
+        proteinas=11.0,
+        hidratos=1.0,
+        grasas=10.0,
+        codigo=None,
+    )
+    c = cliente_web(settings)
+    r = c.post(
+        "/comida/repetir",
+        data={"id": str(id_orig), "fecha": "2026-01-10", "momento": "comida"},
+    )
+    assert r.status_code == 303
+    assert "/comida?fecha=2026-01-10" in r.headers["location"]
+
+    nuevas = db.comidas(con, "2026-01-10")
+    assert len(nuevas) == 1
+    assert nuevas[0].nombre == "Tortilla francesa"
+    assert nuevas[0].momento == "comida"
+    assert nuevas[0].cantidad == 100.0
+    assert nuevas[0].kcal == 140.0
+    assert nuevas[0].proteinas == 11.0
+    assert nuevas[0].codigo is None
+
+
+def test_repetir_comida_id_malo(settings, con):
+    c = cliente_web(settings)
+    r = c.post(
+        "/comida/repetir",
+        data={"id": "99999", "fecha": "2026-01-10", "momento": "comida"},
+    )
+    assert r.status_code == 303
+    assert "mensaje=" in r.headers["location"]
+    assert len(db.comidas(con, "2026-01-10")) == 0
+
+
+def test_estimar_comida_web_exito(settings):
+    def estimar_falso(texto: str) -> ia.Estimacion:
+        return ia.Estimacion(
+            nombre=texto.capitalize(),
+            unidad="g",
+            kcal=89.0,
+            proteinas=1.1,
+            hidratos=22.8,
+            grasas=0.3,
+            racion_g=120.0,
+            racion_nombre="plátano",
+            avisos=("Valores estimados por IA: revísalos", "Aviso de prueba"),
+        )
+
+    c = cliente_web(settings, estimar=estimar_falso)
+    r = c.post(
+        "/comida/estimar",
+        data={"q": "platano", "fecha": "2026-01-10", "momento": "merienda"},
+    )
+    assert r.status_code == 200
+    assert 'name="ia" value="1"' in r.text
+    assert "chip-ia" in r.text
+    assert "de-ia" in r.text
+    assert "Valores estimados por IA: revísalos" in r.text
+    assert "Aviso de prueba" in r.text
+    assert 'value="Platano"' in r.text
+
+
+def test_estimar_comida_web_error_ia(settings):
+    def estimar_falla(_texto: str) -> ia.Estimacion:
+        raise ia.ErrorIA("La IA no reconoce ese alimento")
+
+    c = cliente_web(settings, estimar=estimar_falla)
+    r = c.post(
+        "/comida/estimar",
+        data={"q": "desconocido", "fecha": "2026-01-10", "momento": "comida"},
+    )
+    assert r.status_code == 303
+    assert "/comida/buscar?" in r.headers["location"]
+    assert "La+IA+no+reconoce+ese+alimento" in r.headers["location"]

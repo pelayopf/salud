@@ -4,6 +4,11 @@
 <p><a class="suave" href="/comida?fecha={{ fecha }}{% if momento_defecto %}&momento={{ momento_defecto | urlencode }}{% endif %}">‹ Volver a Comida</a></p>
 
 {% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
+{% if avisos %}
+  {% for av in avisos %}
+  <p class="aviso">{{ av }}</p>
+  {% endfor %}
+{% endif %}
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 {% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
 

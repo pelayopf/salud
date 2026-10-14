@@ -397,19 +397,8 @@ for (const form of document.querySelectorAll("form[data-producto]")) {
     });
   }
 
-  function marcarIA(input) {
+  function engancharLimpiarIA(input) {
     if (!input) return;
-    input.classList.add("de-ia");
-    if (input.id) {
-      const label = form.querySelector(`label[for="${input.id}"]`);
-      if (label && !label.querySelector(".chip-ia")) {
-        const chip = document.createElement("span");
-        chip.className = "chip-ia";
-        chip.textContent = "IA";
-        label.append(chip);
-      }
-    }
-
     const limpiar = () => {
       input.classList.remove("de-ia");
       if (input.id) {
@@ -425,6 +414,25 @@ for (const form of document.querySelectorAll("form[data-producto]")) {
 
     input.addEventListener("input", limpiar, { once: true });
     input.addEventListener("change", limpiar, { once: true });
+  }
+
+  function marcarIA(input) {
+    if (!input) return;
+    input.classList.add("de-ia");
+    if (input.id) {
+      const label = form.querySelector(`label[for="${input.id}"]`);
+      if (label && !label.querySelector(".chip-ia")) {
+        const chip = document.createElement("span");
+        chip.className = "chip-ia";
+        chip.textContent = "IA";
+        label.append(chip);
+      }
+    }
+    engancharLimpiarIA(input);
+  }
+
+  for (const input of form.querySelectorAll(".de-ia")) {
+    engancharLimpiarIA(input);
   }
 }
 
