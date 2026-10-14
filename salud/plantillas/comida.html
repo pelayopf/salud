@@ -18,12 +18,19 @@
       {% if proximo %}Próximo ejercicio: {{ proximo }}{% else %}Nada planificado hoy ni mañana{% endif %}
     </span>
   </div>
+  {% if aconsejando %}
+  <p class="suave" data-esperando-consejo>Preparando el consejo… tarda entre 30 s y minuto y medio. Puedes seguir usando la app.</p>
+  {% else %}
+  {% if error_consejo %}
+  <p class="aviso error" role="alert">{{ error_consejo }}</p>
+  {% endif %}
   <form class="formulario" method="post" action="/comida/consejo" data-consejo>
     <textarea name="nota" maxlength="300" placeholder="Opcional: ceno fuera, tengo poco tiempo…"></textarea>
     <div class="acciones">
       <button type="submit" class="boton">¿Qué como?</button>
     </div>
   </form>
+  {% endif %}
   {% if consejo %}
   <div class="consejo-detalle">
     <p class="suave">Consejo de las {{ consejo.creado | hora_local }}</p>

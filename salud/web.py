@@ -718,6 +718,8 @@ def crear_app(
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
     estimar_fn = estimar or (lambda texto: ia.estimar_alimento(settings, texto))
     generando = threading.Lock()
+    aconsejando = threading.Lock()
+    error_consejo: dict[str, str | None] = {"texto": None}  # último fallo, para enseñarlo una vez
     entrando = threading.Lock()
     entrada = _EntradaGarmin()
 
@@ -1253,6 +1255,9 @@ def crear_app(
                 llevas_m = tot_m.kcal if tot_m else 0.0
                 prog_momento[m] = _progreso(llevas_m, obj_m.kcal)
 
+        err_consejo = error_consejo["texto"]
+        error_consejo["texto"] = None
+
         return _render(
             "comida.html",
             seccion="comida",
@@ -1268,6 +1273,8 @@ def crear_app(
             recientes=recientes,
             productos_propios=propios,
             consejo=consejo_hoy,
+            aconsejando=aconsejando.locked(),
+            error_consejo=err_consejo,
             proximo=proximo,
             momentos=db.MOMENTOS,
             momento_defecto=momento_defecto,
@@ -1907,6 +1914,9 @@ def crear_app(
         return _volver("Entrada borrada", f"/comida?fecha={fecha}")
 
     async def pedir_consejo_web(request: Request) -> Response:
+        if not aconsejando.acquire(blocking=False):
+            return _volver("Ya estoy preparando el consejo", "/comida#consejo")
+        error_consejo["texto"] = None
         datos = await _formulario(request)
         nota = datos.get("nota", "")
 
@@ -1917,14 +1927,20 @@ def crear_app(
                     pedir_consejo(con, nota)
                 else:
                     consejo.pedir_consejo(con, settings, datetime.now(ZONA), nota)
+            except ia.ErrorIA as exc:
+                error_consejo["texto"] = str(exc)
+            except Exception:
+                log.exception("Error al preparar el consejo")
+                error_consejo["texto"] = "No se pudo preparar el consejo"
             finally:
                 con.close()
+                aconsejando.release()
 
-        try:
-            await run_in_threadpool(_trabajo)
-            return _volver("Consejo listo", "/comida#consejo")
-        except (ia.IAOcupada, ia.ErrorIA) as exc:
-            return _volver(str(exc), "/comida")
+        threading.Thread(target=_trabajo, daemon=True).start()
+        return _volver("Preparando el consejo", "/comida#consejo")
+
+    def estado_consejo(_request: Request) -> Response:
+        return JSONResponse({"preparando": aconsejando.locked()})
 
     return Starlette(
         routes=[
@@ -1941,6 +1957,7 @@ def crear_app(
             Route("/comida/repetir", repetir_comida, methods=["POST"]),
             Route("/comida/estimar", estimar_comida_web, methods=["POST"]),
             Route("/comida/consejo", pedir_consejo_web, methods=["POST"]),
+            Route("/comida/consejo/estado", estado_consejo),
             Route("/comida/objetivos", ver_comida_objetivos),
             Route("/comida/objetivos", guardar_comida_objetivos, methods=["POST"]),
             Route("/comida/nuevo", ver_comida_nuevo),

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -238,8 +240,10 @@ def test_pedir_consejo(con, settings: Settings):
 
 def test_web_consejo(con, settings: Settings):
     hoy = date(2026, 1, 10)
+    evento = threading.Event()
 
     def pedir_falso(conexion: Any, nota: str) -> dict[str, Any]:
+        evento.wait(timeout=5)
         db.guardar_consejo(
             conexion,
             fecha="2026-01-10",
@@ -266,25 +270,54 @@ def test_web_consejo(con, settings: Settings):
     )
     client = TestClient(app, follow_redirects=False)
 
-    # POST con éxito -> 303 a /comida...#consejo
+    # POST responde 303 sin esperar al evento
     r_post = client.post("/comida/consejo", data={"nota": "ceno fuera"})
     assert r_post.status_code == 303
     loc = r_post.headers["location"]
     assert loc.startswith("/comida")
     assert loc.endswith("#consejo")
 
-    # GET /comida muestra "Consejo de las" y los apartados
-    r_get = client.get("/comida")
-    assert r_get.status_code == 200
-    assert "Consejo de las" in r_get.text
-    assert "Comer algo rico" in r_get.text
-    assert "Ahora" in r_get.text
-    assert "Antes" in r_get.text
-    assert "Durante" in r_get.text
-    assert "Después" in r_get.text
-    assert "Descansa" in r_get.text
+    # Con el evento sin soltar, GET /comida contiene data-esperando-consejo
+    # y no el formulario action="/comida/consejo"
+    r_esperando = client.get("/comida")
+    assert r_esperando.status_code == 200
+    assert "data-esperando-consejo" in r_esperando.text
+    assert 'action="/comida/consejo"' not in r_esperando.text
 
-    # Con un falso que lanza ErrorIA -> mensaje "x"
+    # /comida/consejo/estado da {"preparando": true}
+    r_estado = client.get("/comida/consejo/estado")
+    assert r_estado.status_code == 200
+    assert r_estado.json() == {"preparando": True}
+
+    # Un segundo POST redirige con "Ya estoy preparando el consejo"
+    r_post2 = client.post("/comida/consejo", data={"nota": "otra nota"})
+    assert r_post2.status_code == 303
+    loc2 = r_post2.headers["location"]
+    assert "Ya+estoy+preparando+el+consejo" in loc2 or "Ya estoy preparando el consejo" in loc2
+
+    # Suelta el evento y espera a que /comida/consejo/estado dé false
+    evento.set()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 5:
+        if not client.get("/comida/consejo/estado").json()["preparando"]:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("El consejo no terminó a tiempo")
+
+    # GET /comida muestra el consejo y el formulario
+    r_listo = client.get("/comida")
+    assert r_listo.status_code == 200
+    assert 'action="/comida/consejo"' in r_listo.text
+    assert "Consejo de las" in r_listo.text
+    assert "Comer algo rico" in r_listo.text
+    assert "Ahora" in r_listo.text
+    assert "Antes" in r_listo.text
+    assert "Durante" in r_listo.text
+    assert "Después" in r_listo.text
+    assert "Descansa" in r_listo.text
+
+    # Falso que lanza ia.ErrorIA("Error simulado de IA")
     def pedir_error(_conexion: Any, _nota: str) -> dict[str, Any]:
         raise ia.ErrorIA("Error simulado de IA")
 
@@ -295,10 +328,27 @@ def test_web_consejo(con, settings: Settings):
         hoy=lambda: hoy,
         pedir_consejo=pedir_error,
     )
-    client_err = TestClient(app_err, follow_redirects=True)
-    r_err = client_err.post("/comida/consejo", data={"nota": ""})
-    assert r_err.status_code == 200
-    assert "Error simulado de IA" in r_err.text
+    client_err = TestClient(app_err, follow_redirects=False)
+    r_post_err = client_err.post("/comida/consejo", data={"nota": ""})
+    assert r_post_err.status_code == 303
+
+    # Tras esperar a que termine
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 5:
+        if not client_err.get("/comida/consejo/estado").json()["preparando"]:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("El consejo con error no terminó a tiempo")
+
+    # GET /comida muestra "Error simulado de IA"; un segundo GET ya no lo muestra
+    r_err1 = client_err.get("/comida")
+    assert r_err1.status_code == 200
+    assert "Error simulado de IA" in r_err1.text
+
+    r_err2 = client_err.get("/comida")
+    assert r_err2.status_code == 200
+    assert "Error simulado de IA" not in r_err2.text
 
     # GET /comida de otro día -> no aparece el panel
     r_otro = client.get("/comida?fecha=2026-01-09")

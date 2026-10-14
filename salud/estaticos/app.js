@@ -442,9 +442,27 @@ if (formConsejo) {
     const boton = formConsejo.querySelector("button");
     if (boton) {
       boton.disabled = true;
-      boton.textContent = "Pensando… (unos 30 s)";
+      boton.textContent = "Enviando…";
     }
   });
+}
+
+const esperandoConsejo = document.querySelector("[data-esperando-consejo]");
+if (esperandoConsejo) {
+  const intervalo = setInterval(async () => {
+    try {
+      const resp = await fetch("/comida/consejo/estado");
+      if (resp.ok) {
+        const datos = await resp.json();
+        if (!datos.preparando) {
+          clearInterval(intervalo);
+          location.replace("/comida#consejo");
+        }
+      }
+    } catch {
+      // Si el fetch falla, seguir intentando.
+    }
+  }, 4000);
 }
 
 
