@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import secrets
 import sqlite3
 import threading
@@ -725,8 +726,13 @@ def crear_app(
 
     # --- Comida --------------------------------------------------------------
 
-    def ver_comida(request: Request) -> Response:
-        fecha = _fecha(request)
+    def _pagina_comida(
+        request: Request,
+        fecha: date,
+        *,
+        error: str | None = None,
+        codigo_buscado: str = "",
+    ) -> HTMLResponse:
         con = abrir_db()
         try:
             comidas_dia = db.comidas(con, fecha.isoformat())
@@ -750,70 +756,30 @@ def crear_app(
             momentos=db.MOMENTOS,
             momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
             mensaje=request.query_params.get("mensaje"),
-            error=request.query_params.get("error"),
+            error=error or request.query_params.get("error"),
+            codigo_buscado=codigo_buscado,
         )
+
+    def ver_comida(request: Request) -> Response:
+        return _pagina_comida(request, _fecha(request))
 
     def ver_producto(request: Request) -> Response:
         fecha = _fecha(request)
         codigo = request.query_params.get("codigo", "").strip()
         if not codigo:
-            con = abrir_db()
-            try:
-                comidas_dia = db.comidas(con, fecha.isoformat())
-                totales = db.totales_dia(con, fecha.isoformat())
-                recientes = db.productos_recientes(con)
-            finally:
-                con.close()
-            comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
-            for c in comidas_dia:
-                comidas_por_momento.setdefault(c.momento, []).append(c)
-            return _render(
-                "comida.html",
-                seccion="comida",
-                fecha=fecha.isoformat(),
-                es_hoy=fecha == hoy(),
-                anterior=(fecha - timedelta(days=1)).isoformat(),
-                siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
-                comidas_por_momento=comidas_por_momento,
-                totales=totales,
-                recientes=recientes,
-                momentos=db.MOMENTOS,
-                momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
-                codigo_buscado="",
-                error="Escribe un código de barras",
-            )
+            return _pagina_comida(request, fecha, error="Escribe un código de barras")
         con = abrir_db()
         try:
             try:
                 res = alimentos.obtener_producto(con, codigo, cliente_off)
             except alimentos.ErrorAlimentos as exc:
-                comidas_dia = db.comidas(con, fecha.isoformat())
-                totales = db.totales_dia(con, fecha.isoformat())
-                recientes = db.productos_recientes(con)
-                comidas_por_momento = {m: [] for m in db.MOMENTOS}
-                for c in comidas_dia:
-                    comidas_por_momento.setdefault(c.momento, []).append(c)
                 if isinstance(exc, alimentos.CodigoInvalido):
                     error_msg = f"Código no válido: {codigo}"
                 elif isinstance(exc, alimentos.ProductoNoEncontrado):
                     error_msg = f"Producto no encontrado: {codigo}"
                 else:
                     error_msg = "Open Food Facts no responde en este momento"
-                return _render(
-                    "comida.html",
-                    seccion="comida",
-                    fecha=fecha.isoformat(),
-                    es_hoy=fecha == hoy(),
-                    anterior=(fecha - timedelta(days=1)).isoformat(),
-                    siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
-                    comidas_por_momento=comidas_por_momento,
-                    totales=totales,
-                    recientes=recientes,
-                    momentos=db.MOMENTOS,
-                    momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
-                    codigo_buscado=codigo,
-                    error=error_msg,
-                )
+                return _pagina_comida(request, fecha, error=error_msg, codigo_buscado=codigo)
         finally:
             con.close()
         return _render(
@@ -826,25 +792,14 @@ def crear_app(
             momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
         )
 
-    async def anadir(request: Request) -> Response:
-        datos = await _formulario(request)
-        fecha = datos.get("fecha", "").strip() or hoy().isoformat()
-        try:
-            date.fromisoformat(fecha)
-        except ValueError:
-            fecha = hoy().isoformat()
-
+    def _guardar_comida(datos: dict[str, str], fecha: str, cantidad: float) -> str:
         codigo = datos.get("codigo", "").strip()
+        momento = datos.get("momento", "").strip()
         con = abrir_db()
         try:
             if codigo:
                 res = alimentos.obtener_producto(con, codigo, cliente_off)
                 prod = res.producto
-                try:
-                    cantidad = float(datos.get("cantidad", "100").strip().replace(",", "."))
-                except ValueError:
-                    return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha}")
-                momento = datos.get("momento", "").strip()
                 nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
                 nombre = prod.nombre or f"Producto {codigo}"
                 db.anadir_comida(
@@ -860,28 +815,24 @@ def crear_app(
                     grasas=nutrientes.grasas,
                     codigo=codigo,
                 )
-                return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha}")
+                return nombre
             else:
                 nombre = datos.get("nombre", "").strip()
-                momento = datos.get("momento", "").strip()
                 unidad = datos.get("unidad", "").strip()
-                cantidad_str = datos.get("cantidad", "").strip().replace(",", ".")
-                try:
-                    cantidad = float(cantidad_str)
-                except ValueError:
-                    return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha}")
 
                 def _parse_nutriente(campo: str) -> float | None:
                     v = datos.get(campo, "").strip().replace(",", ".")
-                    return float(v) if v else None
+                    if not v:
+                        return None
+                    val = float(v)
+                    if not math.isfinite(val):
+                        raise ValueError(f"El valor de {campo} debe ser un número finito")
+                    return val
 
-                try:
-                    kcal = _parse_nutriente("kcal")
-                    proteinas = _parse_nutriente("proteinas")
-                    hidratos = _parse_nutriente("hidratos")
-                    grasas = _parse_nutriente("grasas")
-                except ValueError:
-                    return _volver("Los nutrientes deben ser números", f"/comida?fecha={fecha}")
+                kcal = _parse_nutriente("kcal")
+                proteinas = _parse_nutriente("proteinas")
+                hidratos = _parse_nutriente("hidratos")
+                grasas = _parse_nutriente("grasas")
 
                 db.anadir_comida(
                     con,
@@ -895,13 +846,39 @@ def crear_app(
                     hidratos=hidratos,
                     grasas=grasas,
                 )
-                return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha}")
-        except ValueError as exc:
-            return _volver(str(exc), f"/comida?fecha={fecha}")
-        except alimentos.ErrorAlimentos as exc:
-            return _volver(str(exc), f"/comida?fecha={fecha}")
+                return nombre
         finally:
             con.close()
+
+    async def anadir(request: Request) -> Response:
+        datos = await _formulario(request)
+        fecha_raw = datos.get("fecha", "").strip()
+        try:
+            fecha_dt = date.fromisoformat(fecha_raw) if fecha_raw else hoy()
+        except ValueError:
+            return _volver("Fecha no válida", "/comida")
+        if fecha_dt > hoy():
+            return _volver("La fecha no puede ser posterior a hoy", "/comida")
+        fecha_str = fecha_dt.isoformat()
+
+        codigo = datos.get("codigo", "").strip()
+        try:
+            cantidad_str = datos.get("cantidad", "100" if codigo else "").strip().replace(",", ".")
+            if not cantidad_str:
+                return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha_str}")
+            cantidad = float(cantidad_str)
+            if not math.isfinite(cantidad):
+                return _volver(
+                    "La cantidad debe ser un número finito", f"/comida?fecha={fecha_str}"
+                )
+        except ValueError:
+            return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha_str}")
+
+        try:
+            nombre = await run_in_threadpool(_guardar_comida, datos, fecha_str, cantidad)
+            return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha_str}")
+        except (ValueError, alimentos.ErrorAlimentos) as exc:
+            return _volver(str(exc), f"/comida?fecha={fecha_str}")
 
     async def borrar(request: Request) -> Response:
         id_ = int(request.path_params["id"])
@@ -913,11 +890,15 @@ def crear_app(
             date.fromisoformat(fecha)
         except ValueError:
             fecha = hoy().isoformat()
-        con = abrir_db()
-        try:
-            db.borrar_comida(con, id_)
-        finally:
-            con.close()
+
+        def _hacer_borrar() -> None:
+            con = abrir_db()
+            try:
+                db.borrar_comida(con, id_)
+            finally:
+                con.close()
+
+        await run_in_threadpool(_hacer_borrar)
         return _volver("Entrada borrada", f"/comida?fecha={fecha}")
 
     return Starlette(

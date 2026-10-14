@@ -148,14 +148,6 @@ if (
     const form = botonEscanear.closest("form") || botonEscanear.parentElement;
     form.after(contenedor);
 
-    try {
-      await video.play();
-    } catch (_err) {
-      cerrar();
-      mostrarErrorEscaner("No se pudo reproducir el vídeo de la cámara.");
-      return;
-    }
-
     let timer = null;
 
     function cerrar() {
@@ -172,6 +164,14 @@ if (
     }
 
     botonCerrar.addEventListener("click", cerrar);
+
+    try {
+      await video.play();
+    } catch (_err) {
+      cerrar();
+      mostrarErrorEscaner("No se pudo reproducir el vídeo de la cámara.");
+      return;
+    }
 
     timer = setInterval(async () => {
       if (video.readyState < 2) return;

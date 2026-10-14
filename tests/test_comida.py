@@ -336,3 +336,51 @@ def test_post_csrf_cross_site_rechazado(settings):
         headers={"sec-fetch-site": "cross-site"},
     )
     assert r.status_code == 403
+
+
+def test_cantidad_nan_e_inf_rechazadas(settings):
+    c = cliente_web(settings)
+    for valor in ("nan", "inf", "-inf"):
+        r = c.post(
+            "/comida/anadir",
+            data={
+                "nombre": "Pan",
+                "momento": "comida",
+                "cantidad": valor,
+                "unidad": "g",
+                "fecha": "2026-01-10",
+            },
+        )
+        assert r.status_code == 303
+        assert "finito" in r.headers["location"]
+
+    # Nutriente a mano no finito
+    r_nutriente = c.post(
+        "/comida/anadir",
+        data={
+            "nombre": "Pan",
+            "momento": "comida",
+            "cantidad": "100",
+            "unidad": "g",
+            "kcal": "nan",
+            "fecha": "2026-01-10",
+        },
+    )
+    assert r_nutriente.status_code == 303
+    assert "finito" in r_nutriente.headers["location"]
+
+
+def test_fecha_futura_rechazada(settings):
+    c = cliente_web(settings)  # hoy es 2026-01-10
+    r = c.post(
+        "/comida/anadir",
+        data={
+            "nombre": "Pan",
+            "momento": "comida",
+            "cantidad": "100",
+            "unidad": "g",
+            "fecha": "2026-01-15",
+        },
+    )
+    assert r.status_code == 303
+    assert "posterior+a+hoy" in r.headers["location"]
