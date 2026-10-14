@@ -122,6 +122,19 @@ def _raiz(fichero: Path) -> ET.Element:
     return ET.fromstring(_MENOR_SUELTO.sub("&lt;", texto))
 
 
+def kcal_desde_macros(
+    proteinas: float | None, hidratos: float | None, grasas: float | None, fibra: float | None
+) -> float | None:
+    """Kcal con los factores del Reglamento (UE) 1169/2011 si CIQUAL no trae la energía.
+
+    Unos 900 alimentos (verduras crudas, sobre todo) vienen sin energía pero con
+    macros: 4 kcal/g proteínas e hidratos, 9 grasas, 2 fibra.
+    """
+    if proteinas is None or hidratos is None or grasas is None:
+        return None
+    return round(4 * proteinas + 4 * hidratos + 9 * grasas + 2 * (fibra or 0), 1)
+
+
 def _buscar_fichero_xml(directorio: Path, tipo: str) -> Path:
     """Encuentra el fichero XML correspondiente al tipo en el directorio dado."""
     if tipo == "alim_grp":
@@ -193,6 +206,8 @@ def leer_xml(directorio: Path) -> list[Generico]:
         kcal = c.get("328")
         if kcal is None:
             kcal = c.get("333")
+        if kcal is None:
+            kcal = kcal_desde_macros(c.get("25000"), c.get("31000"), c.get("40000"), c.get("34100"))
         alimentos.append(
             Generico(
                 codigo=code,

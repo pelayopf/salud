@@ -437,3 +437,11 @@ def test_buscar() -> None:
 
     # Búsqueda con palabras cortas de menos de 2 letras
     assert buscar("a", alimentos=inventada) == []
+
+
+def test_kcal_desde_macros() -> None:
+    from salud.ciqual import kcal_desde_macros
+
+    assert kcal_desde_macros(1.3, 1.33, 0.2, 1.2) == 14.7
+    assert kcal_desde_macros(1.0, 1.0, 1.0, None) == 17.0
+    assert kcal_desde_macros(None, 1.0, 1.0, 1.0) is None
