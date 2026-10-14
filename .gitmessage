@@ -15,6 +15,7 @@ tipo(scope): resumen en imperativo, minúsculas, sin punto final
 #   deploy   - systemd, backup y despliegue en calamar (deploy/)
 #   alimentos - productos y nutrición: Open Food Facts (alimentos.py)
 #   ia       - funciones de IA bajo petición: motores y tareas (ia.py)
+#   calendario - lo planificado: Google Calendar y semana tipo (calendario.py)
 #   repo     - scaffolding del repositorio (gitignore, readme, config de herramientas)
 #
 # Si ninguno encaja, propón uno nuevo explícitamente y añádelo aquí.
