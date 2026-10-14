@@ -20,14 +20,13 @@
   ('actividades', '/actividades', 'Actividades', '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>'),
   ('lecturas', '/lecturas', 'Lecturas', '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>'),
 ] %}
+{% block cabecera %}
 <header class="barra">
   <div class="barra-interior">
     <a class="marca" href="/">
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="15" fill="#f4f1e8" fill-opacity=".12"/>
-        <path d="M10 34h11l5-12 8 22 5-10h15" stroke="#f4f1e8" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <circle cx="54" cy="34" r="4" fill="#f0a27a"/>
-      </svg>
+      <span class="logo-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+      </span>
       Salud
     </a>
     <nav class="nav-escritorio" aria-label="Secciones">
@@ -36,17 +35,18 @@
       {% endfor %}
     </nav>
     <a class="ajustes" href="/conexiones" aria-label="Conexiones" title="Conexiones"{% if seccion == 'conexiones' %} aria-current="page"{% endif %}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 14.5l5-5"/><path d="M11 6.5l1.5-1.5a3.5 3.5 0 0 1 5 5L16 11.5"/><path d="M13 17.5L11.5 19a3.5 3.5 0 0 1-5-5L8 12.5"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </a>
   </div>
 </header>
+{% endblock %}
 <main>
 {% block contenido %}{% endblock %}
 </main>
 <nav class="nav-inferior" aria-label="Secciones">
   {% for clave, url, nombre, icono in secciones %}
   <a href="{{ url }}"{% if seccion == clave %} aria-current="page"{% endif %}>
-    <span class="icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icono | safe }}</svg></span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icono | safe }}</svg>
     {{ nombre }}
   </a>
   {% endfor %}
