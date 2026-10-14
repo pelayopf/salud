@@ -223,6 +223,17 @@ CREATE TABLE IF NOT EXISTS autorizaciones_pendientes (
     state TEXT PRIMARY KEY,
     creada TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS borradores_comida (
+    id INTEGER PRIMARY KEY,
+    creado TEXT NOT NULL,
+    fecha TEXT NOT NULL,
+    momento TEXT NOT NULL,
+    texto TEXT NOT NULL,
+    con_foto INTEGER NOT NULL,
+    estado TEXT NOT NULL,
+    error TEXT,
+    alimentos TEXT
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -305,6 +316,24 @@ class Comida:
     grasas: float | None = None
     codigo: str | None = None
     creado: str = ""
+
+
+PREPARANDO_MAX_S = 600
+
+
+@dataclass(frozen=True)
+class BorradorComida:
+    """Borrador de comida analizada con IA en proceso o lista para revisar."""
+
+    id: int
+    creado: str
+    fecha: str
+    momento: str
+    texto: str
+    con_foto: bool
+    estado: str  # 'preparando' | 'listo' | 'error'
+    error: str | None = None
+    alimentos: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -784,6 +813,111 @@ def guardar_consejo(
             (fecha, momento, nota, json.dumps(contenido, ensure_ascii=False), modelo, segundos),
         )
         return int(cur.lastrowid or 0)
+
+
+def crear_borrador_comida(
+    con: sqlite3.Connection,
+    fecha: str,
+    momento: str,
+    texto: str,
+    con_foto: bool,
+) -> int:
+    """Crea un borrador en estado 'preparando' tras borrar los de más de 2 días."""
+    limite = (datetime.now(UTC) - timedelta(days=2)).isoformat(timespec="seconds")
+    with con:
+        con.execute("DELETE FROM borradores_comida WHERE creado < ?", (limite,))
+        cur = con.execute(
+            """
+            INSERT INTO borradores_comida (creado, fecha, momento, texto, con_foto, estado)
+            VALUES (?, ?, ?, ?, ?, 'preparando')
+            """,
+            (ahora(), fecha, momento, texto, 1 if con_foto else 0),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def completar_borrador_comida(
+    con: sqlite3.Connection,
+    id_: int,
+    alimentos: list[dict[str, Any]],
+) -> None:
+    """Marca un borrador como 'listo' y guarda sus alimentos propuestos en JSON."""
+    alimentos_json = json.dumps(alimentos, ensure_ascii=False)
+    with con:
+        con.execute(
+            """
+            UPDATE borradores_comida
+            SET estado = 'listo', alimentos = ?, error = NULL
+            WHERE id = ?
+            """,
+            (alimentos_json, id_),
+        )
+
+
+def fallar_borrador_comida(con: sqlite3.Connection, id_: int, error: str) -> None:
+    """Marca un borrador como 'error' con el mensaje correspondiente."""
+    with con:
+        con.execute(
+            """
+            UPDATE borradores_comida
+            SET estado = 'error', error = ?
+            WHERE id = ?
+            """,
+            (error, id_),
+        )
+
+
+def leer_borrador_comida(
+    con: sqlite3.Connection,
+    id_: int,
+    ahora: datetime | None = None,
+) -> BorradorComida | None:
+    """Lee un borrador de comida. Si lleva más de 600 s preparando, lo devuelve como error."""
+    fila = con.execute(
+        "SELECT id, creado, fecha, momento, texto, con_foto, estado, error, alimentos "
+        "FROM borradores_comida WHERE id = ?",
+        (id_,),
+    ).fetchone()
+    if not fila:
+        return None
+
+    estado = fila["estado"]
+    error = fila["error"]
+    if estado == "preparando":
+        dt_creado = datetime.fromisoformat(fila["creado"])
+        if dt_creado.tzinfo is None:
+            dt_creado = dt_creado.replace(tzinfo=UTC)
+        ref = ahora if ahora is not None else datetime.now(UTC)
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=UTC)
+        if (ref - dt_creado).total_seconds() > PREPARANDO_MAX_S:
+            estado = "error"
+            error = "Se interrumpió el análisis; vuelve a intentarlo"
+
+    alimentos_raw = fila["alimentos"]
+    try:
+        alimentos = json.loads(alimentos_raw) if alimentos_raw else []
+    except (json.JSONDecodeError, TypeError):
+        alimentos = []
+
+    return BorradorComida(
+        id=int(fila["id"]),
+        creado=fila["creado"],
+        fecha=fila["fecha"],
+        momento=fila["momento"],
+        texto=fila["texto"],
+        con_foto=bool(fila["con_foto"]),
+        estado=estado,
+        error=error,
+        alimentos=alimentos,
+    )
+
+
+def borrar_borrador_comida(con: sqlite3.Connection, id_: int) -> bool:
+    """Borra un borrador por su identificador. Devuelve True si existía."""
+    with con:
+        cur = con.execute("DELETE FROM borradores_comida WHERE id = ?", (id_,))
+        return cur.rowcount > 0
 
 
 # --- Lectura -----------------------------------------------------------------

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 from conftest import hay
 
@@ -976,3 +977,132 @@ def test_autorizaciones_pendientes(con):
     db.guardar_autorizacion(con, "nuevo")
     assert not db.consumir_autorizacion(con, "viejo")
     assert db.consumir_autorizacion(con, "nuevo")
+
+
+def test_borradores_comida_ciclo_completo(con):
+    # 1. Crear borrador
+    id_ = db.crear_borrador_comida(
+        con,
+        fecha="2026-10-14",
+        momento="cena",
+        texto="150 g de sopa",
+        con_foto=False,
+    )
+    assert id_ > 0
+
+    borrador = db.leer_borrador_comida(con, id_)
+    assert borrador is not None
+    assert borrador.id == id_
+    assert borrador.fecha == "2026-10-14"
+    assert borrador.momento == "cena"
+    assert borrador.texto == "150 g de sopa"
+    assert borrador.con_foto is False
+    assert borrador.estado == "preparando"
+    assert borrador.error is None
+    assert borrador.alimentos == []
+
+    # 2. Completar borrador
+    alimentos = [
+        {
+            "nombre": "Sopa",
+            "cantidad": 150.0,
+            "unidad": "g",
+            "kcal": 100.0,
+            "proteinas": 3.0,
+            "hidratos": 15.0,
+            "grasas": 2.0,
+            "momento": "cena",
+            "aviso": None,
+        }
+    ]
+    db.completar_borrador_comida(con, id_, alimentos)
+    listo = db.leer_borrador_comida(con, id_)
+    assert listo is not None
+    assert listo.estado == "listo"
+    assert listo.alimentos == alimentos
+    assert listo.error is None
+
+    # 3. Borrar borrador
+    assert db.borrar_borrador_comida(con, id_) is True
+    assert db.leer_borrador_comida(con, id_) is None
+    assert db.borrar_borrador_comida(con, id_) is False
+
+
+def test_borrador_comida_fallar(con):
+    id_ = db.crear_borrador_comida(
+        con,
+        fecha="2026-10-14",
+        momento="comida",
+        texto="algo raro",
+        con_foto=True,
+    )
+    db.fallar_borrador_comida(con, id_, "No se reconoció alimento")
+    borrador = db.leer_borrador_comida(con, id_)
+    assert borrador is not None
+    assert borrador.estado == "error"
+    assert borrador.error == "No se reconoció alimento"
+    assert borrador.con_foto is True
+
+
+def test_borrador_comida_caducado(con):
+    ahora_dt = datetime.now(UTC)
+    id_ = db.crear_borrador_comida(
+        con,
+        fecha="2026-10-14",
+        momento="desayuno",
+        texto="tostada",
+        con_foto=False,
+    )
+
+    # 590 s después: sigue en preparando
+    t_590 = ahora_dt + timedelta(seconds=590)
+    b_590 = db.leer_borrador_comida(con, id_, ahora=t_590)
+    assert b_590 is not None
+    assert b_590.estado == "preparando"
+
+    # 601 s después (> PREPARANDO_MAX_S = 600): pasa a error
+    t_601 = ahora_dt + timedelta(seconds=601)
+    b_601 = db.leer_borrador_comida(con, id_, ahora=t_601)
+    assert b_601 is not None
+    assert b_601.estado == "error"
+    assert b_601.error == "Se interrumpió el análisis; vuelve a intentarlo"
+
+    # Si ya estaba listo, no se altera
+    db.completar_borrador_comida(con, id_, [{"nombre": "Tostada"}])
+    b_listo = db.leer_borrador_comida(con, id_, ahora=t_601)
+    assert b_listo is not None
+    assert b_listo.estado == "listo"
+
+
+def test_borradores_comida_limpieza_antiguos(con):
+    ahora_dt = datetime.now(UTC)
+    hace_3_dias = (ahora_dt - timedelta(days=3)).isoformat(timespec="seconds")
+    hace_1_dia = (ahora_dt - timedelta(days=1)).isoformat(timespec="seconds")
+
+    # Insertamos manualmente un borrador viejo y uno reciente
+    cur1 = con.execute(
+        "INSERT INTO borradores_comida (creado, fecha, momento, texto, con_foto, estado) "
+        "VALUES (?, '2026-10-11', 'comida', 'viejo', 0, 'listo')",
+        (hace_3_dias,),
+    )
+    id_viejo = int(cur1.lastrowid)
+
+    cur2 = con.execute(
+        "INSERT INTO borradores_comida (creado, fecha, momento, texto, con_foto, estado) "
+        "VALUES (?, '2026-10-13', 'comida', 'reciente', 0, 'listo')",
+        (hace_1_dia,),
+    )
+    id_reciente = int(cur2.lastrowid)
+
+    # Al crear uno nuevo, debe limpiar los de más de 2 días
+    id_nuevo = db.crear_borrador_comida(
+        con,
+        fecha="2026-10-14",
+        momento="comida",
+        texto="nuevo",
+        con_foto=False,
+    )
+
+    assert db.leer_borrador_comida(con, id_viejo) is None
+    assert db.leer_borrador_comida(con, id_reciente) is not None
+    assert db.leer_borrador_comida(con, id_nuevo) is not None
