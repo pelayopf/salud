@@ -36,7 +36,7 @@
     <div class="cabecera">
       <h2>{{ m | capitalize }}</h2>
       <span class="derecha">
-        <strong>{% if tot_m and tot_m.entradas > 0 and tot_m.sin_kcal < tot_m.entradas %}{{ tot_m.kcal | cifra }} kcal{% else %}—{% endif %}</strong>
+        <strong>{% if tot_m and tot_m.entradas > 0 and tot_m.sin_kcal < tot_m.entradas %}{{ tot_m.kcal | cifra }}{% else %}—{% endif %}</strong>{% if objetivo and m in objetivo.por_momento %}<span class="suave"> / {{ objetivo.por_momento[m].kcal | cifra }}</span>{% endif %} kcal
       </span>
     </div>
     {% if items %}
