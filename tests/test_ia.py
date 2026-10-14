@@ -502,3 +502,56 @@ def test_leer_etiqueta_con_motor_falso(tmp_path):
     assert len(tarea_recibida.adjuntos) == 1
     assert tarea_recibida.adjuntos[0].tipo == "image/jpeg"
     assert tarea_recibida.adjuntos[0].datos == img_valida
+
+
+def test_motor_agy_modelo_override(tmp_path, monkeypatch):
+    token_falso = tmp_path / "fake-agy-token"
+    token_falso.write_text("token-secret")
+    settings = Settings(
+        db_path=tmp_path / "salud.db",
+        agy="agy",
+        agy_token=token_falso,
+        ia_modelo_agy="gemini-3.8-flash-low",
+    )
+    tarea = Tarea(
+        nombre="consejo",
+        instrucciones="Qué como",
+        esquema={"type": "object"},
+        modelo_agy="gemini-3.8-flash-high",
+    )
+
+    def fake_run(orden, **_kwargs):
+        model_idx = orden.index("--model")
+        assert orden[model_idx + 1] == "gemini-3.8-flash-high"
+        salida = {"status": "SUCCESS", "structured_output": {"ok": True}}
+        return subprocess.CompletedProcess(orden, 0, stdout=json.dumps(salida), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    resultado = motor_agy(tarea, settings)
+    assert resultado == {"ok": True}
+
+
+def test_motor_claude_modelo_override(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "salud.db",
+        claude="claude",
+        ia_modelo_claude="haiku",
+    )
+    tarea = Tarea(
+        nombre="consejo",
+        instrucciones="Qué como",
+        esquema={"type": "object"},
+        modelo_claude="sonnet",
+    )
+
+    def fake_run(orden, **_kwargs):
+        model_idx = orden.index("--model")
+        assert orden[model_idx + 1] == "sonnet"
+        salida = json.dumps(
+            {"type": "result", "is_error": False, "structured_output": {"ok": True}}
+        )
+        return subprocess.CompletedProcess(orden, 0, stdout=salida, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    resultado = motor_claude(tarea, settings)
+    assert resultado == {"ok": True}

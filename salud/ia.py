@@ -79,6 +79,8 @@ class Tarea:
     instrucciones: str
     esquema: dict[str, Any]
     adjuntos: tuple[Adjunto, ...] = ()
+    modelo_agy: str | None = None
+    modelo_claude: str | None = None
 
 
 @dataclass(frozen=True)
@@ -186,7 +188,7 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             "-p",
             prompt,
             "--model",
-            settings.ia_modelo_agy,
+            tarea.modelo_agy or settings.ia_modelo_agy,
             "--output-format",
             "json",
             "--json-schema",
@@ -283,7 +285,7 @@ def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
         "--json-schema",
         json.dumps(tarea.esquema),
         "--model",
-        settings.ia_modelo_claude,
+        tarea.modelo_claude or settings.ia_modelo_claude,
     ]
 
     with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:

@@ -43,6 +43,8 @@ class Settings:
     agy_token: Path = Path("~/.gemini/antigravity-cli/antigravity-oauth-token").expanduser()
     ia_modelo_agy: str = "gemini-3.8-flash-low"
     ia_modelo_claude: str = "haiku"
+    # Flash Low da consejos vagos; High tarda ~35 s pero es concreto
+    ia_modelo_consejo: str = "gemini-3.8-flash-high"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
 
@@ -79,5 +81,7 @@ def load_settings() -> Settings:
         ),
         ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip() or "gemini-3.8-flash-low",
         ia_modelo_claude=os.environ.get("SALUD_IA_MODELO_CLAUDE", "").strip() or "haiku",
+        ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
+        or "gemini-3.8-flash-high",
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
     )
