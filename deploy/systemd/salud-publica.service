@@ -1,0 +1,21 @@
+[Unit]
+Description=Salud: web pública (Cloudflare Tunnel, login con Google)
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pelayo
+WorkingDirectory=/home/pelayo/salud
+Environment=PATH=/home/pelayo/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=SALUD_URL_PUBLICA=https://salud.calamar-lab.dev
+Environment=SALUD_CUENTAS_GOOGLE=pelayopf@gmail.com
+ExecStart=/home/pelayo/.local/bin/uv run salud serve --publica --port 8792
+# uv sale con 143 al recibir SIGTERM: es una parada normal, no un fallo.
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

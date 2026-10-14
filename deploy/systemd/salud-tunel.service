@@ -1,0 +1,14 @@
+[Unit]
+Description=Salud: Cloudflare Tunnel hacia 127.0.0.1:8792
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pelayo
+ExecStart=/bin/sh -c 'exec /home/pelayo/.local/bin/cloudflared tunnel --no-autoupdate run --token "$(cat /home/pelayo/.config/cloudflare/salud-tunnel-run.token)"'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
