@@ -11,14 +11,17 @@ from salud.config import Settings
 from salud.ia import (
     MAX_BYTES_IMAGEN,
     MOTORES,
+    TIEMPO_COMIDA_S,
     TIEMPO_MAXIMO_S,
     Adjunto,
+    AlimentoIA,
     CupoAgotado,
     ErrorIA,
     Estimacion,
     Etiqueta,
     IAOcupada,
     Tarea,
+    analizar_comida,
     ejecutar,
     estimar_alimento,
     etiqueta_desde_respuesta,
@@ -744,3 +747,241 @@ def test_el_tiempo_maximo_es_el_de_la_tarea(monkeypatch, tmp_path):
     assert motor_agy(tarea, settings) == {"ok": True}
     assert motor_agy(Tarea("etiqueta", "hola", {"type": "object"}), settings) == {"ok": True}
     assert llamadas == [("300s", 315), (f"{TIEMPO_MAXIMO_S}s", TIEMPO_MAXIMO_S + 15)]
+
+
+def test_analizar_comida_exito(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "alimentos": [
+                {
+                    "nombre": "Sopa de fideos",
+                    "cantidad": 150.0,
+                    "unidad": "g",
+                    "kcal": 95.0,
+                    "proteinas": 3.5,
+                    "hidratos": 14.0,
+                    "grasas": 2.5,
+                    "momento": "comida",
+                    "aviso": "Valores estimados",
+                }
+            ]
+        }
+
+    resultado = analizar_comida(settings, "150 g de sopa de fideos", None, motor=motor_falso)
+    assert len(resultado) == 1
+    al = resultado[0]
+    assert isinstance(al, AlimentoIA)
+    assert al.nombre == "Sopa de fideos"
+    assert al.cantidad == 150.0
+    assert al.unidad == "g"
+    assert al.kcal == 95.0
+    assert al.proteinas == 3.5
+    assert al.hidratos == 14.0
+    assert al.grasas == 2.5
+    assert al.momento == "comida"
+    assert al.aviso == "Valores estimados"
+
+
+def test_analizar_comida_descarte_invalidos(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "alimentos": [
+                {
+                    "nombre": "Válido",
+                    "cantidad": 100.0,
+                    "unidad": "g",
+                    "kcal": 100.0,
+                    "proteinas": 5.0,
+                    "hidratos": 10.0,
+                    "grasas": 2.0,
+                    "momento": None,
+                    "aviso": None,
+                },
+                {
+                    "nombre": "   ",
+                    "cantidad": 50.0,
+                    "unidad": "g",
+                    "kcal": 50.0,
+                    "proteinas": 1.0,
+                    "hidratos": 5.0,
+                    "grasas": 1.0,
+                    "momento": None,
+                    "aviso": None,
+                },
+                {
+                    "nombre": "Cantidad cero",
+                    "cantidad": 0.0,
+                    "unidad": "g",
+                    "kcal": 50.0,
+                    "proteinas": 1.0,
+                    "hidratos": 5.0,
+                    "grasas": 1.0,
+                    "momento": None,
+                    "aviso": None,
+                },
+                {
+                    "nombre": "Cantidad gigante",
+                    "cantidad": 9000.0,
+                    "unidad": "g",
+                    "kcal": 50.0,
+                    "proteinas": 1.0,
+                    "hidratos": 5.0,
+                    "grasas": 1.0,
+                    "momento": None,
+                    "aviso": None,
+                },
+                {
+                    "nombre": "Unidad incorrecta",
+                    "cantidad": 1.0,
+                    "unidad": "kg",
+                    "kcal": 50.0,
+                    "proteinas": 1.0,
+                    "hidratos": 5.0,
+                    "grasas": 1.0,
+                    "momento": None,
+                    "aviso": None,
+                },
+            ]
+        }
+
+    resultado = analizar_comida(settings, "plato variado", None, motor=motor_falso)
+    assert len(resultado) == 1
+    assert resultado[0].nombre == "Válido"
+
+
+def test_analizar_comida_rangos_kcal_macros_y_momento(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "alimentos": [
+                {
+                    "nombre": "Extremo",
+                    "cantidad": 100.0,
+                    "unidad": "g",
+                    "kcal": 6000.0,  # fuera de rango (>5000) -> None
+                    "proteinas": 1500.0,  # fuera de rango (>1000) -> None
+                    "hidratos": 50.0,
+                    "grasas": -5.0,  # negativo -> None
+                    "momento": "medianoche",  # no válido -> None
+                    "aviso": None,
+                }
+            ]
+        }
+
+    resultado = analizar_comida(settings, "comida rara", None, motor=motor_falso)
+    assert len(resultado) == 1
+    al = resultado[0]
+    assert al.kcal is None
+    assert al.proteinas is None
+    assert al.hidratos == 50.0
+    assert al.grasas is None
+    assert al.momento is None
+
+
+def test_analizar_comida_lista_vacia_error(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_vacio(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {"alimentos": []}
+
+    with pytest.raises(ErrorIA, match="No he reconocido nada que se coma o se beba"):
+        analizar_comida(settings, "un ratón de ordenador", None, motor=motor_vacio)
+
+
+def test_analizar_comida_validaciones_entrada(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_no_llamar(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        pytest.fail("No debería llamarse al motor")
+
+    # Sin texto ni imagen
+    with pytest.raises(ErrorIA, match="Escribe qué has comido o añade una foto"):
+        analizar_comida(settings, "", None, motor=motor_no_llamar)
+
+    with pytest.raises(ErrorIA, match="Escribe qué has comido o añade una foto"):
+        analizar_comida(settings, " ", None, motor=motor_no_llamar)
+
+    with pytest.raises(ErrorIA, match="Escribe qué has comido o añade una foto"):
+        analizar_comida(settings, "x", None, motor=motor_no_llamar)
+
+    # Texto > 500 caracteres
+    with pytest.raises(ErrorIA, match="El texto es demasiado largo"):
+        analizar_comida(settings, "a" * 501, None, motor=motor_no_llamar)
+
+    # Imagen corrupta
+    with pytest.raises(ErrorIA, match="El fichero no es una imagen JPEG, PNG o WebP"):
+        analizar_comida(settings, "plato", b"esto no es una imagen", motor=motor_no_llamar)
+
+    # Imagen demasiado grande
+    with pytest.raises(ErrorIA, match="La imagen es demasiado grande"):
+        analizar_comida(
+            settings,
+            "plato",
+            b"\xff\xd8\xff" + b"0" * (MAX_BYTES_IMAGEN + 1),
+            motor=motor_no_llamar,
+        )
+
+
+def test_analizar_comida_tarea_atributos_y_foto(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+    tarea_capturada: list[Tarea] = []
+
+    def motor_capturador(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        tarea_capturada.append(tarea)
+        return {
+            "alimentos": [
+                {
+                    "nombre": "Foto alimento",
+                    "cantidad": 100.0,
+                    "unidad": "g",
+                    "kcal": 100.0,
+                    "proteinas": 5.0,
+                    "hidratos": 10.0,
+                    "grasas": 2.0,
+                    "momento": None,
+                    "aviso": None,
+                }
+            ]
+        }
+
+    foto_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF"
+    analizar_comida(settings, "", foto_bytes, motor=motor_capturador)
+    assert len(tarea_capturada) == 1
+    t = tarea_capturada[0]
+    assert t.nombre == "comida"
+    assert t.modelo_agy == settings.ia_modelo_comida
+    assert t.tiempo_maximo_s == TIEMPO_COMIDA_S
+    assert len(t.adjuntos) == 1
+    assert t.adjuntos[0].tipo == "image/jpeg"
+    assert t.adjuntos[0].datos == foto_bytes
+    assert "(no ha escrito nada: mira la foto)" in t.instrucciones
+
+
+def test_analizar_comida_maximo_20_alimentos(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_muchos(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "alimentos": [
+                {
+                    "nombre": f"Alimento {i}",
+                    "cantidad": 10.0,
+                    "unidad": "g",
+                    "kcal": 10.0,
+                    "proteinas": 1.0,
+                    "hidratos": 1.0,
+                    "grasas": 1.0,
+                    "momento": None,
+                    "aviso": None,
+                }
+                for i in range(25)
+            ]
+        }
+
+    resultado = analizar_comida(settings, "buffet libre", None, motor=motor_muchos)
+    assert len(resultado) == 20

@@ -48,6 +48,7 @@ class Settings:
     # High (Gemini, de 35 s a más de 2 min). Flash Low da consejos vagos.
     ia_modelo_consejo: str = "claude-sonnet-5-5-medium"
     ia_modelo_consejo_respaldo: str = "gemini-3.8-flash-high"
+    ia_modelo_comida: str = "gemini-3.8-flash-high"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -92,6 +93,8 @@ def load_settings() -> Settings:
         ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
         or "claude-sonnet-5-5-medium",
         ia_modelo_consejo_respaldo=os.environ.get("SALUD_IA_MODELO_CONSEJO_RESPALDO", "").strip()
+        or "gemini-3.8-flash-high",
+        ia_modelo_comida=os.environ.get("SALUD_IA_MODELO_COMIDA", "").strip()
         or "gemini-3.8-flash-high",
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
