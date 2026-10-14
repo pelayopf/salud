@@ -183,3 +183,186 @@ def test_codigos_validos():
 def test_errores_tienen_base_comun():
     for error in (CodigoInvalido, ProductoNoEncontrado, OpenFoodFactsNoDisponible):
         assert issubclass(error, alimentos.ErrorAlimentos)
+
+
+def test_obtener_producto_usa_cache_y_red(con):
+    from datetime import UTC, datetime, timedelta
+
+    cliente, peticiones = cliente_falso(
+        lambda _: httpx.Response(
+            200,
+            json=encontrado(
+                {
+                    "code": EAN13,
+                    "product_name_es": "Galletas inventadas",
+                    "brands": "Marca Ficticia",
+                    "nutriscore_grade": "c",
+                    "quantity": "200 g",
+                    "nutriments": {
+                        "energy-kcal_100g": 450,
+                        "proteins_100g": 7.5,
+                        "carbohydrates_100g": 65.2,
+                        "fat_100g": 17.0,
+                    },
+                }
+            ),
+        )
+    )
+
+    # 1. Primera consulta: no está en caché, consulta Open Food Facts y lo guarda
+    p1 = alimentos.obtener_producto(con, EAN13, cliente=cliente)
+    assert p1.nombre == "Galletas inventadas"
+    assert p1.desde_cache is False
+    assert len(peticiones) == 1
+
+    # 2. Segunda consulta: está en caché, no toca la red
+    cliente_sin_red, peticiones2 = cliente_falso(lambda _: httpx.Response(500))
+    p2 = alimentos.obtener_producto(con, EAN13, cliente=cliente_sin_red)
+    assert p2.nombre == "Galletas inventadas"
+    assert p2.desde_cache is True
+    assert len(peticiones2) == 0
+
+    # 3. Caché caducada (> 30 días): vuelve a consultar Open Food Facts
+    hace_35_dias = (datetime.now(UTC) - timedelta(days=35)).isoformat()
+    con.execute("UPDATE productos SET consultado = ? WHERE codigo = ?", (hace_35_dias, EAN13))
+
+    cliente_refresco, peticiones3 = cliente_falso(
+        lambda _: httpx.Response(
+            200,
+            json=encontrado(
+                {
+                    "code": EAN13,
+                    "product_name_es": "Galletas inventadas (nueva fórmula)",
+                    "nutriments": {"energy-kcal_100g": 460},
+                }
+            ),
+        )
+    )
+    p3 = alimentos.obtener_producto(con, EAN13, cliente=cliente_refresco)
+    assert p3.nombre == "Galletas inventadas (nueva fórmula)"
+    assert p3.desde_cache is False
+    assert len(peticiones3) == 1
+
+
+def test_calcular_nutrientes():
+    prod = alimentos.Producto(
+        codigo=EAN13,
+        nombre="Pan de centeno",
+        marca="Panadería",
+        nutriscore="A",
+        unidad="g",
+        kcal=240.0,
+        proteinas=8.0,
+        hidratos=48.0,
+        grasas=1.2,
+    )
+    # Porción de 50 g
+    n50 = alimentos.calcular_nutrientes(prod, 50.0)
+    assert n50.kcal == 120.0
+    assert n50.proteinas == 4.0
+    assert n50.hidratos == 24.0
+    assert n50.grasas == 0.6
+    assert not n50.incompleto
+
+    # Porción con nutrientes None: se respetan los None y no cuentan como 0
+    prod_incompleto = alimentos.Producto(
+        codigo=EAN13,
+        nombre="Aceite sin info de proteínas",
+        marca=None,
+        nutriscore=None,
+        unidad="ml",
+        kcal=900.0,
+        proteinas=None,
+        hidratos=None,
+        grasas=100.0,
+    )
+    n15 = alimentos.calcular_nutrientes(prod_incompleto, 15.0)
+    assert n15.kcal == 135.0
+    assert n15.proteinas is None
+    assert n15.hidratos is None
+    assert n15.grasas == 15.0
+    assert n15.incompleto
+
+
+def test_cli_producto(settings, monkeypatch, capsys):
+    import argparse
+
+    from salud import cli
+
+    # 1. Producto nuevo (desde OFF)
+    cliente, _ = cliente_falso(
+        lambda _: httpx.Response(
+            200,
+            json=encontrado(
+                {
+                    "code": EAN13,
+                    "product_name_es": "Yogur natural",
+                    "brands": "Lácteos Test",
+                    "nutriscore_grade": "b",
+                    "quantity": "125 g",
+                    "nutriments": {
+                        "energy-kcal_100g": 60,
+                        "proteins_100g": 4.0,
+                        "carbohydrates_100g": 5.0,
+                        "fat_100g": 3.0,
+                    },
+                }
+            ),
+        )
+    )
+    # Interceptamos obtener_producto para pasarle el cliente falso
+    orig_obtener = alimentos.obtener_producto
+    monkeypatch.setattr(
+        alimentos,
+        "obtener_producto",
+        lambda con, cod: orig_obtener(con, cod, cliente=cliente),
+    )
+
+    args = argparse.Namespace(codigo=EAN13)
+    ret = cli.cmd_producto(settings, args)
+    assert ret == 0
+    salida = capsys.readouterr().out
+    assert "Yogur natural" in salida
+    assert "Open Food Facts" in salida
+    assert "Nutri-Score: B" in salida
+    assert "60.0 kcal" in salida
+
+    # 2. Segunda consulta: debe indicar que viene de la caché
+    monkeypatch.setattr(alimentos, "obtener_producto", orig_obtener)
+    ret2 = cli.cmd_producto(settings, args)
+    assert ret2 == 0
+    salida2 = capsys.readouterr().out
+    assert "Yogur natural" in salida2
+    assert "caché" in salida2
+
+    # 3. Código no válido
+    args_invalido = argparse.Namespace(codigo="1234")
+    ret_invalido = cli.cmd_producto(settings, args_invalido)
+    assert ret_invalido == 1
+    err_invalido = capsys.readouterr().err
+    assert "Código no válido" in err_invalido
+
+    # 4. Producto incompleto
+    cliente_inc, _ = cliente_falso(
+        lambda _: httpx.Response(
+            200,
+            json=encontrado(
+                {
+                    "code": EAN8,
+                    "product_name": "Té verde",
+                    "nutriments": {},
+                }
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        alimentos,
+        "obtener_producto",
+        lambda con, cod: orig_obtener(con, cod, cliente=cliente_inc),
+    )
+    args_inc = argparse.Namespace(codigo=EAN8)
+    ret_inc = cli.cmd_producto(settings, args_inc)
+    assert ret_inc == 0
+    salida_inc = capsys.readouterr().out
+    assert "Té verde" in salida_inc
+    assert "Aviso: datos nutricionales incompletos" in salida_inc

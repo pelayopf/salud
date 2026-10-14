@@ -6,6 +6,8 @@
   fuentes para la misma métrica, manda la primera de `PRIORIDAD`.
 - `actividades`: entrenos y partidos, uno por actividad de cada fuente.
 - `lecturas`: la lectura diaria hecha con Claude (una por día).
+- `productos`: caché de Open Food Facts por código de barras.
+- `comidas`: diario de alimentos por fecha y momento del día.
 """
 
 from __future__ import annotations
@@ -16,9 +18,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from .metricas import Actividad, Metrica
+
+if TYPE_CHECKING:
+    from .alimentos import Producto
 
 # Qué fuente manda cuando hay varias para la misma métrica y día.
 PRIORIDAD = ("manual", "garmin", "samsung", "propia")
@@ -84,6 +89,34 @@ CREATE TABLE IF NOT EXISTS lecturas (
     segundos REAL,
     generada TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS productos (
+    codigo TEXT PRIMARY KEY,
+    nombre TEXT,
+    marca TEXT,
+    nutriscore TEXT,
+    unidad TEXT NOT NULL,
+    kcal REAL,
+    proteinas REAL,
+    hidratos REAL,
+    grasas REAL,
+    datos TEXT NOT NULL,
+    consultado TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS comidas (
+    id INTEGER PRIMARY KEY,
+    fecha TEXT NOT NULL,
+    momento TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    codigo TEXT,
+    cantidad REAL NOT NULL,
+    unidad TEXT NOT NULL,
+    kcal REAL,
+    proteinas REAL,
+    hidratos REAL,
+    grasas REAL,
+    creado TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS comidas_fecha ON comidas (fecha);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -125,6 +158,109 @@ class Valor:
     valor: float | None
     texto: str | None
     fuente: str
+
+
+MOMENTOS = ("desayuno", "comida", "merienda", "cena", "otro")
+
+
+@dataclass(frozen=True)
+class Comida:
+    """Una entrada en el diario de comidas."""
+
+    id: int
+    fecha: str
+    momento: str
+    nombre: str
+    cantidad: float
+    unidad: str
+    kcal: float | None = None
+    proteinas: float | None = None
+    hidratos: float | None = None
+    grasas: float | None = None
+    codigo: str | None = None
+    creado: str = ""
+
+
+@dataclass(frozen=True)
+class Totales:
+    """Suma de nutrientes de varias comidas.
+
+    Los nutrientes que falten (None) no cuentan como 0: se suman los
+    disponibles y se contabiliza en `sin_*` cuántas entradas no tenían ese dato.
+    """
+
+    kcal: float = 0.0
+    proteinas: float = 0.0
+    hidratos: float = 0.0
+    grasas: float = 0.0
+    sin_kcal: int = 0
+    sin_proteinas: int = 0
+    sin_hidratos: int = 0
+    sin_grasas: int = 0
+    entradas: int = 0
+    incompletas: int = 0
+
+    @property
+    def sin_datos(self) -> int:
+        """Alias de incompletas."""
+        return self.incompletas
+
+
+class TotalesDia(NamedTuple):
+    """Totales del día agrupados por momento y el total general."""
+
+    por_momento: dict[str, Totales]
+    total: Totales
+
+    @property
+    def kcal(self) -> float:
+        """Kcal totales del día."""
+        return self.total.kcal
+
+    @property
+    def proteinas(self) -> float:
+        """Proteínas totales del día."""
+        return self.total.proteinas
+
+    @property
+    def hidratos(self) -> float:
+        """Hidratos totales del día."""
+        return self.total.hidratos
+
+    @property
+    def grasas(self) -> float:
+        """Grasas totales del día."""
+        return self.total.grasas
+
+    @property
+    def sin_kcal(self) -> int:
+        """Entradas sin dato de kcal."""
+        return self.total.sin_kcal
+
+    @property
+    def sin_proteinas(self) -> int:
+        """Entradas sin dato de proteínas."""
+        return self.total.sin_proteinas
+
+    @property
+    def sin_hidratos(self) -> int:
+        """Entradas sin dato de hidratos."""
+        return self.total.sin_hidratos
+
+    @property
+    def sin_grasas(self) -> int:
+        """Entradas sin dato de grasas."""
+        return self.total.sin_grasas
+
+    @property
+    def entradas(self) -> int:
+        """Número total de comidas registradas en el día."""
+        return self.total.entradas
+
+    @property
+    def incompletas(self) -> int:
+        """Número de comidas a las que les falta algún nutriente."""
+        return self.total.incompletas
 
 
 def ahora() -> str:
@@ -232,6 +368,139 @@ def guardar_lectura(
         )
 
 
+def guardar_producto(
+    con: sqlite3.Connection,
+    producto: Any,
+    *,
+    datos: dict[str, Any] | str | None = None,
+    consultado: str | None = None,
+) -> None:
+    """Guarda (o actualiza) un producto en la caché de Open Food Facts."""
+    momento = consultado or getattr(producto, "consultado", None) or ahora()
+    if datos is None:
+        datos_prod = getattr(producto, "datos", None)
+        if datos_prod is not None:
+            datos_json = (
+                json.dumps(datos_prod, ensure_ascii=False)
+                if isinstance(datos_prod, dict)
+                else str(datos_prod)
+            )
+        else:
+            datos_json = json.dumps(
+                {
+                    "code": producto.codigo,
+                    "product_name": producto.nombre,
+                    "brands": producto.marca,
+                    "nutriscore_grade": producto.nutriscore,
+                    "unidad": producto.unidad,
+                    "nutriments": {
+                        "energy-kcal_100g": producto.kcal,
+                        "proteins_100g": producto.proteinas,
+                        "carbohydrates_100g": producto.hidratos,
+                        "fat_100g": producto.grasas,
+                    },
+                },
+                ensure_ascii=False,
+            )
+    elif isinstance(datos, str):
+        datos_json = datos
+    else:
+        datos_json = json.dumps(datos, ensure_ascii=False)
+
+    with con:
+        con.execute(
+            "INSERT OR REPLACE INTO productos"
+            " (codigo, nombre, marca, nutriscore, unidad, kcal, proteinas, hidratos,"
+            " grasas, datos, consultado)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                producto.codigo,
+                producto.nombre,
+                producto.marca,
+                producto.nutriscore,
+                producto.unidad,
+                producto.kcal,
+                producto.proteinas,
+                producto.hidratos,
+                producto.grasas,
+                datos_json,
+                momento,
+            ),
+        )
+
+
+def anadir_comida(
+    con: sqlite3.Connection,
+    fecha: str | Comida,
+    momento: str = "",
+    nombre: str = "",
+    cantidad: float = 0.0,
+    unidad: str = "g",
+    *,
+    kcal: float | None = None,
+    proteinas: float | None = None,
+    hidratos: float | None = None,
+    grasas: float | None = None,
+    codigo: str | None = None,
+    creado: str | None = None,
+) -> int:
+    """Añade una entrada al diario de comidas y devuelve su identificador."""
+    if isinstance(fecha, Comida):
+        c = fecha
+        fecha_val = c.fecha
+        momento_val = c.momento
+        nombre_val = c.nombre
+        cantidad_val = c.cantidad
+        unidad_val = c.unidad
+        kcal_val = c.kcal
+        proteinas_val = c.proteinas
+        hidratos_val = c.hidratos
+        grasas_val = c.grasas
+        codigo_val = c.codigo
+        momento_creado = c.creado or ahora()
+    else:
+        fecha_val = fecha
+        momento_val = momento
+        nombre_val = nombre
+        cantidad_val = cantidad
+        unidad_val = unidad
+        kcal_val = kcal
+        proteinas_val = proteinas
+        hidratos_val = hidratos
+        grasas_val = grasas
+        codigo_val = codigo
+        momento_creado = creado or ahora()
+
+    with con:
+        cur = con.execute(
+            "INSERT INTO comidas"
+            " (fecha, momento, nombre, codigo, cantidad, unidad, kcal, proteinas,"
+            " hidratos, grasas, creado)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                fecha_val,
+                momento_val,
+                nombre_val,
+                codigo_val,
+                cantidad_val,
+                unidad_val,
+                kcal_val,
+                proteinas_val,
+                hidratos_val,
+                grasas_val,
+                momento_creado,
+            ),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def borrar_comida(con: sqlite3.Connection, id_: int) -> bool:
+    """Borra una comida por su identificador. Devuelve True si existía."""
+    with con:
+        cur = con.execute("DELETE FROM comidas WHERE id = ?", (id_,))
+        return cur.rowcount > 0
+
+
 # --- Lectura -----------------------------------------------------------------
 
 
@@ -336,3 +605,139 @@ def lecturas(con: sqlite3.Connection, limite: int = 60) -> list[dict[str, Any]]:
     """Las últimas lecturas, la más reciente primero."""
     filas = con.execute("SELECT * FROM lecturas ORDER BY fecha DESC LIMIT ?", (limite,))
     return [lec for f in filas if (lec := _lectura(f)) is not None]
+
+
+def leer_producto(con: sqlite3.Connection, codigo: str) -> Producto | None:
+    """Lee un producto de la caché por su código, o None si no está."""
+    fila = con.execute("SELECT * FROM productos WHERE codigo = ?", (codigo,)).fetchone()
+    if fila is None:
+        return None
+    from .alimentos import Producto  # import local para evitar dependencia circular
+
+    datos = None
+    if fila["datos"]:
+        try:
+            datos = json.loads(fila["datos"])
+        except ValueError:
+            datos = None
+
+    return Producto(
+        codigo=fila["codigo"],
+        nombre=fila["nombre"],
+        marca=fila["marca"],
+        nutriscore=fila["nutriscore"],
+        unidad=fila["unidad"],
+        kcal=fila["kcal"],
+        proteinas=fila["proteinas"],
+        hidratos=fila["hidratos"],
+        grasas=fila["grasas"],
+        datos=datos,
+        consultado=fila["consultado"],
+        desde_cache=True,
+    )
+
+
+def _fila_a_comida(f: sqlite3.Row) -> Comida:
+    return Comida(
+        id=f["id"],
+        fecha=f["fecha"],
+        momento=f["momento"],
+        nombre=f["nombre"],
+        cantidad=f["cantidad"],
+        unidad=f["unidad"],
+        kcal=f["kcal"],
+        proteinas=f["proteinas"],
+        hidratos=f["hidratos"],
+        grasas=f["grasas"],
+        codigo=f["codigo"],
+        creado=f["creado"],
+    )
+
+
+def comidas(con: sqlite3.Connection, fecha: str) -> list[Comida]:
+    """Lista las comidas de un día, ordenadas por identificador (orden de inserción)."""
+    filas = con.execute(
+        "SELECT * FROM comidas WHERE fecha = ? ORDER BY id ASC",
+        (fecha,),
+    ).fetchall()
+    return [_fila_a_comida(f) for f in filas]
+
+
+listar_comidas = comidas
+
+
+def calcular_totales(items: Iterable[Comida]) -> Totales:
+    """Calcula la suma de nutrientes y las ausencias para un conjunto de comidas."""
+    kcal = 0.0
+    proteinas = 0.0
+    hidratos = 0.0
+    grasas = 0.0
+    sin_kcal = 0
+    sin_proteinas = 0
+    sin_hidratos = 0
+    sin_grasas = 0
+    entradas = 0
+    incompletas = 0
+
+    for c in items:
+        entradas += 1
+        falta = False
+        if c.kcal is not None:
+            kcal += c.kcal
+        else:
+            sin_kcal += 1
+            falta = True
+
+        if c.proteinas is not None:
+            proteinas += c.proteinas
+        else:
+            sin_proteinas += 1
+            falta = True
+
+        if c.hidratos is not None:
+            hidratos += c.hidratos
+        else:
+            sin_hidratos += 1
+            falta = True
+
+        if c.grasas is not None:
+            grasas += c.grasas
+        else:
+            sin_grasas += 1
+            falta = True
+
+        if falta:
+            incompletas += 1
+
+    return Totales(
+        kcal=round(kcal, 1),
+        proteinas=round(proteinas, 1),
+        hidratos=round(hidratos, 1),
+        grasas=round(grasas, 1),
+        sin_kcal=sin_kcal,
+        sin_proteinas=sin_proteinas,
+        sin_hidratos=sin_hidratos,
+        sin_grasas=sin_grasas,
+        entradas=entradas,
+        incompletas=incompletas,
+    )
+
+
+def totales_dia(con: sqlite3.Connection, fecha: str) -> TotalesDia:
+    """Calcula los totales de comida de un día por momento y en total."""
+    lista = comidas(con, fecha)
+    agrupadas: dict[str, list[Comida]] = {m: [] for m in MOMENTOS}
+    for c in lista:
+        agrupadas.setdefault(c.momento, []).append(c)
+
+    por_momento = {m: calcular_totales(items) for m, items in agrupadas.items()}
+    total = calcular_totales(lista)
+    return TotalesDia(por_momento=por_momento, total=total)
+
+
+totales_comidas = totales_dia
+
+
+def totales_por_momento(con: sqlite3.Connection, fecha: str) -> dict[str, Totales]:
+    """Calcula los totales de comida de un día desglosados por momento."""
+    return totales_dia(con, fecha).por_momento

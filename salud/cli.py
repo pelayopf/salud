@@ -1,4 +1,4 @@
-"""Línea de órdenes: `salud serve | sync | lectura | garmin-entrar | estado`."""
+"""Línea de órdenes: `salud serve | sync | lectura | garmin-entrar | estado | producto`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import db, garmin, lectura, sync
+from . import alimentos, db, garmin, lectura, sync
 from .config import ConfigError, Settings, load_settings
 from .garmin import GarminNoConectado
 
@@ -137,6 +137,44 @@ def cmd_estado(settings: Settings, _args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_producto(settings: Settings, args: argparse.Namespace) -> int:
+    """Muestra un producto de Open Food Facts (o de la caché)."""
+    con = db.conectar(settings.db_path)
+    try:
+        prod = alimentos.obtener_producto(con, args.codigo)
+    except alimentos.CodigoInvalido as exc:
+        print(f"Código no válido: {exc}", file=sys.stderr)
+        return 1
+    except alimentos.ProductoNoEncontrado as exc:
+        print(f"No encontrado: {exc}", file=sys.stderr)
+        return 1
+    except alimentos.OpenFoodFactsNoDisponible as exc:
+        print(f"Open Food Facts no disponible: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        con.close()
+
+    origen = "caché" if prod.desde_cache else "Open Food Facts"
+    nombre = prod.nombre or "Sin nombre"
+    marca = f" · {prod.marca}" if prod.marca else ""
+    print(f"[{prod.codigo}] {nombre}{marca} ({origen})")
+    if prod.nutriscore:
+        print(f"Nutri-Score: {prod.nutriscore}")
+
+    def _val(v: float | None) -> str:
+        return f"{v:.1f}" if v is not None else "—"
+
+    print(
+        f"Por 100 {prod.unidad}: {_val(prod.kcal)} kcal · "
+        f"P: {_val(prod.proteinas)} g · "
+        f"HC: {_val(prod.hidratos)} g · "
+        f"G: {_val(prod.grasas)} g"
+    )
+    if prod.incompleto:
+        print("Aviso: datos nutricionales incompletos")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Punto de entrada."""
     parser = argparse.ArgumentParser(prog="salud")
@@ -158,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         func=cmd_garmin_entrar
     )
     sub.add_parser("estado", help="qué hay en la base de datos").set_defaults(func=cmd_estado)
+    prod = sub.add_parser("producto", help="muestra un producto por su código de barras")
+    prod.add_argument("codigo", help="código EAN-8, EAN-13 o UPC")
+    prod.set_defaults(func=cmd_producto)
     args = parser.parse_args(argv)
     try:
         settings = load_settings()

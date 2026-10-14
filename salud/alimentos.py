@@ -9,11 +9,15 @@ producto queda marcado como incompleto para que la app pueda avisar.
 from __future__ import annotations
 
 import re
+import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import httpx
+
+from . import db
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
 CAMPOS = (
@@ -29,6 +33,7 @@ CAMPOS = (
 TIMEOUT = 10.0
 KJ_POR_KCAL = 4.184
 LONGITUDES_VALIDAS = (8, 12, 13)
+DIAS_CACHE = 30
 
 Unidad = Literal["g", "ml"]
 
@@ -65,11 +70,33 @@ class Producto:
     proteinas: float | None
     hidratos: float | None
     grasas: float | None
+    datos: dict[str, Any] | None = None
+    consultado: str | None = None
+    desde_cache: bool = False
 
     @property
     def incompleto(self) -> bool:
         """Falta alguno de los valores nutricionales básicos."""
         return any(v is None for v in (self.kcal, self.proteinas, self.hidratos, self.grasas))
+
+
+class Nutrientes(NamedTuple):
+    """Nutrientes calculados para una cantidad concreta de producto."""
+
+    kcal: float | None
+    proteinas: float | None
+    hidratos: float | None
+    grasas: float | None
+
+    @property
+    def incompleto(self) -> bool:
+        """Falta alguno de los valores nutricionales básicos."""
+        return any(v is None for v in (self.kcal, self.proteinas, self.hidratos, self.grasas))
+
+
+def ahora() -> str:
+    """Marca de tiempo en UTC con segundos."""
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def user_agent() -> str:
@@ -139,10 +166,19 @@ def buscar_producto(codigo: str, cliente: httpx.Client | None = None) -> Product
     producto = datos.get("product")
     if datos.get("status") != 1 or not isinstance(producto, dict):
         raise ProductoNoEncontrado(f"Open Food Facts no tiene el producto {codigo}")
-    return producto_desde_json(codigo, producto)
+    return producto_desde_json(
+        codigo, producto, datos=producto, consultado=ahora(), desde_cache=False
+    )
 
 
-def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
+def producto_desde_json(
+    codigo: str,
+    p: dict[str, Any],
+    *,
+    datos: dict[str, Any] | None = None,
+    consultado: str | None = None,
+    desde_cache: bool = False,
+) -> Producto:
     """Convierte el `product` de la API de Open Food Facts en un `Producto`."""
     nutrientes = p.get("nutriments")
     n: dict[str, Any] = nutrientes if isinstance(nutrientes, dict) else {}
@@ -160,6 +196,62 @@ def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
         proteinas=_numero(n.get("proteins_100g")),
         hidratos=_numero(n.get("carbohydrates_100g")),
         grasas=_numero(n.get("fat_100g")),
+        datos=datos,
+        consultado=consultado,
+        desde_cache=desde_cache,
+    )
+
+
+def obtener_producto(
+    con: sqlite3.Connection,
+    codigo: str,
+    cliente: httpx.Client | None = None,
+    *,
+    dias_max: int = DIAS_CACHE,
+) -> Producto:
+    """Devuelve un producto usando primero la caché y solo si no está consulta Open Food Facts.
+
+    Si el producto está en la base de datos y su fecha de consulta es de hace menos
+    de `dias_max` días (30 por defecto), se devuelve directamente de la caché.
+    En caso contrario, se consulta Open Food Facts y se guarda en la base de datos.
+    """
+    codigo = normalizar_codigo(codigo)
+    if not codigo_valido(codigo):
+        raise CodigoInvalido(f"código de barras no válido: {codigo!r}")
+
+    guardado = db.leer_producto(con, codigo)
+    if guardado is not None and guardado.consultado:
+        try:
+            fecha_consulta = datetime.fromisoformat(guardado.consultado)
+            if fecha_consulta.tzinfo is None:
+                fecha_consulta = fecha_consulta.replace(tzinfo=UTC)
+            if (datetime.now(UTC) - fecha_consulta) < timedelta(days=dias_max):
+                return guardado
+        except ValueError:
+            pass
+
+    producto_off = buscar_producto(codigo, cliente=cliente)
+    db.guardar_producto(
+        con, producto_off, datos=producto_off.datos, consultado=producto_off.consultado
+    )
+    return producto_off
+
+
+producto = obtener_producto
+
+
+def calcular_nutrientes(producto: Producto, cantidad: float) -> Nutrientes:
+    """Calcula los nutrientes para una cantidad (en g o ml) según el producto.
+
+    Aplica una regla de tres sobre los valores por 100 g o 100 ml.
+    Si algún nutriente es `None`, se mantiene como `None` sin contar como 0.
+    """
+    factor = cantidad / 100.0
+    return Nutrientes(
+        kcal=round(producto.kcal * factor, 1) if producto.kcal is not None else None,
+        proteinas=round(producto.proteinas * factor, 1) if producto.proteinas is not None else None,
+        hidratos=round(producto.hidratos * factor, 1) if producto.hidratos is not None else None,
+        grasas=round(producto.grasas * factor, 1) if producto.grasas is not None else None,
     )
 
 
