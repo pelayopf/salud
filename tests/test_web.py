@@ -224,3 +224,83 @@ def test_pedir_la_lectura_desde_la_web(settings):
         time.sleep(0.05)
     assert hecha and hecha["contenido"]["titular"] == LECTURA["titular"]
     assert "Rehacer la lectura" in c.get("/").text or "Preparando" in c.get("/").text
+
+
+def test_salud_rediseno_completo(cliente, settings):
+    # 1. Sin pauta ni dosis: tarjeta de "Apuntar tratamiento" sin error
+    r_vacio = cliente.get("/salud")
+    assert r_vacio.status_code == 200
+    assert "Apuntar tratamiento" in r_vacio.text
+
+    # 2. Con datos de prueba
+    con = db.conectar(settings.db_path)
+    db.guardar_pauta(
+        con,
+        db.Pauta(
+            farmaco="Mounjaro",
+            dosis_mg=5.0,
+            intervalo_dias=7,
+            margen_olvido_dias=4,
+            separacion_min_dias=3,
+            dosis_previstas=8,
+        ),
+    )
+    db.anadir_dosis(
+        con,
+        farmaco="Mounjaro",
+        fecha="2026-01-03",
+        dosis_mg=5.0,
+        zona="muslo izquierdo",
+    )
+    db.anadir_dosis(
+        con,
+        farmaco="Mounjaro",
+        fecha=HOY.isoformat(),
+        dosis_mg=5.0,
+        zona="muslo derecho",
+    )
+    db.guardar_ajustes_comida(con, db.AjustesComida(peso_objetivo_kg=85.0))
+    con.close()
+
+    r = cliente.get("/salud?dias=30")
+    assert r.status_code == 200
+
+    # Tira de días con 8 casillas y leyenda
+    assert r.text.count('class="ciclo-columna"') == 8
+    assert "Puesta" in r.text
+    assert "Puedes ponerla" in r.text
+    assert "Toca" in r.text
+
+    # Esquema de zonas
+    assert "esquema-zonas" in r.text
+    assert "Última: muslo derecho" in r.text
+    assert "Próxima: muslo izquierdo" in r.text
+
+    # Dosis 2 de 8
+    assert "dosis 2 de 8" in r.text
+
+    # Objetivo 85 kg
+    assert "Objetivo 85 kg" in r.text
+
+    # La referencia y las marcas en el SVG del peso
+    assert 'class="linea-referencia"' in r.text
+    assert 'class="marca-linea"' in r.text
+
+    # Los dos mosaicos
+    assert "FC en reposo" in r.text
+    assert "VFC semanal" in r.text
+    assert 'href="#grafica-fc_reposo"' in r.text
+    assert 'href="#grafica-vfc_noche"' in r.text
+
+    # Tendencias
+    assert "Tendencias" in r.text
+    assert 'id="grafica-fc_reposo"' in r.text
+    assert 'id="grafica-vfc_noche"' in r.text
+
+    # En Hoy se ve la dosis en Hoy toca y en /tratamiento _tarjeta_tratamiento.html
+    r_hoy = cliente.get("/")
+    assert r_hoy.status_code == 200
+    assert "Mounjaro 5 mg" in r_hoy.text
+    r_trat = cliente.get("/tratamiento")
+    assert r_trat.status_code == 200
+    assert "tarjeta-tratamiento" in r_trat.text

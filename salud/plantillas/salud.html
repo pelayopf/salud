@@ -45,10 +45,21 @@
 </section>
 {% endif %}
 
-<section class="panel grafica-panel" aria-label="Peso">
-  <div class="cabecera">
-    <h2>Peso{% if peso and peso.unidad %} <span class="suave">({{ peso.unidad }})</span>{% endif %}</h2>
+<section class="panel panel-peso" aria-label="Peso">
+  <div class="peso-cabecera">
+    <h2>Peso</h2>
+    {% if peso_objetivo is not none %}
+    <span class="suave">Objetivo {{ peso_objetivo | cifra(1 if peso_objetivo % 1 else 0) }} kg</span>
+    {% endif %}
   </div>
+  {% if ultimo_peso is not none %}
+  <div class="peso-cifras">
+    <span class="peso-actual">{{ ultimo_peso | cifra(1) }} <span class="unidad">kg</span></span>
+    {% if peso_diff %}
+    <span class="peso-diff{% if peso_diff_baja %} baja{% endif %}">{{ peso_diff }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
   {% if peso and peso.grafica %}
   <div class="lienzo">{{ peso.grafica.svg }}</div>
   {% if peso.nota %}<p class="suave">{{ peso.nota }}</p>{% endif %}
@@ -74,6 +85,49 @@
   {% endif %}
 </section>
 
+<section class="panel-discontinuo" aria-label="Analíticas">
+  <span class="icono-cuadro rojo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+  </span>
+  <div class="analiticas-info">
+    <strong>Analíticas</strong>
+    <p class="suave">Sube el PDF y la IA saca los valores. Próximamente.</p>
+  </div>
+</section>
+
+<section class="mosaicos-salud" aria-label="Sueño y corazón">
+  <a href="#grafica-fc_reposo" class="mosaico-salud">
+    <span class="mosaico-etiqueta">FC en reposo</span>
+    <strong class="mosaico-cifra">
+      {% if ult_fc and ult_fc.valor is not none %}
+      {{ ult_fc.valor | cifra }} <span class="mosaico-unidad">ppm</span>
+      {% else %}
+      —
+      {% endif %}
+    </strong>
+    {% if spark_fc %}
+    <div class="mosaico-spark">{{ spark_fc }}</div>
+    {% endif %}
+    <span class="mosaico-enlace">Ver tendencia</span>
+  </a>
+  <a href="#grafica-vfc_noche" class="mosaico-salud">
+    <span class="mosaico-etiqueta">VFC semanal</span>
+    <strong class="mosaico-cifra">
+      {% if ult_vfc and ult_vfc.valor is not none %}
+      {{ ult_vfc.valor | cifra }} <span class="mosaico-unidad">ms</span>
+      {% else %}
+      —
+      {% endif %}
+    </strong>
+    {% if spark_vfc %}
+    <div class="mosaico-spark">{{ spark_vfc }}</div>
+    {% endif %}
+    <span class="mosaico-enlace">Ver tendencia</span>
+  </a>
+</section>
+
+<h2>Tendencias</h2>
+
 <nav class="filtros" aria-label="Periodo">
   {% for p in periodos %}
   <a href="/salud?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{% if p == 365 %}1 año{% else %}{{ p }} días{% endif %}</a>
@@ -82,7 +136,7 @@
 
 <div class="graficas">
   {% for g in graficas %}
-  <section class="panel grafica-panel">
+  <section class="panel grafica-panel" id="grafica-{{ g.clave }}">
     <h3>{{ g.titulo }}{% if g.unidad %} <span class="suave">({{ g.unidad }})</span>{% endif %}</h3>
     {% if g.grafica %}
     <div class="lienzo">{{ g.grafica.svg }}</div>
@@ -100,14 +154,4 @@
   </section>
   {% endfor %}
 </div>
-
-<section class="panel-discontinuo" aria-label="Analíticas" style="margin-top: 14px;">
-  <span class="icono-cuadro rojo">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
-  </span>
-  <div>
-    <strong style="font-size: 16px;">Analíticas</strong>
-    <p class="suave" style="margin: 2px 0 0;">Sube el PDF y la IA saca los valores. Próximamente.</p>
-  </div>
-</section>
 {% endblock %}

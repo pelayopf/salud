@@ -430,9 +430,7 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
     _añadir_columnas(con, "productos_propios", {"racion_g": "REAL", "racion_nombre": "TEXT"})
-    _añadir_columnas(
-        con, "ajustes_comida", {"kcal_minimo": "INTEGER", "peso_objetivo_kg": "REAL"}
-    )
+    _añadir_columnas(con, "ajustes_comida", {"kcal_minimo": "INTEGER", "peso_objetivo_kg": "REAL"})
     _añadir_columnas(con, "pauta", {"dosis_previstas": "INTEGER"})
     return con
 

@@ -539,6 +539,9 @@ def _graficas(
     claves: Sequence[str],
     desde: date,
     hasta: date,
+    *,
+    referencia: float | None = None,
+    marcas: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     """Construye las gráficas de líneas para las métricas dadas en el periodo."""
     dias = (hasta - desde).days + 1
@@ -592,6 +595,8 @@ def _graficas(
             unir_huecos=unir,
             rango_minimo=rango,
             banda=franja_vfc if clave == "vfc_noche" else None,
+            referencia=referencia if clave == "peso" else None,
+            marcas=marcas if clave == "peso" else (),
         )
         resultado.append(
             {
@@ -1111,14 +1116,69 @@ def crear_app(
             trat = _tratamiento(con, fin)
             if trat is not None and trat["ultima"] is None and not db.hay_pauta(con):
                 trat = None
+            ajustes = db.ajustes_comida(con)
+            peso_objetivo_kg = ajustes.peso_objetivo_kg
+
+            lista_dosis = db.dosis(con)
+            marcas_dosis = [
+                d.fecha for d in lista_dosis if inicio.isoformat() <= d.fecha <= fin.isoformat()
+            ]
+
             graficas_salud = _graficas(
                 con,
                 ("peso", "fc_reposo", "vfc_noche", "sueno_h", "bb_despertar"),
                 inicio,
                 fin,
+                referencia=peso_objetivo_kg,
+                marcas=marcas_dosis,
             )
             ult_grasa = db.ultimo(con, "grasa", fin.isoformat())
             ult_musculo = db.ultimo(con, "musculo", fin.isoformat())
+            ult_peso = db.ultimo(con, "peso", fin.isoformat())
+
+            # Diferencia con el primer peso del periodo elegido
+            serie_peso = db.serie(con, "peso", inicio.isoformat(), fin.isoformat())
+            pesos_con_valor = [(v.fecha, v.valor) for v in serie_peso if v.valor is not None]
+            peso_diff: str | None = None
+            peso_diff_baja: bool = False
+            if len(pesos_con_valor) >= 2:
+                f_primero, v_primero = pesos_con_valor[0]
+                _, v_ultimo = pesos_con_valor[-1]
+                diff = round(v_ultimo - v_primero, 1)
+                f_corta = graficas.fecha_corta(f_primero)
+                if diff < 0:
+                    peso_diff = f"−{cifra(abs(diff), 1)} desde el {f_corta}"
+                    peso_diff_baja = True
+                elif diff > 0:
+                    peso_diff = f"+{cifra(diff, 1)} desde el {f_corta}"
+                else:
+                    peso_diff = f"0,0 desde el {f_corta}"
+
+            # Mosaicos: FC en reposo y VFC semanal
+            ult_fc = db.ultimo(con, "fc_reposo", fin.isoformat())
+            ult_vfc = db.ultimo(con, "vfc_semana", fin.isoformat())
+            if ult_vfc is None or ult_vfc.valor is None:
+                ult_vfc = db.ultimo(con, "vfc_noche", fin.isoformat())
+
+            f_spark_ini = (fin - timedelta(days=29)).isoformat()
+            sparks_data = db.series(
+                con, ("fc_reposo", "vfc_semana", "vfc_noche"), f_spark_ini, fin.isoformat()
+            )
+            dias_spark = [(fin - timedelta(days=i)).isoformat() for i in range(29, -1, -1)]
+
+            map_fc = {v.fecha: v.valor for v in sparks_data.get("fc_reposo", [])}
+            spark_fc = graficas.sparkline([map_fc.get(d) for d in dias_spark], ancho=120, alto=28)
+
+            map_vfc_sem = {v.fecha: v.valor for v in sparks_data.get("vfc_semana", [])}
+            if any(v is not None for v in map_vfc_sem.values()):
+                spark_vfc = graficas.sparkline(
+                    [map_vfc_sem.get(d) for d in dias_spark], ancho=120, alto=28
+                )
+            else:
+                map_vfc_noc = {v.fecha: v.valor for v in sparks_data.get("vfc_noche", [])}
+                spark_vfc = graficas.sparkline(
+                    [map_vfc_noc.get(d) for d in dias_spark], ancho=120, alto=28
+                )
         finally:
             con.close()
 
@@ -1141,8 +1201,16 @@ def crear_app(
             periodos=PERIODOS,
             tratamiento=trat,
             peso=peso_grafica,
+            ultimo_peso=ult_peso.valor if ult_peso and ult_peso.valor is not None else None,
+            peso_objetivo=peso_objetivo_kg,
+            peso_diff=peso_diff,
+            peso_diff_baja=peso_diff_baja,
             grasa=grasa_str,
             musculo=musculo_str,
+            ult_fc=ult_fc,
+            spark_fc=spark_fc,
+            ult_vfc=ult_vfc,
+            spark_vfc=spark_vfc,
             graficas=resto_graficas,
         )
 
