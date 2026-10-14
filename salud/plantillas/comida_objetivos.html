@@ -55,6 +55,10 @@
     <input id="peso_kg" name="peso_kg" type="number" min="30" max="250" step="0.1" value="{{ ajustes.peso_kg if ajustes.peso_kg is not none else '' }}" placeholder="Último de la báscula">
     <p class="suave">Déjalo vacío para usar automáticamente el último peso sincronizado de Garmin.</p>
 
+    <label for="peso_objetivo_kg">Peso objetivo (kg)</label>
+    <input id="peso_objetivo_kg" name="peso_objetivo_kg" type="number" min="30" max="250" step="0.1" value="{{ ajustes.peso_objetivo_kg if ajustes.peso_objetivo_kg is not none else '' }}" placeholder="Opcional">
+    <p class="suave">Opcional. Vacío = sin objetivo.</p>
+
     <label for="kcal_minimo">Mínimo de calorías al día</label>
     <input id="kcal_minimo" name="kcal_minimo" type="number" min="800" max="4000" step="10" value="{{ ajustes.kcal_minimo if ajustes.kcal_minimo is not none else '' }}">
     <p class="suave">Opcional. Vacío = sin mínimo: ni marca en la barra ni aviso. Si lo pones, pacta la cifra con tu médico.</p>

@@ -716,12 +716,22 @@ def test_añadir_columnas_migracion(tmp_path):
     columnas = {f["name"] for f in con.execute("PRAGMA table_info(productos_propios)").fetchall()}
     assert "racion_g" in columnas
     assert "racion_nombre" in columnas
+    col_ajustes = {f["name"] for f in con.execute("PRAGMA table_info(ajustes_comida)").fetchall()}
+    assert "peso_objetivo_kg" in col_ajustes
+    col_pauta = {f["name"] for f in con.execute("PRAGMA table_info(pauta)").fetchall()}
+    assert "dosis_previstas" in col_pauta
     con.close()
 
     con2 = db.conectar(db_file)
     columnas2 = {f["name"] for f in con2.execute("PRAGMA table_info(productos_propios)").fetchall()}
     assert "racion_g" in columnas2
     assert "racion_nombre" in columnas2
+    cols_ajustes2 = {
+        f["name"] for f in con2.execute("PRAGMA table_info(ajustes_comida)").fetchall()
+    }
+    assert "peso_objetivo_kg" in cols_ajustes2
+    cols_pauta2 = {f["name"] for f in con2.execute("PRAGMA table_info(pauta)").fetchall()}
+    assert "dosis_previstas" in cols_pauta2
     con2.close()
 
 

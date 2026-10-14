@@ -140,12 +140,24 @@ def pauta_desde_formulario(datos: dict[str, str]) -> db.Pauta:
     if not (1 <= separacion <= intervalo):
         raise ValueError("La separación mínima debe estar entre 1 y el intervalo de días")
 
+    prev_str = datos.get("dosis_previstas", "").strip()
+    if prev_str:
+        try:
+            dosis_previstas: int | None = int(prev_str)
+        except (ValueError, TypeError):
+            raise ValueError("Las dosis previstas deben ser un número entero mayor que 0") from None
+        if dosis_previstas <= 0:
+            raise ValueError("Las dosis previstas deben ser un número entero mayor que 0")
+    else:
+        dosis_previstas = None
+
     return db.Pauta(
         farmaco=farmaco,
         dosis_mg=dosis_mg,
         intervalo_dias=intervalo,
         margen_olvido_dias=margen,
         separacion_min_dias=separacion,
+        dosis_previstas=dosis_previstas,
     )
 
 
@@ -198,6 +210,7 @@ def resumen(con: sqlite3.Connection, hoy: date) -> dict[str, Any] | None:
     prox = proxima(p, ultima, hoy)
     if prox is None:
         return None
+    dosis_hechas = db.contar_dosis(con, farmaco=p.farmaco, dosis_mg=p.dosis_mg)
     return {
         "farmaco": p.farmaco,
         "dosis_mg": p.dosis_mg,
@@ -206,4 +219,6 @@ def resumen(con: sqlite3.Connection, hoy: date) -> dict[str, Any] | None:
         "dias_desde_ultima": prox.dias_desde_ultima,
         "estado": prox.estado,
         "prevista": prox.prevista.isoformat(),
+        "dosis_hechas": dosis_hechas,
+        "dosis_previstas": p.dosis_previstas,
     }

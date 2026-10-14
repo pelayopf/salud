@@ -82,6 +82,10 @@
     <label for="separacion_min_dias">Separación mínima entre dosis (días)</label>
     <input id="separacion_min_dias" name="separacion_min_dias" type="number" min="1" max="60" value="{{ pauta.separacion_min_dias }}" required>
 
+    <label for="dosis_previstas">Dosis previstas con esta pauta</label>
+    <input id="dosis_previstas" name="dosis_previstas" type="number" min="1" max="500" value="{{ pauta.dosis_previstas if pauta.dosis_previstas is not none else '' }}" placeholder="Opcional">
+    <p class="suave">Vacío = sin límite.</p>
+
     <p class="suave">Según la ficha técnica de Mounjaro: si se olvida una dosis, se puede poner hasta 4 días después; si han pasado más, se salta. Entre dos dosis, al menos 3 días. Confírmalo con tu médico, sobre todo si cambias el intervalo.</p>
 
     <div class="acciones">

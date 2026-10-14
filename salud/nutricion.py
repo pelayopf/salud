@@ -272,6 +272,17 @@ def ajustes_desde_formulario(datos: dict[str, str]) -> db.AjustesComida:
     else:
         kcal_minimo = None
 
+    peso_obj_str = datos.get("peso_objetivo_kg", "").strip().replace(",", ".")
+    if peso_obj_str:
+        try:
+            peso_objetivo: float | None = float(peso_obj_str)
+        except (ValueError, TypeError):
+            raise ValueError("El peso objetivo debe ser un número entre 30 y 250 kg") from None
+        if not (30.0 <= (peso_objetivo or 0.0) <= 250.0):
+            raise ValueError("El peso objetivo debe estar entre 30 y 250 kg")
+    else:
+        peso_objetivo = None
+
     reparto: dict[str, int] = {}
     for i, m in enumerate(db.REPARTO_DEFECTO):
         val_str = datos.get(f"reparto-{i}", "").strip()
@@ -295,4 +306,5 @@ def ajustes_desde_formulario(datos: dict[str, str]) -> db.AjustesComida:
         peso_kg=peso,
         reparto=reparto,
         kcal_minimo=kcal_minimo,
+        peso_objetivo_kg=peso_objetivo,
     )

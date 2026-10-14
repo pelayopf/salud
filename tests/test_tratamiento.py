@@ -22,14 +22,16 @@ def test_pauta_defecto_y_guardar(con):
     assert p_def.intervalo_dias == 7
     assert p_def.margen_olvido_dias == 4
     assert p_def.separacion_min_dias == 3
+    assert p_def.dosis_previstas is None
 
-    # Guardar nueva pauta
+    # Guardar nueva pauta con dosis previstas
     nueva = db.Pauta(
         farmaco="Ozempic",
         dosis_mg=1.0,
         intervalo_dias=10,
         margen_olvido_dias=5,
         separacion_min_dias=4,
+        dosis_previstas=8,
     )
     db.guardar_pauta(con, nueva)
     leida = db.pauta(con)
@@ -38,6 +40,11 @@ def test_pauta_defecto_y_guardar(con):
     assert leida.intervalo_dias == 10
     assert leida.margen_olvido_dias == 5
     assert leida.separacion_min_dias == 4
+    assert leida.dosis_previstas == 8
+
+    # Guardar de nuevo con dosis_previstas = None
+    db.guardar_pauta(con, db.Pauta(farmaco="Ozempic", dosis_mg=1.0, dosis_previstas=None))
+    assert db.pauta(con).dosis_previstas is None
 
 
 def test_dosis_anadir_listar_orden_y_borrar(con):
@@ -176,6 +183,16 @@ def test_pauta_desde_formulario_valido_y_errores():
     with pytest.raises(ValueError, match="dosis"):
         tratamiento.pauta_desde_formulario(dict(valido, dosis_mg="60"))
 
+    # Dosis previstas opcional
+    p_prev = tratamiento.pauta_desde_formulario(dict(valido, dosis_previstas="8"))
+    assert p_prev.dosis_previstas == 8
+    p_vacio = tratamiento.pauta_desde_formulario(dict(valido, dosis_previstas=""))
+    assert p_vacio.dosis_previstas is None
+    with pytest.raises(ValueError, match="dosis previstas"):
+        tratamiento.pauta_desde_formulario(dict(valido, dosis_previstas="0"))
+    with pytest.raises(ValueError, match="dosis previstas"):
+        tratamiento.pauta_desde_formulario(dict(valido, dosis_previstas="abc"))
+
 
 def test_dosis_desde_formulario_valido_y_errores():
     p = db.Pauta(farmaco="Mounjaro", dosis_mg=5.0)
@@ -224,6 +241,24 @@ def test_resumen_tratamiento_y_contexto(con, settings):
         dosis_mg=5.0,
         zona="muslo izquierdo",
     )
+    # Añadir otra dosis del mismo fármaco y mg
+    db.anadir_dosis(
+        con,
+        fecha="2026-10-03",
+        farmaco="Mounjaro",
+        dosis_mg=5.0,
+        zona="muslo derecho",
+    )
+    # Y una de mg diferente para comprobar que solo cuenta las del mismo fármaco y mg
+    db.anadir_dosis(
+        con,
+        fecha="2026-09-26",
+        farmaco="Mounjaro",
+        dosis_mg=2.5,
+        zona="abdomen izquierdo",
+    )
+
+    db.guardar_pauta(con, db.Pauta(farmaco="Mounjaro", dosis_mg=5.0, dosis_previstas=8))
 
     res = tratamiento.resumen(con, hoy)
     assert res is not None
@@ -234,6 +269,8 @@ def test_resumen_tratamiento_y_contexto(con, settings):
     assert res["dias_desde_ultima"] == 4
     assert res["estado"] == "puede_adelantar"
     assert res["prevista"] == "2026-10-17"
+    assert res["dosis_hechas"] == 2
+    assert res["dosis_previstas"] == 8
 
     # Verificar en consejo.contexto
     ahora = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))

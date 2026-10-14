@@ -354,6 +354,19 @@ def test_ajustes_desde_formulario_valido_y_errores():
     ):
         nutricion.ajustes_desde_formulario(datos_min_500)
 
+    # Peso objetivo vacío -> None
+    datos_obj_vacio = dict(datos_validos, peso_objetivo_kg="")
+    assert nutricion.ajustes_desde_formulario(datos_obj_vacio).peso_objetivo_kg is None
+
+    # Peso objetivo 85.0 -> 85.0
+    datos_obj_85 = dict(datos_validos, peso_objetivo_kg="85,0")
+    assert nutricion.ajustes_desde_formulario(datos_obj_85).peso_objetivo_kg == 85.0
+
+    # Peso objetivo fuera de rango -> error
+    datos_obj_mal = dict(datos_validos, peso_objetivo_kg="20")
+    with pytest.raises(ValueError, match="peso objetivo"):
+        nutricion.ajustes_desde_formulario(datos_obj_mal)
+
 
 def test_objetivo_dia_kcal_minimo(con):
     hoy = date(2026, 1, 10)
@@ -374,14 +387,16 @@ def test_objetivo_dia_kcal_minimo(con):
 
 
 def test_guardar_y_leer_kcal_minimo(con):
-    ajustes = db.AjustesComida(kcal_minimo=1650)
+    ajustes = db.AjustesComida(kcal_minimo=1650, peso_objetivo_kg=85.0)
     db.guardar_ajustes_comida(con, ajustes)
     leidos = db.ajustes_comida(con)
     assert leidos.kcal_minimo == 1650
+    assert leidos.peso_objetivo_kg == 85.0
 
     # Guardar None
-    db.guardar_ajustes_comida(con, db.AjustesComida(kcal_minimo=None))
+    db.guardar_ajustes_comida(con, db.AjustesComida(kcal_minimo=None, peso_objetivo_kg=None))
     assert db.ajustes_comida(con).kcal_minimo is None
+    assert db.ajustes_comida(con).peso_objetivo_kg is None
 
 
 def test_migracion_ajustes_comida_sin_columna(tmp_path):

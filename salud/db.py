@@ -180,7 +180,8 @@ CREATE TABLE IF NOT EXISTS ajustes_comida (
     peso_kg REAL,
     reparto TEXT NOT NULL,
     actualizado TEXT NOT NULL,
-    kcal_minimo INTEGER
+    kcal_minimo INTEGER,
+    peso_objetivo_kg REAL
 );
 CREATE TABLE IF NOT EXISTS consejos_comida (
     id INTEGER PRIMARY KEY,
@@ -199,7 +200,8 @@ CREATE TABLE IF NOT EXISTS pauta (
     intervalo_dias INTEGER NOT NULL,
     margen_olvido_dias INTEGER NOT NULL,
     separacion_min_dias INTEGER NOT NULL,
-    actualizado TEXT NOT NULL
+    actualizado TEXT NOT NULL,
+    dosis_previstas INTEGER
 );
 CREATE TABLE IF NOT EXISTS dosis (
     id INTEGER PRIMARY KEY,
@@ -284,6 +286,7 @@ class AjustesComida:
     peso_kg: float | None = None
     reparto: dict[str, int] = field(default_factory=lambda: dict(REPARTO_DEFECTO))
     kcal_minimo: int | None = None
+    peso_objetivo_kg: float | None = None
 
 
 @dataclass(frozen=True)
@@ -365,6 +368,7 @@ class Pauta:
     intervalo_dias: int = 7
     margen_olvido_dias: int = 4
     separacion_min_dias: int = 3
+    dosis_previstas: int | None = None
 
 
 @dataclass(frozen=True)
@@ -426,7 +430,10 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
     _añadir_columnas(con, "productos_propios", {"racion_g": "REAL", "racion_nombre": "TEXT"})
-    _añadir_columnas(con, "ajustes_comida", {"kcal_minimo": "INTEGER"})
+    _añadir_columnas(
+        con, "ajustes_comida", {"kcal_minimo": "INTEGER", "peso_objetivo_kg": "REAL"}
+    )
+    _añadir_columnas(con, "pauta", {"dosis_previstas": "INTEGER"})
     return con
 
 
@@ -733,9 +740,9 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
             """
             INSERT INTO ajustes_comida (
                 id, deficit_kcal, proteinas_g_kg, grasas_g_kg, peso_kg, reparto,
-                actualizado, kcal_minimo
+                actualizado, kcal_minimo, peso_objetivo_kg
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 deficit_kcal = excluded.deficit_kcal,
                 proteinas_g_kg = excluded.proteinas_g_kg,
@@ -743,7 +750,8 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
                 peso_kg = excluded.peso_kg,
                 reparto = excluded.reparto,
                 actualizado = excluded.actualizado,
-                kcal_minimo = excluded.kcal_minimo
+                kcal_minimo = excluded.kcal_minimo,
+                peso_objetivo_kg = excluded.peso_objetivo_kg
             """,
             (
                 ajustes.deficit_kcal,
@@ -753,6 +761,7 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
                 reparto_json,
                 momento,
                 ajustes.kcal_minimo,
+                ajustes.peso_objetivo_kg,
             ),
         )
 
@@ -1156,6 +1165,11 @@ def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
         if "kcal_minimo" in fila.keys() and fila["kcal_minimo"] is not None
         else None
     )
+    peso_obj = (
+        float(fila["peso_objetivo_kg"])
+        if "peso_objetivo_kg" in fila.keys() and fila["peso_objetivo_kg"] is not None
+        else None
+    )
     return AjustesComida(
         deficit_kcal=int(fila["deficit_kcal"]),
         proteinas_g_kg=float(fila["proteinas_g_kg"]),
@@ -1163,6 +1177,7 @@ def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
         peso_kg=float(fila["peso_kg"]) if fila["peso_kg"] is not None else None,
         reparto=reparto,
         kcal_minimo=kcal_min,
+        peso_objetivo_kg=peso_obj,
     )
 
 
@@ -1361,12 +1376,18 @@ def pauta(con: sqlite3.Connection) -> Pauta:
     fila = con.execute("SELECT * FROM pauta WHERE id = 1").fetchone()
     if fila is None:
         return Pauta()
+    dosis_prev = (
+        int(fila["dosis_previstas"])
+        if "dosis_previstas" in fila.keys() and fila["dosis_previstas"] is not None
+        else None
+    )
     return Pauta(
         farmaco=str(fila["farmaco"]),
         dosis_mg=float(fila["dosis_mg"]),
         intervalo_dias=int(fila["intervalo_dias"]),
         margen_olvido_dias=int(fila["margen_olvido_dias"]),
         separacion_min_dias=int(fila["separacion_min_dias"]),
+        dosis_previstas=dosis_prev,
     )
 
 
@@ -1383,16 +1404,17 @@ def guardar_pauta(con: sqlite3.Connection, p: Pauta) -> None:
             """
             INSERT INTO pauta (
                 id, farmaco, dosis_mg, intervalo_dias, margen_olvido_dias,
-                separacion_min_dias, actualizado
+                separacion_min_dias, actualizado, dosis_previstas
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 farmaco = excluded.farmaco,
                 dosis_mg = excluded.dosis_mg,
                 intervalo_dias = excluded.intervalo_dias,
                 margen_olvido_dias = excluded.margen_olvido_dias,
                 separacion_min_dias = excluded.separacion_min_dias,
-                actualizado = excluded.actualizado
+                actualizado = excluded.actualizado,
+                dosis_previstas = excluded.dosis_previstas
             """,
             (
                 p.farmaco,
@@ -1401,8 +1423,30 @@ def guardar_pauta(con: sqlite3.Connection, p: Pauta) -> None:
                 p.margen_olvido_dias,
                 p.separacion_min_dias,
                 momento,
+                p.dosis_previstas,
             ),
         )
+
+
+def contar_dosis(
+    con: sqlite3.Connection,
+    *,
+    farmaco: str | None = None,
+    dosis_mg: float | None = None,
+) -> int:
+    """Cuenta las dosis registradas, opcionalmente filtrando por fármaco y dosis_mg."""
+    where: list[str] = []
+    params: list[Any] = []
+    if farmaco is not None:
+        where.append("farmaco = ?")
+        params.append(farmaco)
+    if dosis_mg is not None:
+        where.append("dosis_mg = ?")
+        params.append(dosis_mg)
+    query = "SELECT COUNT(*) FROM dosis"
+    if where:
+        query += " WHERE " + " AND ".join(where)
+    return int(con.execute(query, params).fetchone()[0])
 
 
 def anadir_dosis(
