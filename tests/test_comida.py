@@ -316,8 +316,13 @@ def test_recientes(settings, con):
         codigo=EAN13,
         nombre="Avena crunchy",
         marca="Marca Test",
+        nutriscore=None,
         unidad="g",
         kcal=380.0,
+        proteinas=None,
+        hidratos=None,
+        grasas=None,
+        datos={},
     )
     db.anadir_comida(con, "2026-01-10", "desayuno", "Avena crunchy", 50.0, "g", codigo=EAN13)
 

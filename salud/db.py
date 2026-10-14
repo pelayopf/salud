@@ -312,47 +312,22 @@ def guardar_lectura(
 
 def guardar_producto(
     con: sqlite3.Connection,
-    codigo: str | dict[str, Any],
-    nombre: str | None = None,
-    marca: str | None = None,
-    nutriscore: str | None = None,
-    unidad: str = "g",
-    kcal: float | None = None,
-    proteinas: float | None = None,
-    hidratos: float | None = None,
-    grasas: float | None = None,
     *,
-    datos: str | dict[str, Any] = "",
+    codigo: str,
+    nombre: str | None,
+    marca: str | None,
+    nutriscore: str | None,
+    unidad: str,
+    kcal: float | None,
+    proteinas: float | None,
+    hidratos: float | None,
+    grasas: float | None,
+    datos: dict[str, Any],
     consultado: str | None = None,
 ) -> None:
     """Guarda (o actualiza) un producto en la caché de Open Food Facts."""
-    if isinstance(codigo, dict):
-        d = codigo
-        cod = str(d["codigo"])
-        nom = d.get("nombre")
-        mar = d.get("marca")
-        nut = d.get("nutriscore")
-        uni = d.get("unidad", "g")
-        kc = d.get("kcal")
-        prot = d.get("proteinas")
-        hid = d.get("hidratos")
-        gra = d.get("grasas")
-        dat = d.get("datos", "")
-        momento = d.get("consultado") or consultado or ahora()
-    else:
-        cod = codigo
-        nom = nombre
-        mar = marca
-        nut = nutriscore
-        uni = unidad
-        kc = kcal
-        prot = proteinas
-        hid = hidratos
-        gra = grasas
-        dat = datos
-        momento = consultado or ahora()
-
-    datos_json = json.dumps(dat, ensure_ascii=False) if isinstance(dat, dict) else str(dat)
+    momento = consultado or ahora()
+    datos_json = json.dumps(datos, ensure_ascii=False)
 
     with con:
         con.execute(
@@ -360,7 +335,19 @@ def guardar_producto(
             " (codigo, nombre, marca, nutriscore, unidad, kcal, proteinas, hidratos,"
             " grasas, datos, consultado)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (cod, nom, mar, nut, uni, kc, prot, hid, gra, datos_json, momento),
+            (
+                codigo,
+                nombre,
+                marca,
+                nutriscore,
+                unidad,
+                kcal,
+                proteinas,
+                hidratos,
+                grasas,
+                datos_json,
+                momento,
+            ),
         )
 
 

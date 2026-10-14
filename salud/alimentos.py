@@ -261,7 +261,6 @@ def obtener_producto(
         hidratos=producto_off.hidratos,
         grasas=producto_off.grasas,
         datos=datos_crudos,
-        consultado=db.ahora(),
     )
     return ResultadoProducto(producto_off, desde_cache=False)
 

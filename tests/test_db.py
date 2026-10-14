@@ -66,7 +66,7 @@ def test_cache_productos(con):
 
     db.guardar_producto(
         con,
-        "2000000000008",
+        codigo="2000000000008",
         nombre="Cereal inventado",
         marca="Marca Test",
         nutriscore="B",
@@ -94,21 +94,19 @@ def test_cache_productos(con):
 
     assert db.leer_producto(con, "20000004") is None
 
-    # Actualizar producto pasando un diccionario
+    # Actualizar producto
     db.guardar_producto(
         con,
-        {
-            "codigo": "2000000000008",
-            "nombre": "Cereal actualizado",
-            "marca": "Marca Test",
-            "nutriscore": "A",
-            "unidad": "g",
-            "kcal": 370.0,
-            "proteinas": 11.0,
-            "hidratos": 68.0,
-            "grasas": 4.5,
-            "datos": {"test": 456},
-        },
+        codigo="2000000000008",
+        nombre="Cereal actualizado",
+        marca="Marca Test",
+        nutriscore="A",
+        unidad="g",
+        kcal=370.0,
+        proteinas=11.0,
+        hidratos=68.0,
+        grasas=4.5,
+        datos={"test": 456},
     )
     fila2 = hay(db.leer_producto(con, "2000000000008"))
     assert fila2["nombre"] == "Cereal actualizado"
@@ -269,33 +267,39 @@ def test_productos_recientes(con):
         codigo="111",
         nombre="Pan",
         marca="Bimbo",
+        nutriscore=None,
         unidad="g",
         kcal=250.0,
         proteinas=8.0,
         hidratos=45.0,
         grasas=3.0,
+        datos={},
     )
     db.guardar_producto(
         con,
         codigo="222",
         nombre="Leche",
         marca="Pascual",
+        nutriscore=None,
         unidad="ml",
         kcal=60.0,
         proteinas=3.2,
         hidratos=4.8,
         grasas=3.0,
+        datos={},
     )
     db.guardar_producto(
         con,
         codigo="333",
         nombre="Yogur",
         marca="Danone",
+        nutriscore=None,
         unidad="g",
         kcal=70.0,
         proteinas=4.0,
         hidratos=5.0,
         grasas=3.5,
+        datos={},
     )
 
     # Añadir comidas:

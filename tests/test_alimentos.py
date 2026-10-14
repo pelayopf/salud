@@ -250,7 +250,7 @@ def test_obtener_producto_caducado_falla_off_devuelve_cache(con):
     hace_40_dias = (datetime.now(UTC) - timedelta(days=40)).isoformat()
     db.guardar_producto(
         con,
-        EAN13,
+        codigo=EAN13,
         nombre="Cereal antiguo",
         marca="Bio",
         nutriscore="A",
