@@ -904,6 +904,24 @@ def borrar_planificado_titulo(con: sqlite3.Connection, titulo: str) -> int:
     return len(ids_a_borrar)
 
 
+def actualizar_tipo_titulo(
+    con: sqlite3.Connection, *, titulo: str, tipo: str, intensidad: str
+) -> int:
+    """Pone tipo e intensidad a las filas de origen 'google' cuyo título normalizado coincide."""
+    objetivo = normalizar_titulo(titulo)
+    filas = con.execute("SELECT id, titulo FROM planificado WHERE origen = 'google'").fetchall()
+    ids_a_actualizar = [f["id"] for f in filas if normalizar_titulo(f["titulo"]) == objetivo]
+    if not ids_a_actualizar:
+        return 0
+    now = ahora()
+    with con:
+        con.executemany(
+            "UPDATE planificado SET tipo = ?, intensidad = ?, actualizado = ? WHERE id = ?",
+            [(tipo, intensidad, now, i) for i in ids_a_actualizar],
+        )
+    return len(ids_a_actualizar)
+
+
 def titulos_calendario(con: sqlite3.Connection) -> dict[str, tuple[bool, str | None]]:
     """Diccionario de títulos del calendario clasificados (deporte, tipo de Garmin)."""
     filas = con.execute("SELECT titulo, deporte, tipo FROM titulos_calendario").fetchall()
