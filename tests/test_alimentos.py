@@ -576,12 +576,16 @@ def test_buscar_off_exito():
             200,
             json={
                 "count": 3,
-                "products": [
+                "hits": [
                     {
                         "code": EAN13,
                         "product_name": "Pan de centeno",
-                        "brands": "Hacendado",
+                        "brands": ["Hacendado"],
                         "nutriments": {"energy-kcal_100g": 250},
+                    },
+                    {
+                        "code": EAN13_BIS,  # no empieza por "pan": fuera
+                        "product_name": "Queso fresco rallado",
                     },
                     {
                         "code": "1234",  # no válido
@@ -611,10 +615,20 @@ def test_buscar_off_exito():
     assert res[1].kcal == round(1000 / 4.184, 1)
 
     [p] = peticiones
-    assert p.url.path == "/cgi/search.pl"
-    assert p.url.params["search_terms"] == "pan"
-    assert p.url.params["page_size"] == "5"
-    assert p.url.params["countries_tags_en"] == "spain"
+    assert p.url.host == "search.openfoodfacts.org"
+    assert p.url.path == "/search"
+    assert p.url.params["q"] == 'pan countries_tags:"en:spain"'
+    assert p.url.params["page_size"] == "15"
+
+
+def test_buscar_off_quita_sintaxis_de_busqueda():
+    cliente, peticiones = cliente_falso(lambda _: httpx.Response(200, json={"hits": []}))
+    assert alimentos.buscar_off('  pan: "integral" (bimbo)  ', cliente) == []
+    assert peticiones[0].url.params["q"] == 'pan integral bimbo countries_tags:"en:spain"'
+
+    vacio, sin_peticiones = cliente_falso(lambda _: httpx.Response(500))
+    assert alimentos.buscar_off(":*", vacio) == []
+    assert sin_peticiones == []
 
 
 def test_buscar_off_500():
@@ -629,7 +643,7 @@ def test_buscar_off_json_raro():
     with pytest.raises(OpenFoodFactsNoDisponible, match="Open Food Facts no responde ahora"):
         alimentos.buscar_off("pan", cliente_html)
 
-    # JSON sin lista de products
+    # JSON sin lista de hits
     cliente_sin_products, _ = cliente_falso(lambda _: httpx.Response(200, json={"status": 0}))
     with pytest.raises(OpenFoodFactsNoDisponible, match="Open Food Facts no responde ahora"):
         alimentos.buscar_off("pan", cliente_sin_products)

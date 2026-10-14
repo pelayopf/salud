@@ -28,12 +28,12 @@ def cliente_off_mock(
 
     def manejar(peticion: httpx.Request) -> httpx.Response:
         peticiones.append(peticion)
-        if "/cgi/search.pl" in peticion.url.path:
+        if peticion.url.host == "search.openfoodfacts.org":
             if busqueda is not None:
                 if isinstance(busqueda, int):
                     return httpx.Response(busqueda)
                 return httpx.Response(200, json=busqueda)
-            return httpx.Response(200, json={"count": 0, "products": []})
+            return httpx.Response(200, json={"count": 0, "hits": []})
         for codigo, respuesta in datos.items():
             if f"/api/v2/product/{codigo}.json" in peticion.url.path:
                 if isinstance(respuesta, int):
@@ -1209,7 +1209,7 @@ def test_buscar_comida_cuatro_grupos(settings, con, monkeypatch):
     cliente_off, _ = cliente_off_mock(
         busqueda={
             "count": 1,
-            "products": [
+            "hits": [
                 {
                     "code": EAN13,
                     "product_name": "Plátano desecado",
@@ -1262,7 +1262,7 @@ def test_buscar_comida_off_caido(settings, con):
 
 def test_buscar_comida_sin_nada(settings, monkeypatch):
     monkeypatch.setattr(ciqual, "buscar", lambda _q, *_args, **_kwargs: [])
-    cliente_off, _ = cliente_off_mock(busqueda={"count": 0, "products": []})
+    cliente_off, _ = cliente_off_mock(busqueda={"count": 0, "hits": []})
 
     c = cliente_web(settings, cliente_off=cliente_off)
     r = c.get("/comida/buscar?q=inexistente&fecha=2026-01-10")

@@ -21,7 +21,10 @@ import httpx
 from . import ciqual, db
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
-URL_BUSQUEDA = "https://world.openfoodfacts.org/cgi/search.pl"
+# Buscador nuevo de Open Food Facts (search-a-licious): el antiguo cgi/search.pl da 503 a menudo.
+URL_BUSQUEDA = "https://search.openfoodfacts.org/search"
+# Caracteres con significado en su sintaxis de consulta (Lucene): se quitan del texto buscado.
+_SINTAXIS_BUSQUEDA = re.compile(r'[:"()\[\]{}^~*?\\/+!&|-]')
 TIMEOUT_BUSQUEDA = 8.0
 CAMPOS = (
     "code",
@@ -200,7 +203,7 @@ def buscar_off(
     texto: str, cliente: httpx.Client | None = None, limite: int = 10
 ) -> list[ResultadoBusqueda]:
     """Busca productos en Open Food Facts por texto."""
-    q = texto.strip()
+    q = " ".join(_SINTAXIS_BUSQUEDA.sub(" ", texto).split())
     if not q or limite <= 0:
         return []
 
@@ -210,12 +213,10 @@ def buscar_off(
         respuesta = http.get(
             URL_BUSQUEDA,
             params={
-                "search_terms": q,
-                "search_simple": 1,
-                "action": "process",
-                "json": 1,
-                "page_size": limite,
-                "countries_tags_en": "spain",
+                "q": f'{q} countries_tags:"en:spain"',
+                "langs": "es",
+                # Pide de más: busca palabras enteras y luego se filtra por prefijos.
+                "page_size": limite * 3,
                 "fields": "code,product_name,product_name_es,brands,nutriments",
             },
             headers={"User-Agent": user_agent()},
@@ -234,13 +235,11 @@ def buscar_off(
     except (ValueError, TypeError):
         raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora") from None
 
-    if not isinstance(datos, dict):
-        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora")
-
-    products = datos.get("products")
+    products = datos.get("hits") if isinstance(datos, dict) else None
     if not isinstance(products, list):
         raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora")
 
+    buscadas = db.palabras_buscadas(q)
     resultados: list[ResultadoBusqueda] = []
     for p in products:
         if not isinstance(p, dict):
@@ -255,6 +254,8 @@ def buscar_off(
         if not nombre:
             continue
         marca = _primera_marca(p.get("brands"))
+        if not db.encaja(buscadas, nombre, marca):
+            continue
         nutrientes = p.get("nutriments")
         n: dict[str, Any] = nutrientes if isinstance(nutrientes, dict) else {}
         kcal = _numero(n.get("energy-kcal_100g"))
@@ -264,7 +265,7 @@ def buscar_off(
                 kcal = round(kj / KJ_POR_KCAL, 1)
         resultados.append(ResultadoBusqueda(codigo=codigo, nombre=nombre, marca=marca, kcal=kcal))
 
-    return resultados
+    return resultados[:limite]
 
 
 def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
@@ -521,7 +522,9 @@ def _texto(valor: Any) -> str | None:
 
 
 def _primera_marca(valor: Any) -> str | None:
-    """Open Food Facts da las marcas separadas por comas: se usa la primera."""
+    """Primera marca: Open Food Facts las da separadas por comas (o en lista, al buscar)."""
+    if isinstance(valor, list):
+        valor = valor[0] if valor else None
     texto = _texto(valor)
     return _texto(texto.split(",")[0]) if texto else None
 
