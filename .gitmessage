@@ -19,6 +19,7 @@ tipo(scope): resumen en imperativo, minúsculas, sin punto final
 #   nutricion - objetivos de comida (nutricion.py)
 #   consejo  - consejo de comida con IA (consejo.py)
 #   ciqual   - alimentos genéricos de CIQUAL (ciqual.py)
+#   tratamiento - registro de dosis y pauta farmacológica (tratamiento.py)
 #   repo     - scaffolding del repositorio (gitignore, readme, config de herramientas)
 #
 # Si ninguno encaja, propón uno nuevo explícitamente y añádelo aquí.

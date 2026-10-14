@@ -14,6 +14,8 @@
 - `titulos_calendario`: clasificación de títulos del calendario (deporte y tipo).
 - `semana_tipo`: plantilla semanal propuesta a partir de los hábitos de Garmin.
 - `consejos_comida`: consejos de comida propuestos por la IA.
+- `pauta`: configuración de la pauta farmacológica (fármaco, dosis e intervalos).
+- `dosis`: registro de dosis administradas.
 """
 
 from __future__ import annotations
@@ -188,6 +190,25 @@ CREATE TABLE IF NOT EXISTS consejos_comida (
     segundos REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS consejos_comida_fecha ON consejos_comida (fecha);
+CREATE TABLE IF NOT EXISTS pauta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    farmaco TEXT NOT NULL,
+    dosis_mg REAL NOT NULL,
+    intervalo_dias INTEGER NOT NULL,
+    margen_olvido_dias INTEGER NOT NULL,
+    separacion_min_dias INTEGER NOT NULL,
+    actualizado TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dosis (
+    id INTEGER PRIMARY KEY,
+    fecha TEXT NOT NULL,          -- AAAA-MM-DD, hora local
+    farmaco TEXT NOT NULL,
+    dosis_mg REAL NOT NULL,
+    zona TEXT NOT NULL,
+    nota TEXT NOT NULL DEFAULT '',
+    creado TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dosis_fecha ON dosis (fecha);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -321,6 +342,30 @@ class EntradaSemana:
     duracion_min: int | None
     tipo: str
     intensidad: str
+
+
+@dataclass(frozen=True)
+class Pauta:
+    """Configuración de la pauta de tratamiento (fármaco, dosis e intervalos)."""
+
+    farmaco: str = "Mounjaro"
+    dosis_mg: float = 5.0
+    intervalo_dias: int = 7
+    margen_olvido_dias: int = 4
+    separacion_min_dias: int = 3
+
+
+@dataclass(frozen=True)
+class Dosis:
+    """Una dosis de tratamiento administrada."""
+
+    id: int
+    fecha: str
+    farmaco: str
+    dosis_mg: float
+    zona: str
+    nota: str = ""
+    creado: str = ""
 
 
 def normalizar_titulo(texto: str) -> str:
@@ -1294,3 +1339,104 @@ def guardar_semana_tipo(con: sqlite3.Connection, entradas: Iterable[EntradaSeman
             )
             n += 1
         return n
+
+
+# --- Tratamiento -------------------------------------------------------------
+
+
+def pauta(con: sqlite3.Connection) -> Pauta:
+    """Pauta de tratamiento o los valores por defecto si no hay fila."""
+    fila = con.execute("SELECT * FROM pauta WHERE id = 1").fetchone()
+    if fila is None:
+        return Pauta()
+    return Pauta(
+        farmaco=str(fila["farmaco"]),
+        dosis_mg=float(fila["dosis_mg"]),
+        intervalo_dias=int(fila["intervalo_dias"]),
+        margen_olvido_dias=int(fila["margen_olvido_dias"]),
+        separacion_min_dias=int(fila["separacion_min_dias"]),
+    )
+
+
+def guardar_pauta(con: sqlite3.Connection, p: Pauta) -> None:
+    """Guarda (upsert id=1) la pauta de tratamiento."""
+    momento = ahora()
+    with con:
+        con.execute(
+            """
+            INSERT INTO pauta (
+                id, farmaco, dosis_mg, intervalo_dias, margen_olvido_dias,
+                separacion_min_dias, actualizado
+            )
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                farmaco = excluded.farmaco,
+                dosis_mg = excluded.dosis_mg,
+                intervalo_dias = excluded.intervalo_dias,
+                margen_olvido_dias = excluded.margen_olvido_dias,
+                separacion_min_dias = excluded.separacion_min_dias,
+                actualizado = excluded.actualizado
+            """,
+            (
+                p.farmaco,
+                p.dosis_mg,
+                p.intervalo_dias,
+                p.margen_olvido_dias,
+                p.separacion_min_dias,
+                momento,
+            ),
+        )
+
+
+def anadir_dosis(
+    con: sqlite3.Connection,
+    *,
+    fecha: str,
+    farmaco: str,
+    dosis_mg: float,
+    zona: str,
+    nota: str = "",
+) -> int:
+    """Añade una dosis administrada. Devuelve el identificador generado."""
+    momento = ahora()
+    with con:
+        cur = con.execute(
+            """
+            INSERT INTO dosis (fecha, farmaco, dosis_mg, zona, nota, creado)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (fecha, farmaco, dosis_mg, zona, nota, momento),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def dosis(con: sqlite3.Connection, limite: int = 100) -> list[Dosis]:
+    """Lista las dosis registradas, la más reciente primero."""
+    filas = con.execute(
+        """
+        SELECT id, fecha, farmaco, dosis_mg, zona, nota, creado
+        FROM dosis
+        ORDER BY fecha DESC, id DESC
+        LIMIT ?
+        """,
+        (limite,),
+    ).fetchall()
+    return [
+        Dosis(
+            id=f["id"],
+            fecha=f["fecha"],
+            farmaco=f["farmaco"],
+            dosis_mg=float(f["dosis_mg"]),
+            zona=f["zona"],
+            nota=f["nota"],
+            creado=f["creado"],
+        )
+        for f in filas
+    ]
+
+
+def borrar_dosis(con: sqlite3.Connection, id_: int) -> bool:
+    """Borra una dosis por su identificador. Devuelve True si existía."""
+    with con:
+        cur = con.execute("DELETE FROM dosis WHERE id = ?", (id_,))
+        return cur.rowcount > 0
