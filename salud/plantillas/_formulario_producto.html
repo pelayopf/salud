@@ -1,6 +1,7 @@
 <form class="formulario" method="post" action="/comida/productos" data-producto>
   <input type="hidden" name="fecha" value="{{ fecha }}">
   {% if id_propio %}<input type="hidden" name="id" value="{{ id_propio }}">{% endif %}
+  {% if momento_defecto %}<input type="hidden" name="momento" value="{{ momento_defecto }}">{% endif %}
   <input type="hidden" name="ia" value="">
   <div class="acciones">
     <button type="button" class="boton secundario" data-leer-etiqueta>Leer la etiqueta</button>

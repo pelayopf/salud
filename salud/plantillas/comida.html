@@ -10,9 +10,15 @@
   {% if siguiente %}<a class="flecha" href="/comida?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
 </div>
 
-<section class="panel">
+<section class="panel" id="buscar">
+  {% if momento_elegido %}
+  <p class="suave">Añadiendo a: {{ momento_elegido | capitalize }}</p>
+  {% endif %}
   <form class="formulario" method="get" action="/comida/producto">
     <input type="hidden" name="fecha" value="{{ fecha }}">
+    {% if momento_elegido %}
+    <input type="hidden" name="momento" value="{{ momento_elegido }}">
+    {% endif %}
     <label for="codigo">Buscar producto por código de barras</label>
     <input id="codigo" name="codigo" inputmode="numeric" placeholder="Ej. 8410000000000" value="{{ codigo_buscado | default('') }}" required>
     <div class="acciones">
@@ -24,15 +30,16 @@
 
 {% for m in momentos %}
   {% set items = comidas_por_momento.get(m, []) %}
-  {% if items %}
+  {% if m != "otro" or items %}
   {% set tot_m = totales.por_momento.get(m) %}
   <section class="panel">
     <div class="cabecera">
       <h2>{{ m | capitalize }}</h2>
       <span class="derecha">
-        <strong>{% if tot_m and tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}</strong>
+        <strong>{% if tot_m and tot_m.entradas > 0 and tot_m.sin_kcal < tot_m.entradas %}{{ tot_m.kcal | cifra }} kcal{% else %}—{% endif %}</strong>
       </span>
     </div>
+    {% if items %}
     <div class="lista">
       {% for c in items %}
       <div class="fila">
@@ -65,6 +72,10 @@
       {% endif %}
     </div>
     {% endif %}
+    {% else %}
+    <p class="suave">Nada apuntado</p>
+    {% endif %}
+    <div class="acciones"><a href="/comida?fecha={{ fecha }}&momento={{ m | urlencode }}#buscar">Añadir</a></div>
   </section>
   {% endif %}
 {% endfor %}
@@ -96,7 +107,7 @@
   <div class="lista">
     {% for r in recientes %}
     <div class="fila">
-      <a class="enlace" href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}">
+      <a class="enlace" href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}">
         <strong>{{ r.nombre or r.codigo }}</strong>{% if r.marca %} <span class="suave">· {{ r.marca }}</span>{% endif %}
       </a>
       <span class="suave">{{ r.unidad }}</span>
@@ -114,7 +125,7 @@
   <div class="lista">
     {% for p in productos_propios %}
     <div class="fila">
-      <a class="enlace" href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% endif %}">
+      <a class="enlace" href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}">
         <strong>{{ p.nombre }}</strong>{% if p.marca %} <span class="suave">· {{ p.marca }}</span>{% endif %}
       </a>
       <span class="suave">{{ p.unidad }}</span>
@@ -128,7 +139,7 @@
 
 <details class="panel">
   <summary>Añadir a mano</summary>
-  <p><a class="boton secundario" href="/comida/nuevo?fecha={{ fecha }}">Nuevo producto (con foto de la etiqueta)</a></p>
+  <p><a class="boton secundario" href="/comida/nuevo?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}">Nuevo producto (con foto de la etiqueta)</a></p>
   <p class="suave">Para comidas sueltas, el formulario de abajo con los totales.</p>
   <form class="formulario" method="post" action="/comida/anadir">
     <input type="hidden" name="fecha" value="{{ fecha }}">
@@ -137,7 +148,9 @@
     <label for="momento">Momento</label>
     <select id="momento" name="momento" required>
       {% for m in momentos %}
+      {% if m != "otro" %}
       <option value="{{ m }}"{% if m == momento_defecto %} selected{% endif %}>{{ m | capitalize }}</option>
+      {% endif %}
       {% endfor %}
     </select>
     <label for="cantidad">Cantidad</label>

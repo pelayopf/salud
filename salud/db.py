@@ -205,7 +205,7 @@ class Valor:
     fuente: str
 
 
-MOMENTOS = ("desayuno", "comida", "merienda", "cena", "otro")
+MOMENTOS = ("desayuno", "media mañana", "comida", "merienda", "cena", "otro")
 
 
 @dataclass(frozen=True)

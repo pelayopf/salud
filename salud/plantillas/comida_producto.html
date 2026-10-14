@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}{{ producto.nombre or producto.codigo }} · Salud{% endblock %}
 {% block contenido %}
-<p><a class="suave" href="/comida?fecha={{ fecha }}">‹ Volver a Comida</a></p>
+<p><a class="suave" href="/comida?fecha={{ fecha }}{% if momento_defecto %}&momento={{ momento_defecto | urlencode }}{% endif %}">‹ Volver a Comida</a></p>
 
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 

@@ -398,15 +398,24 @@ def _actividades(filas: list[sqlite3.Row]) -> list[dict[str, Any]]:
 def momento_por_hora(hora: int) -> str:
     """Devuelve el momento según la hora (0-23).
 
-    desayuno si hora < 11, comida si < 16, merienda si < 20, cena el resto.
+    desayuno si hora < 10, media mañana si < 13, comida si < 16, merienda si < 20, cena el resto.
     """
-    if hora < 11:
+    if hora < 10:
         return "desayuno"
+    if hora < 13:
+        return "media mañana"
     if hora < 16:
         return "comida"
     if hora < 20:
         return "merienda"
     return "cena"
+
+
+def momento_valido(valor: str | None) -> str | None:
+    """Devuelve el valor si está en MOMENTOS, si no None."""
+    if valor in db.MOMENTOS:
+        return valor
+    return None
 
 
 @dataclass(frozen=True)
@@ -1133,6 +1142,7 @@ def crear_app(
         *,
         error: str | None = None,
         codigo_buscado: str = "",
+        momento_elegido: str | None = None,
     ) -> HTMLResponse:
         con = abrir_db()
         try:
@@ -1145,6 +1155,9 @@ def crear_app(
         comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
         for c in comidas_dia:
             comidas_por_momento.setdefault(c.momento, []).append(c)
+        if momento_elegido is None:
+            momento_elegido = momento_valido(request.query_params.get("momento"))
+        momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
         return _render(
             "comida.html",
             seccion="comida",
@@ -1157,18 +1170,23 @@ def crear_app(
             recientes=recientes,
             productos_propios=propios,
             momentos=db.MOMENTOS,
-            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            momento_defecto=momento_defecto,
+            momento_elegido=momento_elegido,
             mensaje=request.query_params.get("mensaje"),
             error=error or request.query_params.get("error"),
             codigo_buscado=codigo_buscado,
         )
 
     def ver_comida(request: Request) -> Response:
-        return _pagina_comida(request, _fecha(request))
+        momento_elegido = momento_valido(request.query_params.get("momento"))
+        return _pagina_comida(request, _fecha(request), momento_elegido=momento_elegido)
 
     def ver_comida_nuevo(request: Request) -> Response:
         fecha = _fecha(request)
         codigo = request.query_params.get("codigo", "").strip()
+        momento_defecto = momento_valido(request.query_params.get("momento")) or momento_por_hora(
+            datetime.now(ZONA).hour
+        )
         aviso = request.query_params.get("aviso")
         mensaje = request.query_params.get("mensaje")
         error = request.query_params.get("error")
@@ -1180,13 +1198,19 @@ def crear_app(
             aviso=aviso,
             mensaje=mensaje,
             error=error,
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_defecto,
         )
 
     def ver_producto(request: Request) -> Response:
         fecha = _fecha(request)
         codigo = request.query_params.get("codigo", "").strip()
+        momento_elegido = momento_valido(request.query_params.get("momento"))
+        momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
         if not codigo:
-            return _pagina_comida(request, fecha, error="Escribe un código de barras")
+            return _pagina_comida(
+                request, fecha, error="Escribe un código de barras", momento_elegido=momento_elegido
+            )
         con = abrir_db()
         try:
             try:
@@ -1206,10 +1230,18 @@ def crear_app(
                         ),
                         mensaje=None,
                         error=None,
+                        momentos=db.MOMENTOS,
+                        momento_defecto=momento_defecto,
                     )
                 else:
                     error_msg = "Open Food Facts no responde en este momento"
-                return _pagina_comida(request, fecha, error=error_msg, codigo_buscado=codigo)
+                return _pagina_comida(
+                    request,
+                    fecha,
+                    error=error_msg,
+                    codigo_buscado=codigo,
+                    momento_elegido=momento_elegido,
+                )
         finally:
             con.close()
         return _render(
@@ -1219,7 +1251,7 @@ def crear_app(
             desde_cache=res.desde_cache,
             fecha=fecha.isoformat(),
             momentos=db.MOMENTOS,
-            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            momento_defecto=momento_defecto,
             mensaje=request.query_params.get("mensaje"),
         )
 
@@ -1236,13 +1268,17 @@ def crear_app(
         id_ = int(id_raw) if id_raw.isdigit() else None
         codigo_form = datos.get("codigo", "").strip()
 
+        momento_form = momento_valido(datos.get("momento"))
+        momento_qs = f"&{urlencode({'momento': momento_form})}" if momento_form else ""
+
+        qs_prod = urlencode({"codigo": codigo_form, "fecha": fecha_str})
         destino_error = (
-            f"/comida/propio/{id_}?fecha={fecha_str}"
+            f"/comida/propio/{id_}?fecha={fecha_str}{momento_qs}"
             if id_ is not None
             else (
-                f"/comida/producto?{urlencode({'codigo': codigo_form, 'fecha': fecha_str})}"
+                f"/comida/producto?{qs_prod}{momento_qs}"
                 if codigo_form
-                else f"/comida/nuevo?fecha={fecha_str}"
+                else f"/comida/nuevo?fecha={fecha_str}{momento_qs}"
             )
         )
 
@@ -1276,14 +1312,19 @@ def crear_app(
             return _volver(str(exc), destino_error)
 
         if dp.codigo:
-            return _volver(
-                "Producto guardado", f"/comida/producto?codigo={dp.codigo}&fecha={fecha_str}"
-            )
-        return _volver("Producto guardado", f"/comida/propio/{guardado_id}?fecha={fecha_str}")
+            dest_prod = f"/comida/producto?{urlencode({'codigo': dp.codigo, 'fecha': fecha_str})}"
+            return _volver("Producto guardado", f"{dest_prod}{momento_qs}")
+        return _volver(
+            "Producto guardado",
+            f"/comida/propio/{guardado_id}?fecha={fecha_str}{momento_qs}",
+        )
 
     def ver_comida_propio(request: Request) -> Response:
         id_ = int(request.path_params["id"])
         fecha = _fecha(request)
+        momento_defecto = momento_valido(request.query_params.get("momento")) or momento_por_hora(
+            datetime.now(ZONA).hour
+        )
         con = abrir_db()
         try:
             fila = db.leer_producto_propio(con, id_)
@@ -1301,7 +1342,7 @@ def crear_app(
             desde_cache=False,
             fecha=fecha.isoformat(),
             momentos=db.MOMENTOS,
-            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            momento_defecto=momento_defecto,
             mensaje=request.query_params.get("mensaje"),
         )
 
@@ -1340,7 +1381,9 @@ def crear_app(
     def _guardar_comida(datos: dict[str, str], fecha: str, cantidad: float) -> str:
         propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()
-        momento = datos.get("momento", "").strip()
+        momento = momento_valido(datos.get("momento"))
+        if momento is None:
+            raise ValueError("Momento no válido")
         con = abrir_db()
         try:
             if propio_raw:
@@ -1431,6 +1474,9 @@ def crear_app(
         if fecha_dt > hoy():
             return _volver("La fecha no puede ser posterior a hoy", "/comida")
         fecha_str = fecha_dt.isoformat()
+
+        if momento_valido(datos.get("momento")) is None:
+            return _volver("Momento no válido", f"/comida?fecha={fecha_str}")
 
         propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()

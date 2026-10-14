@@ -250,6 +250,16 @@ def test_totales_dia_y_momento(con):
     assert por_momento["cena"].sin_kcal == 1
     assert por_momento["cena"].incompletas == 1
 
+    assert "media mañana" in db.MOMENTOS
+    assert por_momento["media mañana"].kcal == 0.0
+    assert por_momento["media mañana"].entradas == 0
+
+    # Añadir comida a media mañana
+    db.anadir_comida(con, "2026-01-10", "media mañana", "Frutos secos", 30.0, "g", kcal=180.0)
+    totales2 = db.totales_dia(con, "2026-01-10")
+    assert totales2.por_momento["media mañana"].kcal == 180.0
+    assert totales2.por_momento["media mañana"].entradas == 1
+
     # Día vacío
     vacio = db.totales_dia(con, "2026-01-01")
     assert vacio.total.kcal == 0.0

@@ -12,7 +12,7 @@ from starlette.testclient import TestClient
 
 from salud import alimentos, db
 from salud.config import Settings
-from salud.web import crear_app, datos_producto, momento_por_hora
+from salud.web import crear_app, datos_producto, momento_por_hora, momento_valido
 
 EAN13 = "2000000000008"
 EAN13_BIS = "2000000000015"
@@ -83,20 +83,116 @@ def producto_payload(
 
 
 def test_momento_por_hora_limites():
-    assert momento_por_hora(10) == "desayuno"
-    assert momento_por_hora(11) == "comida"
+    assert momento_por_hora(9) == "desayuno"
+    assert momento_por_hora(10) == "media mañana"
+    assert momento_por_hora(12) == "media mañana"
+    assert momento_por_hora(13) == "comida"
     assert momento_por_hora(15) == "comida"
     assert momento_por_hora(16) == "merienda"
-    assert momento_por_hora(19) == "merienda"
     assert momento_por_hora(20) == "cena"
+
+
+def test_momento_valido():
+    assert momento_valido("desayuno") == "desayuno"
+    assert momento_valido("media mañana") == "media mañana"
+    assert momento_valido("comida") == "comida"
+    assert momento_valido("merienda") == "merienda"
+    assert momento_valido("cena") == "cena"
+    assert momento_valido("otro") == "otro"
+    assert momento_valido("brunch") is None
+    assert momento_valido("") is None
+    assert momento_valido(None) is None
 
 
 def test_dia_vacio(settings):
     c = cliente_web(settings)
     r = c.get("/comida?fecha=2026-01-10")
     assert r.status_code == 200
+    assert "Desayuno" in r.text
+    assert "Media mañana" in r.text
+    assert "Comida" in r.text
+    assert "Merienda" in r.text
+    assert "Cena" in r.text
+    assert "Nada apuntado" in r.text
+    assert "Otro" not in r.text
     assert "Sin comidas registradas este día" in r.text
     assert "10 de enero" in r.text
+    assert "/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana#buscar" in r.text
+
+
+def test_dia_con_entrada_en_otro(settings, con):
+    db.anadir_comida(
+        con,
+        "2026-01-10",
+        "otro",
+        "Snack medianoche",
+        50.0,
+        "g",
+        kcal=100.0,
+    )
+    c = cliente_web(settings)
+    r = c.get("/comida?fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "Otro" in r.text
+    assert "Snack medianoche" in r.text
+    assert "100 kcal" in r.text
+
+
+def test_momento_elegido_query_param(settings):
+    c = cliente_web(settings)
+    r = c.get("/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana")
+    assert r.status_code == 200
+    assert "Añadiendo a: Media mañana" in r.text
+    assert '<input type="hidden" name="momento" value="media mañana">' in r.text
+
+    # Con momento inventado no debe aparecer ni el aviso ni el hidden
+    r_invalido = c.get("/comida?fecha=2026-01-10&momento=brunch_inventado")
+    assert r_invalido.status_code == 200
+    assert "Añadiendo a:" not in r_invalido.text
+    assert '<input type="hidden" name="momento"' not in r_invalido.text
+
+
+def test_producto_con_momento_elegido(settings):
+    off, _ = cliente_off_mock({EAN13: producto_payload(EAN13, nombre="Avena crunchy")})
+    c = cliente_web(settings, cliente_off=off)
+    r = c.get(f"/comida/producto?codigo={EAN13}&fecha=2026-01-10&momento=cena")
+    assert r.status_code == 200
+    assert '<option value="cena" selected>Cena</option>' in r.text
+
+
+def test_recientes_y_propios_con_momento_elegido(settings, con):
+    db.guardar_producto(
+        con,
+        codigo=EAN13,
+        nombre="Avena crunchy",
+        marca="Marca Test",
+        nutriscore=None,
+        unidad="g",
+        kcal=380.0,
+        proteinas=None,
+        hidratos=None,
+        grasas=None,
+        datos={},
+    )
+    id_propio = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Bizcocho casero",
+        marca=None,
+        unidad="g",
+        kcal=400.0,
+        proteinas=6.0,
+        hidratos=50.0,
+        grasas=20.0,
+        origen="manual",
+    )
+    db.anadir_comida(con, "2026-01-10", "desayuno", "Avena crunchy", 50.0, "g", codigo=EAN13)
+    c = cliente_web(settings)
+    r = c.get("/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana")
+    assert r.status_code == 200
+    assert f"/comida/producto?codigo={EAN13}&fecha=2026-01-10&momento=media%20ma%C3%B1ana" in r.text
+    assert f"/comida/propio/{id_propio}?fecha=2026-01-10&momento=media%20ma%C3%B1ana" in r.text
 
 
 def test_dia_con_entradas_en_dos_momentos_y_su_total(settings, con):
@@ -290,7 +386,45 @@ def test_alta_a_mano_con_momento_invalido(settings):
         },
     )
     assert r.status_code == 303
-    assert "momento+no+v%C3%A1lido" in r.headers["location"]
+    assert "Momento+no+v%C3%A1lido" in r.headers["location"]
+
+
+def test_post_anadir_momento_brunch_y_media_manana(settings, con):
+    c = cliente_web(settings)
+
+    # Con momento "brunch" -> 303 con "Momento no válido" y nada guardado
+    r_brunch = c.post(
+        "/comida/anadir",
+        data={
+            "nombre": "Croissant",
+            "momento": "brunch",
+            "cantidad": "80",
+            "unidad": "g",
+            "kcal": "320",
+            "fecha": "2026-01-10",
+        },
+    )
+    assert r_brunch.status_code == 303
+    assert "Momento+no+v%C3%A1lido" in r_brunch.headers["location"]
+    assert len(db.comidas(con, "2026-01-10")) == 0
+
+    # Con "media mañana" -> guardado
+    r_mm = c.post(
+        "/comida/anadir",
+        data={
+            "nombre": "Yogur",
+            "momento": "media mañana",
+            "cantidad": "125",
+            "unidad": "g",
+            "kcal": "85",
+            "fecha": "2026-01-10",
+        },
+    )
+    assert r_mm.status_code == 303
+    comidas = db.comidas(con, "2026-01-10")
+    assert len(comidas) == 1
+    assert comidas[0].momento == "media mañana"
+    assert comidas[0].nombre == "Yogur"
 
 
 def test_borrar_comida(settings, con):
