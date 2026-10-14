@@ -80,7 +80,7 @@ def xml_ciqual_dir(tmp_path: Path) -> Path:
    </ALIM>
    <ALIM>
       <alim_code> 1002 </alim_code>
-      <alim_nom_fr> Pain </alim_nom_fr>
+      <alim_nom_fr> Pain & beurre </alim_nom_fr>
       <alim_nom_eng> Bread </alim_nom_eng>
       <alim_grp_code> 03 </alim_grp_code>
    </ALIM>

@@ -107,16 +107,18 @@ def valor_teneur(texto: str | None) -> float | None:
         return None
 
 
-# Los XML de CIQUAL 2020 no están bien formados: hay textos con "<" sin escapar
-# ("Panaché préemballé (<1° alc.)", "< 0,5"). Se escapan los "<" que no abren
-# una etiqueta antes de leerlos.
+# Los XML de CIQUAL 2020 no están bien formados: hay textos con "<" y "&" sin
+# escapar ("Panaché préemballé (<1° alc.)", "< 0,5", "Fruits & légumes"). Se
+# escapan antes de leerlos.
 _MENOR_SUELTO = re.compile(r"<(?![A-Za-z_/?!])")
+_AMP_SUELTO = re.compile(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)")
 
 
 def _raiz(fichero: Path) -> ET.Element:
     """Lee un XML de CIQUAL (windows-1252) tolerando los "<" sin escapar."""
     texto = fichero.read_bytes().decode("windows-1252")
     texto = re.sub(r"^<\?xml[^>]*\?>", "", texto.lstrip())
+    texto = _AMP_SUELTO.sub("&amp;", texto)
     return ET.fromstring(_MENOR_SUELTO.sub("&lt;", texto))
 
 
