@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from statistics import mean
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -122,8 +122,6 @@ def _render(nombre: str, **contexto: Any) -> HTMLResponse:
 
 
 def _volver(mensaje: str, destino: str = "/") -> RedirectResponse:
-    from urllib.parse import urlencode
-
     separador = "&" if "?" in destino else "?"
     return RedirectResponse(f"{destino}{separador}{urlencode({'mensaje': mensaje})}", 303)
 
@@ -924,7 +922,7 @@ def crear_app(
             f"/comida/propio/{id_}?fecha={fecha_str}"
             if id_ is not None
             else (
-                f"/comida/producto?codigo={codigo_form}&fecha={fecha_str}"
+                f"/comida/producto?{urlencode({'codigo': codigo_form, 'fecha': fecha_str})}"
                 if codigo_form
                 else f"/comida/nuevo?fecha={fecha_str}"
             )

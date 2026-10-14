@@ -8,7 +8,7 @@
 <section class="panel">
   <div class="cabecera">
     <h1>{{ producto.nombre or producto.codigo }}</h1>
-    {% if desde_cache %}
+    {% if desde_cache and producto.origen == "off" %}
     <span class="etiqueta neutro">de la caché</span>
     {% endif %}
     {% if producto.origen == "etiqueta-ia" %}
@@ -24,8 +24,10 @@
   <p><span class="etiqueta">Nutri-Score {{ producto.nutriscore }}</span></p>
   {% endif %}
 
-  {% if producto.incompleto %}
+  {% if producto.incompleto and producto.origen == "off" %}
   <p class="aviso">Valores nutricionales incompletos en Open Food Facts</p>
+  {% elif producto.incompleto %}
+  <p class="aviso">Faltan valores nutricionales: complétalos abajo</p>
   {% endif %}
 
   <h2>Valores por 100 {{ producto.unidad }}</h2>
