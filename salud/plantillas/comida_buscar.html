@@ -67,6 +67,15 @@
 
 {% else %}
 
+<div class="panel" style="margin-bottom: 12px;">
+  <a href="/comida/ia?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}&texto={{ q | urlencode }}" class="fila-resultado">
+    <span class="icono-cuadro violeta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
+    <div class="resultado-info">
+      <strong>¿No es esto? Cuéntaselo a la IA: «{{ q }}»</strong>
+    </div>
+  </a>
+</div>
+
 {% if productos_locales or comidas_anteriores %}
 <section aria-label="Lo que has apuntado antes" class="grupo-resultados">
   <h2>Lo tuyo</h2>
@@ -147,22 +156,10 @@
 {% endif %}
 
 <section aria-label="Otras formas de añadir" class="accesos-anadir">
-  {% if q %}
-  <form method="post" action="/comida/estimar" class="acceso-form">
-    <input type="hidden" name="q" value="{{ q }}">
-    <input type="hidden" name="fecha" value="{{ fecha }}">
-    {% if momento_elegido %}<input type="hidden" name="momento" value="{{ momento_elegido }}">{% endif %}
-    <button type="submit" class="panel tarjeta-acceso" data-enviando="Estimando…">
-      <span class="icono-cuadro violeta"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
-      <span data-texto>Estimar con IA</span>
-    </button>
-  </form>
-  {% else %}
-  <button type="button" class="panel tarjeta-acceso" onclick="const input = document.getElementById('codigo'); if (input) { input.focus(); input.scrollIntoView({behavior: 'smooth', block: 'center'}); }">
+  <a href="/comida/ia?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% if q %}&texto={{ q | urlencode }}{% endif %}" class="panel tarjeta-acceso">
     <span class="icono-cuadro violeta"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
-    <span>Estimar con IA</span>
-  </button>
-  {% endif %}
+    <span>Añadir con IA</span>
+  </a>
 
   <a href="/comida/nuevo?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="panel tarjeta-acceso">
     <span class="icono-cuadro marca"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>

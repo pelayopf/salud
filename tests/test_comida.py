@@ -49,7 +49,6 @@ def cliente_web(
     cliente_off: httpx.Client | None = None,
     hoy: date = date(2026, 1, 10),
     lector_etiqueta: Any = None,
-    estimar: Any = None,
 ) -> TestClient:
     app = crear_app(
         settings,
@@ -58,7 +57,6 @@ def cliente_web(
         hoy=lambda: hoy,
         cliente_off=cliente_off,
         lector_etiqueta=lector_etiqueta,
-        estimar=estimar,
     )
     return TestClient(app, follow_redirects=False)
 
@@ -1268,8 +1266,8 @@ def test_buscar_comida_cuatro_grupos(settings, con, monkeypatch):
     # El chip conserva q
     assert "momento=desayuno&q=platano" in r.text or "momento=desayuno&amp;q=platano" in r.text
 
-    # Aparece el botón / sección "Estimar con IA"
-    assert "Estimar con IA" in r.text
+    # Aparece el botón / sección "Añadir con IA"
+    assert "Añadir con IA" in r.text
     assert "Repetir" in r.text
     assert ciqual.FUENTE in r.text
 
@@ -1306,7 +1304,7 @@ def test_buscar_comida_sin_nada(settings, monkeypatch):
     r = c.get("/comida/buscar?q=inexistente&fecha=2026-01-10")
     assert r.status_code == 200
     assert "No hay resultados" in r.text
-    assert "Estimar con IA" in r.text
+    assert "Añadir con IA" in r.text
 
 
 def test_repetir_comida(settings, con):
@@ -1352,46 +1350,28 @@ def test_repetir_comida_id_malo(settings, con):
     assert len(db.comidas(con, "2026-01-10")) == 0
 
 
-def test_estimar_comida_web_exito(settings):
-    def estimar_falso(texto: str) -> ia.Estimacion:
-        return ia.Estimacion(
-            nombre=texto.capitalize(),
-            unidad="g",
-            kcal=89.0,
-            proteinas=1.1,
-            hidratos=22.8,
-            grasas=0.3,
-            racion_g=120.0,
-            racion_nombre="plátano",
-            avisos=("Valores estimados por IA: revísalos", "Aviso de prueba"),
-        )
+def test_comida_buscar_enlaza_a_ia_y_no_hay_estimar(settings):
+    c = cliente_web(settings)
 
-    c = cliente_web(settings, estimar=estimar_falso)
-    r = c.post(
-        "/comida/estimar",
-        data={"q": "platano", "fecha": "2026-01-10", "momento": "merienda"},
-    )
+    # 1. /comida/buscar?q=xyz tiene el enlace a /comida/ia?
+    r = c.get("/comida/buscar?q=sopa%20de%20fideos&fecha=2026-01-10&momento=comida")
     assert r.status_code == 200
-    assert 'name="ia" value="1"' in r.text
-    assert "chip-ia" in r.text
-    assert "de-ia" in r.text
-    assert "Valores estimados por IA: revísalos" in r.text
-    assert "Aviso de prueba" in r.text
-    assert 'value="Platano"' in r.text
+    assert "/comida/ia?" in r.text
+    assert "texto=sopa+de+fideos" in r.text or "texto=sopa%20de%20fideos" in r.text
+    assert "Cuéntaselo a la IA" in r.text
+    assert "Añadir con IA" in r.text
+
+    # 2. Ya no existe /comida/estimar
+    r_est = c.post("/comida/estimar", data={"q": "sopa"})
+    assert r_est.status_code in (404, 405)
 
 
-def test_estimar_comida_web_error_ia(settings):
-    def estimar_falla(_texto: str) -> ia.Estimacion:
-        raise ia.ErrorIA("La IA no reconoce ese alimento")
-
-    c = cliente_web(settings, estimar=estimar_falla)
-    r = c.post(
-        "/comida/estimar",
-        data={"q": "desconocido", "fecha": "2026-01-10", "momento": "comida"},
-    )
-    assert r.status_code == 303
-    assert "/comida/buscar?" in r.headers["location"]
-    assert "La+IA+no+reconoce+ese+alimento" in r.headers["location"]
+def test_comida_diario_enlace_anadir_con_ia(settings):
+    c = cliente_web(settings)
+    r = c.get("/comida?fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "/comida/ia?fecha=2026-01-10" in r.text
+    assert "Añadir con IA" in r.text
 
 
 def test_web_comida_proteinas_primero_y_minimo(settings, con):

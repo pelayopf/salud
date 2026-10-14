@@ -920,14 +920,12 @@ def crear_app(
     cliente_calendario: httpx.Client | None = None,
     pedir_consejo: Callable[[sqlite3.Connection, str], dict[str, Any]] | None = None,
     analizar: Callable[[str, bytes | None], list[ia.AlimentoIA]] | None = None,
-    estimar: Callable[[str], ia.Estimacion] | None = None,
     publica: bool = False,
     crear_login: Callable[[str, str], acceso.Login] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
     analizar_fn = analizar or (lambda t, img: ia.analizar_comida(settings, t, img))
-    estimar_fn = estimar or (lambda texto: ia.estimar_alimento(settings, texto))
     generando = threading.Lock()
     aconsejando = threading.Lock()
     error_consejo: dict[str, str | None] = {"texto": None}  # último fallo, para enseñarlo una vez
@@ -2231,77 +2229,6 @@ def crear_app(
         msg = f"Añadido {alimentos_a_guardar[0]['nombre']}" if n == 1 else f"Añadidos {n} alimentos"
         return _volver(msg, f"/comida?fecha={borrador.fecha}")
 
-    async def estimar_comida_web(request: Request) -> Response:
-        datos = await _formulario(request)
-        q = datos.get("q", "").strip()
-        fecha_raw = datos.get("fecha", "").strip()
-        try:
-            fecha_dt = date.fromisoformat(fecha_raw) if fecha_raw else hoy()
-        except ValueError:
-            fecha_dt = hoy()
-        fecha_str = fecha_dt.isoformat()
-
-        momento_elegido = momento_valido(datos.get("momento"))
-        momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
-        qs_params = {"q": q, "fecha": fecha_str}
-        if momento_elegido:
-            qs_params["momento"] = momento_elegido
-        url_retorno = f"/comida/buscar?{urlencode(qs_params)}"
-
-        try:
-            est = await run_in_threadpool(estimar_fn, q)
-        except (ia.ErrorIA, ia.IAOcupada) as exc:
-            return _volver(str(exc), url_retorno)
-
-        prod_estimado = alimentos.Producto(
-            codigo="",
-            nombre=est.nombre,
-            marca=None,
-            nutriscore=None,
-            unidad=est.unidad,
-            kcal=est.kcal,
-            proteinas=est.proteinas,
-            hidratos=est.hidratos,
-            grasas=est.grasas,
-            racion_g=est.racion_g,
-            racion_nombre=est.racion_nombre,
-        )
-
-        marcas_ia: set[str] = set()
-        if est.nombre:
-            marcas_ia.add("nombre")
-        if est.unidad:
-            marcas_ia.add("unidad")
-        if est.kcal is not None:
-            marcas_ia.add("kcal")
-        if est.proteinas is not None:
-            marcas_ia.add("proteinas")
-        if est.hidratos is not None:
-            marcas_ia.add("hidratos")
-        if est.grasas is not None:
-            marcas_ia.add("grasas")
-        if est.racion_g is not None:
-            marcas_ia.add("racion_g")
-        if est.racion_nombre:
-            marcas_ia.add("racion_nombre")
-
-        return _render(
-            "comida_nuevo.html",
-            seccion="comida",
-            fecha=fecha_str,
-            codigo="",
-            p=prod_estimado,
-            origen=None,
-            aviso=None,
-            avisos=est.avisos,
-            mensaje=None,
-            error=None,
-            momentos=db.MOMENTOS,
-            momento_defecto=momento_defecto,
-            ia="1",
-            marcas_ia=marcas_ia,
-        )
-
     def ver_comida_objetivos(request: Request) -> Response:
         con = abrir_db()
         try:
@@ -3049,7 +2976,6 @@ def crear_app(
             Route("/comida/ia/{id:int}/anadir", anadir_comida_ia_web, methods=["POST"]),
             Route("/comida/buscar", buscar_comida),
             Route("/comida/repetir", repetir_comida, methods=["POST"]),
-            Route("/comida/estimar", estimar_comida_web, methods=["POST"]),
             Route("/comida/consejo", ver_comida_consejo),
             Route("/comida/consejo", pedir_consejo_web, methods=["POST"]),
             Route("/comida/consejo/estado", estado_consejo),
