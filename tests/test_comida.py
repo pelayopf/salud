@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import httpx
@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 
 from salud import alimentos, db
 from salud.config import Settings
+from salud.metricas import Metrica
 from salud.web import crear_app, datos_producto, momento_por_hora, momento_valido
 
 EAN13 = "2000000000008"
@@ -910,3 +911,83 @@ def test_gramos_con_un_decimal_solo_si_lo_tiene():
     assert gramos(3.0) == "3"
     assert gramos(1.04) == "1"
     assert gramos(None) == "—"
+
+
+def test_web_comida_sin_datos_garmin(settings):
+    c = cliente_web(settings)
+    r = c.get("/comida?fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "Sin objetivo" in r.text
+
+
+def test_web_comida_con_datos_garmin(settings, con):
+    hoy = date(2026, 1, 10)
+    for i in range(1, 29):
+        f = (hoy - timedelta(days=i)).isoformat()
+        db.guardar_metricas(
+            con,
+            [
+                Metrica(f, "kcal", "garmin", 2600.0),
+                Metrica(f, "kcal_activas", "garmin", 330.0),
+            ],
+        )
+    db.guardar_metricas(con, [Metrica(hoy.isoformat(), "peso", "garmin", 88.0)])
+
+    c = cliente_web(settings, hoy=hoy)
+    r = c.get("/comida?fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "Objetivo dinámico" in r.text
+    assert "progreso-barra" in r.text
+
+
+def test_web_comida_objetivos_get_desglose(settings, con):
+    hoy = date(2026, 1, 10)
+    for i in range(1, 29):
+        f = (hoy - timedelta(days=i)).isoformat()
+        db.guardar_metricas(
+            con,
+            [
+                Metrica(f, "kcal", "garmin", 2600.0),
+                Metrica(f, "kcal_activas", "garmin", 330.0),
+            ],
+        )
+    db.guardar_metricas(con, [Metrica(hoy.isoformat(), "peso", "garmin", 88.0)])
+
+    c = cliente_web(settings, hoy=hoy)
+    r = c.get("/comida/objetivos")
+    assert r.status_code == 200
+    assert "Basal (Garmin)" in r.text
+    assert "Total objetivo" in r.text
+    assert "reparto-0" in r.text
+
+
+def test_web_comida_objetivos_post_guardar_y_error(settings, con):
+    c = cliente_web(settings)
+    payload_valido = {
+        "deficit_kcal": "350",
+        "proteinas_g_kg": "1.7",
+        "grasas_g_kg": "0.8",
+        "peso_kg": "82.0",
+        "reparto-0": "20",
+        "reparto-1": "10",
+        "reparto-2": "35",
+        "reparto-3": "10",
+        "reparto-4": "25",
+    }
+    r = c.post("/comida/objetivos", data=payload_valido)
+    assert r.status_code == 303
+    assert "/comida/objetivos" in r.headers["location"]
+
+    ajustes = db.ajustes_comida(con)
+    assert ajustes.deficit_kcal == 350
+    assert ajustes.proteinas_g_kg == 1.7
+    assert ajustes.peso_kg == 82.0
+
+    # POST con reparto erróneo (suma 90) -> 303 y no guarda cambios
+    payload_invalido = dict(payload_valido, **{"deficit_kcal": "400", "reparto-0": "10"})
+    r_err = c.post("/comida/objetivos", data=payload_invalido)
+    assert r_err.status_code == 303
+
+    ajustes_despues = db.ajustes_comida(con)
+    # El déficit sigue siendo 350, no 400
+    assert ajustes_despues.deficit_kcal == 350

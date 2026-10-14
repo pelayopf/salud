@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block titulo %}Objetivos de comida · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+<div class="cabecera-dia">
+  <a class="flecha" href="/comida" aria-label="Volver a comida">‹</a>
+  <h1>Objetivos de comida</h1>
+  <span class="flecha vacia"></span>
+</div>
+
+<section class="panel">
+  <h2>Objetivo de hoy</h2>
+  {% if objetivo %}
+  <div class="lista">
+    {% for concepto, kcal in objetivo.desglose %}
+    <div class="fila">
+      <span>{{ concepto }}</span>
+      <strong>{% if kcal > 0 %}+{% endif %}{{ kcal | cifra }} kcal</strong>
+    </div>
+    {% endfor %}
+    <div class="fila fila-total">
+      <strong>Total objetivo</strong>
+      <strong>{{ objetivo.total.kcal | cifra }} kcal</strong>
+    </div>
+  </div>
+  <p class="suave">
+    Proteínas: <strong>{{ objetivo.total.proteinas | gramos }} g</strong>
+    · Hidratos: <strong>{{ objetivo.total.hidratos | gramos }} g</strong>
+    · Grasas: <strong>{{ objetivo.total.grasas | gramos }} g</strong>
+    · Peso de referencia: <strong>{{ objetivo.peso_kg | cifra(1) }} kg</strong>
+  </p>
+  {% else %}
+  <p class="suave">Sin objetivo: faltan datos de Garmin (peso o calorías).</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Ajustes</h2>
+  <form class="formulario" method="post" action="/comida/objetivos">
+    <label for="deficit_kcal">Déficit calórico (kcal/día)</label>
+    <input id="deficit_kcal" name="deficit_kcal" type="number" min="-500" max="1000" step="10" value="{{ ajustes.deficit_kcal }}" required>
+    <p class="suave">Entre −500 y 1000 kcal. Negativo para superávit.</p>
+
+    <label for="proteinas_g_kg">Proteínas (g/kg de peso)</label>
+    <input id="proteinas_g_kg" name="proteinas_g_kg" type="number" min="0.8" max="3.0" step="0.1" value="{{ ajustes.proteinas_g_kg }}" required>
+    <p class="suave">Proteína recomendada para deportistas: 1,2–2,0 g/kg; en déficit, mejor la parte alta.</p>
+
+    <label for="grasas_g_kg">Grasas (g/kg de peso)</label>
+    <input id="grasas_g_kg" name="grasas_g_kg" type="number" min="0.5" max="2.0" step="0.1" value="{{ ajustes.grasas_g_kg }}" required>
+    <p class="suave">Entre 0,5 y 2,0 g/kg.</p>
+
+    <label for="peso_kg">Peso de referencia (kg, opcional)</label>
+    <input id="peso_kg" name="peso_kg" type="number" min="30" max="250" step="0.1" value="{{ ajustes.peso_kg if ajustes.peso_kg is not none else '' }}" placeholder="Último de la báscula">
+    <p class="suave">Déjalo vacío para usar automáticamente el último peso sincronizado de Garmin.</p>
+
+    <h3>Reparto por comida (%)</h3>
+    <p class="suave">Porcentajes para cada momento (deben sumar 100 %).</p>
+    {% for i, m, pct in momentos_reparto %}
+    <label for="reparto-{{ i }}">{{ m | capitalize }} (%)</label>
+    <input id="reparto-{{ i }}" name="reparto-{{ i }}" type="number" min="0" max="100" value="{{ pct }}" required>
+    {% endfor %}
+
+    <div class="acciones">
+      <button type="submit" class="boton">Guardar objetivos</button>
+      <a href="/comida" class="boton secundario">Volver</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

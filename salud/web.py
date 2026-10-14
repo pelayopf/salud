@@ -36,7 +36,7 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import alimentos, calendario, db, garmin, graficas, ia, lectura, metricas, sync
+from . import alimentos, calendario, db, garmin, graficas, ia, lectura, metricas, nutricion, sync
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -1150,6 +1150,7 @@ def crear_app(
             totales = db.totales_dia(con, fecha.isoformat())
             recientes = db.productos_recientes(con)
             propios = db.productos_propios(con)
+            objetivo = nutricion.objetivo_dia(con, fecha, hoy())
         finally:
             con.close()
         comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
@@ -1158,6 +1159,26 @@ def crear_app(
         if momento_elegido is None:
             momento_elegido = momento_valido(request.query_params.get("momento"))
         momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
+
+        def _progreso(llevas: float, meta: int) -> dict[str, Any]:
+            pct = min(100, round(100 * llevas / meta)) if meta > 0 else 0
+            return {"pct": pct, "pasado": llevas > meta}
+
+        prog_dia: dict[str, dict[str, Any]] | None = None
+        prog_momento: dict[str, dict[str, Any]] | None = None
+        if objetivo is not None:
+            prog_dia = {
+                "kcal": _progreso(totales.total.kcal, objetivo.total.kcal),
+                "proteinas": _progreso(totales.total.proteinas, objetivo.total.proteinas),
+                "hidratos": _progreso(totales.total.hidratos, objetivo.total.hidratos),
+                "grasas": _progreso(totales.total.grasas, objetivo.total.grasas),
+            }
+            prog_momento = {}
+            for m, obj_m in objetivo.por_momento.items():
+                tot_m = totales.por_momento.get(m)
+                llevas_m = tot_m.kcal if tot_m else 0.0
+                prog_momento[m] = _progreso(llevas_m, obj_m.kcal)
+
         return _render(
             "comida.html",
             seccion="comida",
@@ -1167,6 +1188,9 @@ def crear_app(
             siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
             comidas_por_momento=comidas_por_momento,
             totales=totales,
+            objetivo=objetivo,
+            prog_dia=prog_dia,
+            prog_momento=prog_momento,
             recientes=recientes,
             productos_propios=propios,
             momentos=db.MOMENTOS,
@@ -1180,6 +1204,44 @@ def crear_app(
     def ver_comida(request: Request) -> Response:
         momento_elegido = momento_valido(request.query_params.get("momento"))
         return _pagina_comida(request, _fecha(request), momento_elegido=momento_elegido)
+
+    def ver_comida_objetivos(request: Request) -> Response:
+        con = abrir_db()
+        try:
+            ajustes = db.ajustes_comida(con)
+            objetivo_hoy = nutricion.objetivo_dia(con, hoy(), hoy(), ajustes=ajustes)
+        finally:
+            con.close()
+        momentos_reparto = [
+            (i, m, ajustes.reparto.get(m, db.REPARTO_DEFECTO.get(m, 0)))
+            for i, m in enumerate(db.REPARTO_DEFECTO)
+        ]
+        return _render(
+            "comida_objetivos.html",
+            seccion="comida",
+            ajustes=ajustes,
+            objetivo=objetivo_hoy,
+            momentos_reparto=momentos_reparto,
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    async def guardar_comida_objetivos(request: Request) -> Response:
+        datos = await _formulario(request)
+        try:
+            ajustes = nutricion.ajustes_desde_formulario(datos)
+        except ValueError as exc:
+            return _volver(str(exc), "/comida/objetivos")
+
+        def _guardar() -> None:
+            con = abrir_db()
+            try:
+                db.guardar_ajustes_comida(con, ajustes)
+            finally:
+                con.close()
+
+        await run_in_threadpool(_guardar)
+        return _volver("Objetivos guardados", "/comida/objetivos")
 
     def ver_comida_nuevo(request: Request) -> Response:
         fecha = _fecha(request)
@@ -1534,6 +1596,8 @@ def crear_app(
             Route("/calendario/titulo", calendario_titulo_web, methods=["POST"]),
             Route("/lecturas", ver_lecturas),
             Route("/comida", ver_comida),
+            Route("/comida/objetivos", ver_comida_objetivos),
+            Route("/comida/objetivos", guardar_comida_objetivos, methods=["POST"]),
             Route("/comida/nuevo", ver_comida_nuevo),
             Route("/comida/productos", guardar_productos, methods=["POST"]),
             Route("/comida/producto", ver_producto),

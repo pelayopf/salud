@@ -62,11 +62,16 @@
     {% if tot_m %}
     <div class="pie suave">
       <p>
-        Subtotal: {% if tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}
+        Subtotal: {% if tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}{% if objetivo and m in objetivo.por_momento %} / {{ objetivo.por_momento[m].kcal | cifra }} kcal{% endif %}
         · P: {% if tot_m.sin_proteinas == tot_m.entradas %}—{% else %}{{ tot_m.proteinas | gramos }} g{% endif %}
         · HC: {% if tot_m.sin_hidratos == tot_m.entradas %}—{% else %}{{ tot_m.hidratos | gramos }} g{% endif %}
         · G: {% if tot_m.sin_grasas == tot_m.entradas %}—{% else %}{{ tot_m.grasas | gramos }} g{% endif %}
       </p>
+      {% if objetivo and m in objetivo.por_momento and prog_momento and m in prog_momento %}
+      <div class="progreso fina">
+        <div class="progreso-barra{% if prog_momento[m].pasado %} pasado{% endif %}" style="width: {{ prog_momento[m].pct }}%"></div>
+      </div>
+      {% endif %}
       {% if tot_m.incompletas > 0 %}
       <p class="suave">faltan datos de {{ tot_m.incompletas }} entrada{% if tot_m.incompletas > 1 %}s{% endif %}</p>
       {% endif %}
@@ -80,25 +85,64 @@
   {% endif %}
 {% endfor %}
 
-{% if totales.total.entradas > 0 %}
+{% if totales.total.entradas > 0 or objetivo %}
 <section class="panel">
   <div class="cabecera">
     <h2>Total del día</h2>
     <span class="derecha">
-      <strong>{% if totales.total.sin_kcal == totales.total.entradas %}—{% else %}{{ totales.total.kcal | cifra }} kcal{% endif %}</strong>
+      <strong>{% if totales.total.sin_kcal == totales.total.entradas and not objetivo %}—{% elif objetivo %}{{ totales.total.kcal | cifra }} / {{ objetivo.total.kcal | cifra }} kcal{% else %}{{ totales.total.kcal | cifra }} kcal{% endif %}</strong>
     </span>
   </div>
+  {% if objetivo and prog_dia %}
+  <div class="barras-objetivo">
+    <div class="progreso-item">
+      <div class="progreso-item-cabecera">
+        <span>Calorías</span>
+        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal</span>
+      </div>
+      <div class="progreso"><div class="progreso-barra{% if prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct }}%"></div></div>
+    </div>
+    <div class="progreso-item">
+      <div class="progreso-item-cabecera">
+        <span>Proteínas</span>
+        <span><strong>{{ totales.total.proteinas | gramos }}</strong> / {{ objetivo.total.proteinas | gramos }} g</span>
+      </div>
+      <div class="progreso"><div class="progreso-barra{% if prog_dia.proteinas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.proteinas.pct }}%"></div></div>
+    </div>
+    <div class="progreso-item">
+      <div class="progreso-item-cabecera">
+        <span>Hidratos</span>
+        <span><strong>{{ totales.total.hidratos | gramos }}</strong> / {{ objetivo.total.hidratos | gramos }} g</span>
+      </div>
+      <div class="progreso"><div class="progreso-barra{% if prog_dia.hidratos.pasado %} pasado{% endif %}" style="width: {{ prog_dia.hidratos.pct }}%"></div></div>
+    </div>
+    <div class="progreso-item">
+      <div class="progreso-item-cabecera">
+        <span>Grasas</span>
+        <span><strong>{{ totales.total.grasas | gramos }}</strong> / {{ objetivo.total.grasas | gramos }} g</span>
+      </div>
+      <div class="progreso"><div class="progreso-barra{% if prog_dia.grasas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.grasas.pct }}%"></div></div>
+    </div>
+  </div>
+  <p class="suave">Objetivo dinámico: basal + actividad − déficit · <a href="/comida/objetivos">Ajustar</a></p>
+  {% else %}
   <p class="suave">
     Proteínas: <strong>{% if totales.total.sin_proteinas == totales.total.entradas %}—{% else %}{{ totales.total.proteinas | gramos }} g{% endif %}</strong>
     · Hidratos: <strong>{% if totales.total.sin_hidratos == totales.total.entradas %}—{% else %}{{ totales.total.hidratos | gramos }} g{% endif %}</strong>
     · Grasas: <strong>{% if totales.total.sin_grasas == totales.total.entradas %}—{% else %}{{ totales.total.grasas | gramos }} g{% endif %}</strong>
   </p>
+  <p class="suave">Sin objetivo: faltan datos de Garmin (peso o calorías) · <a href="/comida/objetivos">Ajustar</a></p>
+  {% endif %}
   {% if totales.total.incompletas > 0 %}
   <p class="suave">faltan datos de {{ totales.total.incompletas }} entrada{% if totales.total.incompletas > 1 %}s{% endif %}</p>
   {% endif %}
 </section>
 {% else %}
-<p class="panel suave">Sin comidas registradas este día.</p>
+<section class="panel">
+  <h2>Total del día</h2>
+  <p class="suave">Sin comidas registradas este día.</p>
+  <p class="suave">Sin objetivo: faltan datos de Garmin (peso o calorías) · <a href="/comida/objetivos">Ajustar</a></p>
+</section>
 {% endif %}
 
 <details class="panel"{% if recientes %} open{% endif %}>
