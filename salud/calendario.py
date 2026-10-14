@@ -12,8 +12,10 @@ las actividades de Garmin de las últimas semanas.
 from __future__ import annotations
 
 import math
+import re
+import sqlite3
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -40,6 +42,7 @@ PALABRAS: tuple[tuple[str, str | None], ...] = (
     ("futbol", "soccer"),
     ("futbito", "soccer"),
     ("futsal", "soccer"),
+    ("pachanga", "soccer"),
     ("tenis", "tennis"),
     ("correr", "running"),
     ("carrera", "running"),
@@ -52,6 +55,14 @@ PALABRAS: tuple[tuple[str, str | None], ...] = (
     ("partido", None),
     ("entreno", None),
 )
+
+# Palabras que solo valen como palabra COMPLETA (no subcadena) por ser cortas.
+PALABRAS_COMPLETAS: tuple[tuple[str, str | None], ...] = (
+    ("f5", "soccer"),
+    ("f7", "soccer"),
+    ("f11", "soccer"),
+)
+
 INTENSIDAD_POR_TIPO = {
     "soccer": "alta",
     "paddelball": "alta",
@@ -90,6 +101,15 @@ class ResultadoCalendario:
     descartados: int
 
 
+@dataclass
+class _Grupo:
+    """Grupo de sesiones históricas para una combinación de día y tipo."""
+
+    semanas: set[tuple[int, int]] = field(default_factory=set)
+    inicios: list[int] = field(default_factory=list)
+    duraciones: list[float] = field(default_factory=list)
+
+
 def clasificar(
     titulo: str, marcados: dict[str, tuple[bool, str | None]]
 ) -> tuple[bool, str | None]:
@@ -99,6 +119,10 @@ def clasificar(
         return marcados[t_norm]
     for trozo, tipo in PALABRAS:
         if trozo in t_norm:
+            return True, tipo
+    palabras_titulo = set(re.split(r"[^a-z0-9]+", t_norm))
+    for palabra, tipo in PALABRAS_COMPLETAS:
+        if palabra in palabras_titulo:
             return True, tipo
     return False, None
 
@@ -209,10 +233,10 @@ def eventos(ics: bytes, desde: date, hasta: date) -> list[Evento]:
 
 
 def duracion_tipica(
-    con: db.sqlite3.Connection, tipo: str, hasta: date, semanas: int = SEMANAS_TIPO
+    con: sqlite3.Connection, tipo: str, hasta: date, semanas: int = SEMANAS_TIPO
 ) -> int | None:
     """Mediana de duración en minutos de actividades de ese tipo en las últimas semanas."""
-    desde = hasta - timedelta(weeks=semanas)
+    desde = hasta - timedelta(weeks=semanas) + timedelta(days=1)
     filas = con.execute(
         """
         SELECT duracion_s FROM actividades
@@ -227,7 +251,7 @@ def duracion_tipica(
 
 
 def sincronizar_calendario(
-    con: db.sqlite3.Connection,
+    con: sqlite3.Connection,
     url: str,
     hoy: date,
     cliente: httpx.Client | None = None,
@@ -291,13 +315,13 @@ def sincronizar_calendario(
 
 
 def proponer_semana_tipo(
-    con: db.sqlite3.Connection, hasta: date, semanas: int = SEMANAS_TIPO
+    con: sqlite3.Connection, hasta: date, semanas: int = SEMANAS_TIPO
 ) -> list[db.EntradaSemana]:
     """Propone una plantilla semanal a partir de los hábitos de Garmin de las últimas semanas."""
-    desde = hasta - timedelta(weeks=semanas)
+    desde = hasta - timedelta(weeks=semanas) + timedelta(days=1)
     filas = db.actividades(con, desde.isoformat(), hasta.isoformat())
 
-    agrupados: dict[tuple[int, str], dict[str, set[tuple[int, int]] | list[int] | list[float]]] = {}
+    agrupados: dict[tuple[int, str], _Grupo] = {}
     for a in filas:
         f_obj = date.fromisoformat(a["fecha"])
         dia_sem = f_obj.weekday()
@@ -306,42 +330,26 @@ def proponer_semana_tipo(
         clave = (dia_sem, tipo)
 
         if clave not in agrupados:
-            agrupados[clave] = {
-                "semanas": set(),
-                "inicios": [],
-                "duraciones": [],
-            }
+            agrupados[clave] = _Grupo()
+        grupo = agrupados[clave]
+        grupo.semanas.add(semana_iso)
 
-        semanas_set = agrupados[clave]["semanas"]
-        assert isinstance(semanas_set, set)
-        semanas_set.add(semana_iso)
-
-        if a["inicio"]:
-            partes = a["inicio"].replace("T", " ").split(" ")
-            if len(partes) > 1:
-                h_str, m_str = partes[1].split(":")[:2]
-                inicios_list = agrupados[clave]["inicios"]
-                assert isinstance(inicios_list, list)
-                inicios_list.append(int(h_str) * 60 + int(m_str))
+        if a["inicio"] and len(a["inicio"]) >= 16:
+            h_str, m_str = a["inicio"][11:16].split(":")
+            grupo.inicios.append(int(h_str) * 60 + int(m_str))
 
         if a["duracion_s"] is not None:
-            duraciones_list = agrupados[clave]["duraciones"]
-            assert isinstance(duraciones_list, list)
-            duraciones_list.append(a["duracion_s"] / 60.0)
+            grupo.duraciones.append(a["duracion_s"] / 60.0)
 
     min_semanas = max(2, math.ceil(semanas / 4))
     entradas: list[db.EntradaSemana] = []
 
-    for (dia_sem, tipo), datos in agrupados.items():
-        semanas_set = datos["semanas"]
-        assert isinstance(semanas_set, set)
-        if len(semanas_set) < min_semanas:
+    for (dia_sem, tipo), grupo in agrupados.items():
+        if len(grupo.semanas) < min_semanas:
             continue
 
-        inicios_list = datos["inicios"]
-        assert isinstance(inicios_list, list)
-        if inicios_list:
-            med_ini = statistics.median(inicios_list)
+        if grupo.inicios:
+            med_ini = statistics.median(grupo.inicios)
             ini_red = round(med_ini / 15.0) * 15
             h = (int(ini_red) // 60) % 24
             m = int(ini_red) % 60
@@ -349,10 +357,8 @@ def proponer_semana_tipo(
         else:
             inicio_str = None
 
-        duraciones_list = datos["duraciones"]
-        assert isinstance(duraciones_list, list)
-        if duraciones_list:
-            med_dur = statistics.median(duraciones_list)
+        if grupo.duraciones:
+            med_dur = statistics.median(grupo.duraciones)
             dur_red = int(round(med_dur / 5.0) * 5)
         else:
             dur_red = None
@@ -371,7 +377,7 @@ def proponer_semana_tipo(
     return entradas
 
 
-def plan(con: db.sqlite3.Connection, desde: date, hasta: date, hoy: date) -> list[db.Planificado]:
+def plan(con: sqlite3.Connection, desde: date, hasta: date, hoy: date) -> list[db.Planificado]:
     """Combina los eventos de Google y la semana tipo para los días sin eventos de Google."""
     filas_db = db.planificado(con, desde.isoformat(), hasta.isoformat())
     dias_con_google = {f.fecha for f in filas_db if f.origen == GOOGLE}

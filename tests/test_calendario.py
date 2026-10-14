@@ -30,6 +30,11 @@ def test_clasificar():
     assert calendario.clasificar("Partido de Lucía", marcados) == (False, None)
     # Título marcado como deporte con tipo manda
     assert calendario.clasificar("Entreno Especial", marcados) == (True, "strength_training")
+    # Casos de pachanga y palabras completas (F5, F7, F11)
+    assert calendario.clasificar("Pachanga F7", marcados) == (True, "soccer")
+    assert calendario.clasificar("F7 La Carisa", marcados) == (True, "soccer")
+    assert calendario.clasificar("Buff7x", marcados) == (False, None)
+    assert calendario.clasificar("Partido f-7", marcados) == (True, None)
 
 
 def test_eventos():
