@@ -1,4 +1,7 @@
-"""Línea de órdenes: `salud serve | sync | lectura | garmin-entrar | estado | producto`."""
+"""Línea de órdenes de salud.
+
+Subcomandos: `serve | sync | lectura | garmin-entrar | estado | producto | calendario`.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import alimentos, db, garmin, lectura, sync
+from . import alimentos, calendario, db, garmin, lectura, sync
 from .config import ConfigError, Settings, load_settings
 from .garmin import GarminNoConectado
 
@@ -66,7 +69,34 @@ def cmd_sync(settings: Settings, args: argparse.Namespace) -> int:
     """Trae de Garmin los últimos días (o desde una fecha)."""
     hasta = _hoy()
     desde = args.desde or hasta - timedelta(days=args.dias - 1)
-    return _sincronizar(settings, desde, hasta)
+    codigo = _sincronizar(settings, desde, hasta)
+    if settings.gcal_ics:
+        con = db.conectar(settings.db_path)
+        try:
+            r = calendario.sincronizar_calendario(con, settings.gcal_ics, hasta)
+            print(f"Calendario: {r.deportes} deportes ({r.descartados} eventos descartados)")
+        except calendario.ErrorCalendario as exc:
+            print(f"Calendario: fallo: {exc}", file=sys.stderr)
+        finally:
+            con.close()
+    return codigo
+
+
+def cmd_calendario(settings: Settings, _args: argparse.Namespace) -> int:
+    """Sincroniza los eventos deportivos de Google Calendar."""
+    if not settings.gcal_ics:
+        print("Falta SALUD_GCAL_ICS en el .env")
+        return 2
+    con = db.conectar(settings.db_path)
+    try:
+        r = calendario.sincronizar_calendario(con, settings.gcal_ics, _hoy())
+    except calendario.ErrorCalendario as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    finally:
+        con.close()
+    print(f"Calendario: {r.deportes} deportes ({r.descartados} eventos descartados)")
+    return 0
 
 
 def cmd_lectura(settings: Settings, args: argparse.Namespace) -> int:
@@ -197,6 +227,9 @@ def main(argv: list[str] | None = None) -> int:
     prod = sub.add_parser("producto", help="muestra un producto por su código de barras")
     prod.add_argument("codigo", help="código EAN-8, EAN-13 o UPC")
     prod.set_defaults(func=cmd_producto)
+    sub.add_parser("calendario", help="sincroniza el calendario de Google").set_defaults(
+        func=cmd_calendario
+    )
     args = parser.parse_args(argv)
     try:
         settings = load_settings()

@@ -43,6 +43,8 @@ class Settings:
     agy_token: Path = Path("~/.gemini/antigravity-cli/antigravity-oauth-token").expanduser()
     ia_modelo_agy: str = "gemini-3.8-flash-low"
     ia_modelo_claude: str = "haiku"
+    # Dirección secreta iCal del calendario con los deportes; es un secreto.
+    gcal_ics: str | None = None
 
 
 def _ruta(valor: str) -> Path:
@@ -77,4 +79,5 @@ def load_settings() -> Settings:
         ),
         ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip() or "gemini-3.8-flash-low",
         ia_modelo_claude=os.environ.get("SALUD_IA_MODELO_CLAUDE", "").strip() or "haiku",
+        gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
     )
