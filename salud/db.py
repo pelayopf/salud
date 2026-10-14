@@ -625,3 +625,19 @@ def totales_dia(con: sqlite3.Connection, fecha: str) -> TotalesDia:
     por_momento = {m: calcular_totales(items) for m, items in agrupadas.items()}
     total = calcular_totales(lista)
     return TotalesDia(por_momento=por_momento, total=total)
+
+
+def productos_recientes(con: sqlite3.Connection, limite: int = 8) -> list[sqlite3.Row]:
+    """Los últimos productos distintos (con código) usados en comidas, el más reciente primero."""
+    return con.execute(
+        """
+        SELECT p.codigo, p.nombre, p.marca, p.unidad
+        FROM comidas AS c
+        JOIN productos AS p ON p.codigo = c.codigo
+        WHERE c.codigo IS NOT NULL AND c.codigo != ''
+        GROUP BY p.codigo, p.nombre, p.marca, p.unidad
+        ORDER BY MAX(c.id) DESC
+        LIMIT ?
+        """,
+        (limite,),
+    ).fetchall()

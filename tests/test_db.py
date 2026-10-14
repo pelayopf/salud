@@ -257,3 +257,68 @@ def test_totales_dia_y_momento(con):
     assert vacio.total.kcal == 0.0
     assert vacio.total.entradas == 0
     assert vacio.total.incompletas == 0
+
+
+def test_productos_recientes(con):
+    # Base vacía
+    assert db.productos_recientes(con) == []
+
+    # Guardamos productos en la caché/tabla de productos
+    db.guardar_producto(
+        con,
+        codigo="111",
+        nombre="Pan",
+        marca="Bimbo",
+        unidad="g",
+        kcal=250.0,
+        proteinas=8.0,
+        hidratos=45.0,
+        grasas=3.0,
+    )
+    db.guardar_producto(
+        con,
+        codigo="222",
+        nombre="Leche",
+        marca="Pascual",
+        unidad="ml",
+        kcal=60.0,
+        proteinas=3.2,
+        hidratos=4.8,
+        grasas=3.0,
+    )
+    db.guardar_producto(
+        con,
+        codigo="333",
+        nombre="Yogur",
+        marca="Danone",
+        unidad="g",
+        kcal=70.0,
+        proteinas=4.0,
+        hidratos=5.0,
+        grasas=3.5,
+    )
+
+    # Añadir comidas:
+    # 1. Pan (111)
+    db.anadir_comida(con, "2026-01-10", "desayuno", "Pan", 50.0, "g", codigo="111")
+    # 2. Leche (222)
+    db.anadir_comida(con, "2026-01-10", "desayuno", "Leche", 200.0, "ml", codigo="222")
+    # 3. Comida a mano sin código
+    db.anadir_comida(con, "2026-01-10", "comida", "Arroz casero", 150.0, "g", codigo=None)
+    # 4. Pan de nuevo (111)
+    db.anadir_comida(con, "2026-01-10", "merienda", "Pan", 50.0, "g", codigo="111")
+    # 5. Yogur (333)
+    db.anadir_comida(con, "2026-01-10", "cena", "Yogur", 125.0, "g", codigo="333")
+
+    recientes = db.productos_recientes(con)
+    # Ordenados por uso más reciente: Yogur (id 5), Pan (id 4), Leche (id 2)
+    assert len(recientes) == 3
+    assert [r["codigo"] for r in recientes] == ["333", "111", "222"]
+    assert recientes[0]["nombre"] == "Yogur"
+    assert recientes[0]["marca"] == "Danone"
+    assert recientes[0]["unidad"] == "g"
+
+    # Con límite
+    recientes_limite = db.productos_recientes(con, limite=2)
+    assert len(recientes_limite) == 2
+    assert [r["codigo"] for r in recientes_limite] == ["333", "111"]
