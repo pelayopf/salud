@@ -118,16 +118,21 @@ def test_dia_vacio(settings):
     c = cliente_web(settings)
     r = c.get("/comida?fecha=2026-01-10")
     assert r.status_code == 200
+    assert 'aria-current="page"' in r.text
+    assert "Diario" in r.text
+    assert 'aria-label="Proteína' in r.text
     assert "Desayuno" in r.text
     assert "Media mañana" in r.text
     assert "Comida" in r.text
     assert "Merienda" in r.text
     assert "Cena" in r.text
-    assert "Nada apuntado" in r.text
+    assert "Añadir a la cena" in r.text
     assert "Otro" not in r.text
-    assert "Sin comidas registradas este día" in r.text
     assert "10 de enero" in r.text
-    assert "/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana#buscar" in r.text
+    assert 'id="codigo"' not in r.text
+    assert 'id="buscar"' not in r.text
+    assert 'id="consejo"' not in r.text
+    assert 'action="/comida/consejo"' not in r.text
 
 
 def test_dia_con_entrada_en_otro(settings, con):
@@ -152,14 +157,12 @@ def test_momento_elegido_query_param(settings):
     c = cliente_web(settings)
     r = c.get("/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana")
     assert r.status_code == 200
-    assert "Añadiendo a: Media mañana" in r.text
-    assert '<input type="hidden" name="momento" value="media mañana">' in r.text
+    assert "momento=media%20ma%C3%B1ana" in r.text
 
-    # Con momento inventado no debe aparecer ni el aviso ni el hidden
+    # Con momento inventado no debe propagarse a los enlaces
     r_invalido = c.get("/comida?fecha=2026-01-10&momento=brunch_inventado")
     assert r_invalido.status_code == 200
-    assert "Añadiendo a:" not in r_invalido.text
-    assert '<input type="hidden" name="momento"' not in r_invalido.text
+    assert "momento=brunch_inventado" not in r_invalido.text
 
 
 def test_producto_con_momento_elegido(settings):
@@ -1422,7 +1425,7 @@ def test_web_comida_proteinas_primero_y_minimo(settings, con):
     assert r_ayer.status_code == 200
     texto = r_ayer.text
 
-    pos_prot = texto.find("Proteínas")
+    pos_prot = texto.find("Proteína")
     pos_kcal = texto.find("Calorías")
     assert pos_prot != -1 and pos_kcal != -1
     assert pos_prot < pos_kcal

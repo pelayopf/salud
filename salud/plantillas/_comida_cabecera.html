@@ -1,0 +1,11 @@
+<header class="comida-cabecera">
+  <div class="comida-cabecera-fila">
+    <h1>Comida</h1>
+    <a href="/comida/objetivos" class="comida-enlace-objetivos">Objetivos</a>
+  </div>
+  <nav class="pestanas" aria-label="Apartados de comida">
+    <a href="/comida?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}"{% if pestana == 'diario' %} aria-current="page"{% endif %}>Diario</a>
+    <a href="/comida/buscar?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}"{% if pestana == 'anadir' %} aria-current="page"{% endif %}>Añadir</a>
+    <a href="/comida/consejo?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}"{% if pestana == 'consejo' %} aria-current="page"{% endif %}>¿Qué como?</a>
+  </nav>
+</header>

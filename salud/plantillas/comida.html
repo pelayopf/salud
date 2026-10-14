@@ -4,278 +4,133 @@
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 {% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
 
+{% include "_comida_cabecera.html" %}
+
 <div class="cabecera-dia">
-  <a class="flecha" href="/comida?fecha={{ anterior }}" aria-label="Día anterior">‹</a>
-  <h1>{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</h1>
-  {% if siguiente %}<a class="flecha" href="/comida?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
+  <a class="flecha" href="/comida?fecha={{ anterior }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" aria-label="Día anterior">‹</a>
+  <strong>{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</strong>
+  {% if siguiente %}<a class="flecha" href="/comida?fecha={{ siguiente }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
 </div>
 
-{% if es_hoy %}
-<section class="panel" id="consejo">
-  <div class="cabecera">
-    <h2>¿Qué como?</h2>
-    <span class="derecha suave">
-      {% if proximo %}Próximo ejercicio: {{ proximo }}{% else %}Nada planificado hoy ni mañana{% endif %}
-    </span>
-  </div>
-  {% if aconsejando %}
-  <p class="suave" data-esperando-consejo>Preparando el consejo… tarda entre 30 s y minuto y medio. Puedes seguir usando la app.</p>
-  {% else %}
-  {% if error_consejo %}
-  <p class="aviso error" role="alert">{{ error_consejo }}</p>
-  {% endif %}
-  <form class="formulario" method="post" action="/comida/consejo" data-consejo>
-    <textarea name="nota" maxlength="300" placeholder="Opcional: ceno fuera, tengo poco tiempo…"></textarea>
-    <div class="acciones">
-      <button type="submit" class="boton">¿Qué como?</button>
-    </div>
-  </form>
-  {% endif %}
-  {% if consejo %}
-  <div class="consejo-detalle">
-    <p class="suave">Consejo de las {{ consejo.creado | hora_local }}</p>
-    <p><strong>{{ consejo.resumen }}</strong></p>
-    <div class="bloque">
-      <h3>Ahora</h3>
-      <p>{{ consejo.ahora }}</p>
-    </div>
-    <div class="bloque">
-      <h3>Antes</h3>
-      <p>{{ consejo.antes }}</p>
-    </div>
-    {% if consejo.durante %}
-    <div class="bloque">
-      <h3>Durante</h3>
-      <p>{{ consejo.durante }}</p>
-    </div>
-    {% endif %}
-    <div class="bloque">
-      <h3>Después</h3>
-      <p>{{ consejo.despues }}</p>
-    </div>
-    {% if consejo.avisos %}
-    <ul class="avisos-lista">
-      {% for aviso in consejo.avisos %}
-      <li>{{ aviso }}</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-  </div>
-  {% endif %}
-</section>
-{% endif %}
-
-<section class="panel" id="buscar">
-  {% if momento_elegido %}
-  <p class="suave">Añadiendo a: {{ momento_elegido | capitalize }}</p>
-  {% endif %}
-  <form class="formulario" method="get" action="/comida/buscar">
-    <input type="hidden" name="fecha" value="{{ fecha }}">
-    {% if momento_elegido %}
-    <input type="hidden" name="momento" value="{{ momento_elegido }}">
-    {% endif %}
-    <label for="codigo">Buscar alimento o código de barras</label>
-    <input id="codigo" name="q" placeholder="Plátano, pan de centeno Aldi, 8410…" value="{{ codigo_buscado | default('') }}" required>
-    <div class="acciones">
-      <button type="submit" class="boton">Buscar</button>
-      <button type="button" class="boton secundario" data-escanear hidden>Escanear</button>
-    </div>
-  </form>
-</section>
-
-{% for m in momentos %}
-  {% set items = comidas_por_momento.get(m, []) %}
-  {% if m != "otro" or items %}
-  {% set tot_m = totales.por_momento.get(m) %}
-  <section class="panel">
-    <div class="cabecera">
-      <h2>{{ m | capitalize }}</h2>
-      <span class="derecha">
-        <strong>{% if tot_m and tot_m.entradas > 0 and tot_m.sin_kcal < tot_m.entradas %}{{ tot_m.kcal | cifra }}{% else %}—{% endif %}</strong>{% if objetivo and m in objetivo.por_momento %}<span class="suave"> / {{ objetivo.por_momento[m].kcal | cifra }}</span>{% endif %} kcal
-      </span>
-    </div>
-    {% if items %}
-    <div class="lista">
-      {% for c in items %}
-      <div class="fila">
-        <div>
-          <strong>{{ c.nombre }}</strong>
-          <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
-          <div class="suave">
-            <span>{% if c.kcal is not none %}{{ c.kcal | cifra }} kcal{% else %}—{% endif %}</span>
-            <span>· P: {% if c.proteinas is not none %}{{ c.proteinas | gramos }} g{% else %}—{% endif %}</span>
-            <span>· HC: {% if c.hidratos is not none %}{{ c.hidratos | gramos }} g{% else %}—{% endif %}</span>
-            <span>· G: {% if c.grasas is not none %}{{ c.grasas | gramos }} g{% else %}—{% endif %}</span>
-          </div>
+<section class="panel comida-resumen" aria-label="Resumen del día">
+  <div class="comida-resumen-arriba">
+    {{ anillos_resumen }}
+    <div class="comida-resumen-metricas">
+      <div class="comida-resumen-metrica">
+        <span class="comida-metrica-etiqueta proteina"><span class="punto-color proteina"></span>Proteína</span>
+        <span class="comida-metrica-valor">{% if objetivo %}{% if te_faltan_prot > 0 %}Te faltan {{ te_faltan_prot | gramos }} g{% else %}Objetivo alcanzado{% endif %}{% else %}{{ totales.total.proteinas | gramos }} g{% endif %}</span>
+      </div>
+      <div class="comida-resumen-metrica">
+        <span class="comida-metrica-etiqueta calorias"><span class="punto-color calorias"></span>Calorías</span>
+        <span class="comida-metrica-valor">{% if objetivo %}{{ totales.total.kcal | cifra }} de {{ objetivo.total.kcal | cifra }} kcal{% else %}{{ totales.total.kcal | cifra }} kcal{% endif %}</span>
+        {% if objetivo and objetivo.kcal_minimo is not none %}
+        <div class="progreso fina">
+          <div class="progreso-barra{% if prog_dia and prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct if prog_dia else 0 }}%"></div>
+          <div class="progreso-minimo" style="left: {{ pct_minimo }}%" title="Mínimo {{ objetivo.kcal_minimo | cifra }} kcal"></div>
         </div>
-        <form method="post" action="/comida/{{ c.id }}/borrar?fecha={{ fecha }}" onsubmit="return confirm('¿Borrar esta entrada?')">
-          <button type="submit" class="boton secundario" aria-label="Borrar">Borrar</button>
-        </form>
+        {% endif %}
       </div>
-      {% endfor %}
     </div>
-    {% if tot_m %}
-    <div class="pie suave">
-      <p>
-        Subtotal: {% if tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}{% if objetivo and m in objetivo.por_momento %} / {{ objetivo.por_momento[m].kcal | cifra }} kcal{% endif %}
-        · P: {% if tot_m.sin_proteinas == tot_m.entradas %}—{% else %}{{ tot_m.proteinas | gramos }} g{% endif %}
-        · HC: {% if tot_m.sin_hidratos == tot_m.entradas %}—{% else %}{{ tot_m.hidratos | gramos }} g{% endif %}
-        · G: {% if tot_m.sin_grasas == tot_m.entradas %}—{% else %}{{ tot_m.grasas | gramos }} g{% endif %}
-      </p>
-      {% if objetivo and m in objetivo.por_momento and prog_momento and m in prog_momento %}
-      <div class="progreso fina">
-        <div class="progreso-barra{% if prog_momento[m].pasado %} pasado{% endif %}" style="width: {{ prog_momento[m].pct }}%"></div>
-      </div>
-      {% endif %}
-      {% if tot_m.incompletas > 0 %}
-      <p class="suave">faltan datos de {{ tot_m.incompletas }} entrada{% if tot_m.incompletas > 1 %}s{% endif %}</p>
-      {% endif %}
-    </div>
-    {% endif %}
-    {% else %}
-    <p class="suave">Nada apuntado</p>
-    {% endif %}
-    <div class="acciones"><a href="/comida?fecha={{ fecha }}&momento={{ m | urlencode }}#buscar">Añadir</a></div>
-  </section>
-  {% endif %}
-{% endfor %}
-
-{% if totales.total.entradas > 0 or objetivo %}
-<section class="panel">
-  <div class="cabecera">
-    <h2>Total del día</h2>
-    <span class="derecha">
-      <strong>{% if totales.total.sin_kcal == totales.total.entradas and not objetivo %}—{% elif objetivo %}{{ totales.total.kcal | cifra }} / {{ objetivo.total.kcal | cifra }} kcal{% else %}{{ totales.total.kcal | cifra }} kcal{% endif %}</strong>
-    </span>
   </div>
-  {% if objetivo and prog_dia %}
-  <div class="barras-objetivo">
-    <div class="progreso-item principal">
-      <div class="progreso-item-cabecera">
-        <span>Proteínas</span>
-        <span><strong>{{ totales.total.proteinas | gramos }}</strong> / {{ objetivo.total.proteinas | gramos }} g</span>
+  <div class="comida-resumen-macros">
+    <div class="comida-macro">
+      <div class="comida-macro-cabecera">
+        <strong>Hidratos</strong>
+        <span class="suave">{% if objetivo %}{{ totales.total.hidratos | gramos }} / {{ objetivo.total.hidratos | gramos }} g{% else %}{{ totales.total.hidratos | gramos }} g{% endif %}</span>
       </div>
-      <div class="progreso"><div class="progreso-barra{% if prog_dia.proteinas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.proteinas.pct }}%"></div></div>
+      {% if objetivo %}
+      <div class="barra-macro hidratos"><div class="barra-macro-llena" style="width: {{ prog_hidratos }}%"></div></div>
+      {% endif %}
     </div>
-    <div class="progreso-item">
-      <div class="progreso-item-cabecera">
-        <span>Calorías</span>
-        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal{% if objetivo.kcal_minimo is not none %} · mínimo {{ objetivo.kcal_minimo | cifra }}{% endif %}</span>
+    <div class="comida-macro">
+      <div class="comida-macro-cabecera">
+        <strong>Grasas</strong>
+        <span class="suave">{% if objetivo %}{{ totales.total.grasas | gramos }} / {{ objetivo.total.grasas | gramos }} g{% else %}{{ totales.total.grasas | gramos }} g{% endif %}</span>
       </div>
-      <div class="progreso">
-        <div class="progreso-barra{% if prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct }}%"></div>
-        {% if objetivo.kcal_minimo is not none %}<div class="progreso-minimo" style="left: {{ pct_minimo }}%" title="Mínimo"></div>{% endif %}
-      </div>
-    </div>
-    <div class="progreso-item">
-      <div class="progreso-item-cabecera">
-        <span>Hidratos</span>
-        <span><strong>{{ totales.total.hidratos | gramos }}</strong> / {{ objetivo.total.hidratos | gramos }} g</span>
-      </div>
-      <div class="progreso"><div class="progreso-barra{% if prog_dia.hidratos.pasado %} pasado{% endif %}" style="width: {{ prog_dia.hidratos.pct }}%"></div></div>
-    </div>
-    <div class="progreso-item">
-      <div class="progreso-item-cabecera">
-        <span>Grasas</span>
-        <span><strong>{{ totales.total.grasas | gramos }}</strong> / {{ objetivo.total.grasas | gramos }} g</span>
-      </div>
-      <div class="progreso"><div class="progreso-barra{% if prog_dia.grasas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.grasas.pct }}%"></div></div>
+      {% if objetivo %}
+      <div class="barra-macro grasas"><div class="barra-macro-llena" style="width: {{ prog_grasas }}%"></div></div>
+      {% endif %}
     </div>
   </div>
   {% if bajo_minimo %}
   <p class="aviso">Por debajo del mínimo: {{ totales.total.kcal | cifra }} de {{ objetivo.kcal_minimo | cifra }} kcal. Con poco apetito, prioriza proteína y algo denso.</p>
   {% endif %}
-  <p class="suave">Objetivo dinámico: basal + actividad − déficit · <a href="/comida/objetivos">Ajustar</a></p>
-  {% else %}
-  <p class="suave">
-    Proteínas: <strong>{% if totales.total.sin_proteinas == totales.total.entradas %}—{% else %}{{ totales.total.proteinas | gramos }} g{% endif %}</strong>
-    · Hidratos: <strong>{% if totales.total.sin_hidratos == totales.total.entradas %}—{% else %}{{ totales.total.hidratos | gramos }} g{% endif %}</strong>
-    · Grasas: <strong>{% if totales.total.sin_grasas == totales.total.entradas %}—{% else %}{{ totales.total.grasas | gramos }} g{% endif %}</strong>
-  </p>
-  <p class="suave">Sin objetivo: faltan datos de Garmin (peso o calorías) · <a href="/comida/objetivos">Ajustar</a></p>
-  {% endif %}
-  {% if totales.total.incompletas > 0 %}
-  <p class="suave">faltan datos de {{ totales.total.incompletas }} entrada{% if totales.total.incompletas > 1 %}s{% endif %}</p>
-  {% endif %}
 </section>
-{% else %}
-<section class="panel">
-  <h2>Total del día</h2>
-  <p class="suave">Sin comidas registradas este día.</p>
-  <p class="suave">Sin objetivo: faltan datos de Garmin (peso o calorías) · <a href="/comida/objetivos">Ajustar</a></p>
-</section>
-{% endif %}
 
-<details class="panel"{% if recientes %} open{% endif %}>
-  <summary>Recientes</summary>
-  {% if recientes %}
-  <div class="lista">
-    {% for r in recientes %}
-    <div class="fila">
-      <a class="enlace" href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}">
-        <strong>{{ r.nombre or r.codigo }}</strong>{% if r.marca %} <span class="suave">· {{ r.marca }}</span>{% endif %}
-      </a>
-      <span class="suave">{{ r.unidad }}</span>
+{% set iconos_momento = {
+  'desayuno': ('ambar', '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v2M10 2v2M14 2v2"/>'),
+  'media mañana': ('verde', '<path d="M12 7c-3 0-5 2.5-5 6s2 7 5 7 5-3.5 5-7-2-6-5-6z"/><path d="M12 7c0-2 1-4 3-5"/>'),
+  'comida': ('marca', '<path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-2 2-2 2-4M13 7c0-2 2-2 2-4"/>'),
+  'merienda': ('gris', '<path d="M4 11h16v2a8 8 0 0 1-16 0z"/><path d="M12 3v4"/>'),
+  'cena': ('gris', '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+  'otro': ('gris', '<circle cx="12" cy="12" r="8"/>'),
+} %}
+{% set articulos = {
+  'desayuno': 'al desayuno',
+  'media mañana': 'a la media mañana',
+  'comida': 'a la comida',
+  'merienda': 'a la merienda',
+  'cena': 'a la cena',
+  'otro': 'a otro',
+} %}
+
+{% for m in momentos %}
+  {% set items = comidas_por_momento.get(m, []) %}
+  {% if m != "otro" or items %}
+  {% set tot_m = totales.por_momento.get(m) %}
+  {% set icono_info = iconos_momento.get(m, ('gris', '<circle cx="12" cy="12" r="8"/>')) %}
+  {% if items %}
+  <section class="panel tarjeta-momento" aria-label="{{ m | capitalize }}">
+    <div class="tarjeta-momento-cabecera">
+      <span class="icono-cuadro {{ icono_info[0] }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icono_info[1] | safe }}</svg></span>
+      <div class="tarjeta-momento-info">
+        <div class="tarjeta-momento-titular">
+          <strong>{{ m | capitalize }}</strong>
+          <span class="tarjeta-momento-cifra">
+            <strong>{% if tot_m and tot_m.entradas > 0 and tot_m.sin_kcal < tot_m.entradas %}{{ tot_m.kcal | cifra }}{% else %}—{% endif %}</strong>{% if objetivo and m in objetivo.por_momento %}<span class="suave"> / {{ objetivo.por_momento[m].kcal | cifra }} kcal</span>{% else %}<span class="suave"> kcal</span>{% endif %}
+          </span>
+        </div>
+        {% if objetivo and m in objetivo.por_momento and prog_momento and m in prog_momento %}
+        <div class="progreso fina">
+          <div class="progreso-barra{% if prog_momento[m].pasado %} pasado{% endif %}" style="width: {{ prog_momento[m].pct }}%"></div>
+        </div>
+        {% endif %}
+      </div>
     </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="suave">Aún no hay productos recientes.</p>
-  {% endif %}
-</details>
-
-<details class="panel"{% if productos_propios %} open{% endif %}>
-  <summary>Mis productos</summary>
-  {% if productos_propios %}
-  <div class="lista">
-    {% for p in productos_propios %}
-    <div class="fila">
-      <a class="enlace" href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}">
-        <strong>{{ p.nombre }}</strong>{% if p.marca %} <span class="suave">· {{ p.marca }}</span>{% endif %}
-      </a>
-      <span class="suave">{{ p.unidad }}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="suave">Aún no hay productos propios.</p>
-  {% endif %}
-</details>
-
-<details class="panel">
-  <summary>Añadir a mano</summary>
-  <p><a class="boton secundario" href="/comida/nuevo?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}">Nuevo producto (con foto de la etiqueta)</a></p>
-  <p class="suave">Para comidas sueltas, el formulario de abajo con los totales.</p>
-  <form class="formulario" method="post" action="/comida/anadir">
-    <input type="hidden" name="fecha" value="{{ fecha }}">
-    <label for="nombre">Nombre</label>
-    <input id="nombre" name="nombre" required>
-    <label for="momento">Momento</label>
-    <select id="momento" name="momento" required>
-      {% for m in momentos %}
-      {% if m != "otro" %}
-      <option value="{{ m }}"{% if m == momento_defecto %} selected{% endif %}>{{ m | capitalize }}</option>
-      {% endif %}
+    <ul class="tarjeta-momento-lista">
+      {% for c in items %}
+      <li class="tarjeta-momento-item">
+        <div class="item-descripcion">
+          <span class="item-nombre">{{ c.nombre }}</span>
+          <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
+        </div>
+        <div class="item-derecha">
+          <span class="item-kcal suave">{% if c.kcal is not none %}{{ c.kcal | cifra }}{% else %}—{% endif %}</span>
+          <form method="post" action="/comida/{{ c.id }}/borrar?fecha={{ fecha }}" onsubmit="return confirm('¿Borrar esta entrada?')">
+            <button type="submit" class="boton-borrar" aria-label="Borrar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>
+          </form>
+        </div>
+      </li>
       {% endfor %}
-    </select>
-    <label for="cantidad">Cantidad</label>
-    <input id="cantidad" name="cantidad" type="number" step="any" min="0.1" required>
-    <label for="unidad">Unidad</label>
-    <select id="unidad" name="unidad" required>
-      <option value="g">g</option>
-      <option value="ml">ml</option>
-    </select>
-    <label for="kcal">Calorías (kcal)</label>
-    <input id="kcal" name="kcal" type="number" step="any" min="0">
-    <label for="proteinas">Proteínas (g)</label>
-    <input id="proteinas" name="proteinas" type="number" step="any" min="0">
-    <label for="hidratos">Hidratos (g)</label>
-    <input id="hidratos" name="hidratos" type="number" step="any" min="0">
-    <label for="grasas">Grasas (g)</label>
-    <input id="grasas" name="grasas" type="number" step="any" min="0">
-    <div class="acciones">
-      <button type="submit" class="boton">Añadir</button>
+    </ul>
+    {% if tot_m and tot_m.incompletas > 0 %}
+    <p class="suave" style="margin: 4px 0 0 52px; font-size: 12px;">faltan datos de {{ tot_m.incompletas }} entrada{% if tot_m.incompletas > 1 %}s{% endif %}</p>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="tarjeta-momento vacia" aria-label="{{ m | capitalize }}">
+    <span class="icono-cuadro {{ icono_info[0] }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icono_info[1] | safe }}</svg></span>
+    <div class="tarjeta-momento-info-vacia">
+      <strong>{{ m | capitalize }}</strong>
+      <span class="suave">{% if objetivo and m in objetivo.por_momento %}Objetivo {{ objetivo.por_momento[m].kcal | cifra }} kcal{% else %}Sin comidas registradas este día{% endif %}</span>
     </div>
-  </form>
-</details>
+    <a href="/comida/buscar?fecha={{ fecha }}&momento={{ m | urlencode }}" class="boton-mas-momento" aria-label="Añadir {{ articulos.get(m, 'a ' ~ m) }}">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </a>
+  </section>
+  {% endif %}
+  {% endif %}
+{% endfor %}
 {% endblock %}

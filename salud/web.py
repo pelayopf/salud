@@ -1528,32 +1528,6 @@ def crear_app(
         try:
             comidas_dia = db.comidas(con, fecha.isoformat())
             totales, objetivo = _resumen_comida_dia(con, fecha, hoy())
-            recientes = db.productos_recientes(con)
-            propios = db.productos_propios(con)
-            consejo_hoy: dict[str, Any] | None = None
-            proximo: str | None = None
-            if fecha == hoy():
-                consejo_hoy = db.ultimo_consejo(con, fecha.isoformat())
-                manana = fecha + timedelta(days=1)
-                items_plan = calendario.plan(con, fecha, manana, fecha)
-                acts = db.actividades(con, fecha.isoformat(), manana.isoformat())
-                ahora_hora = datetime.now(ZONA).strftime("%H:%M")
-                for p in items_plan:
-                    if calendario.hecho(p, acts):
-                        continue
-                    if p.fecha == fecha.isoformat():
-                        if p.inicio and len(p.inicio) >= 5 and p.inicio[:5] <= ahora_hora:
-                            continue
-                    deporte = metricas.nombre_tipo(p.tipo) if p.tipo else p.titulo
-                    dia_str = "hoy" if p.fecha == fecha.isoformat() else "mañana"
-                    hora_str = f" {p.inicio[:5]}" if p.inicio else ""
-                    partes = [f"{deporte} {dia_str}{hora_str}"]
-                    if p.duracion_min:
-                        partes.append(f"{p.duracion_min} min")
-                    if p.intensidad:
-                        partes.append(p.intensidad)
-                    proximo = " · ".join(partes)
-                    break
         finally:
             con.close()
         comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
@@ -1595,11 +1569,62 @@ def crear_app(
                 and totales.total.kcal < minimo
             )
 
-        err_consejo = error_consejo["texto"]
-        error_consejo["texto"] = None
+        f_prot = (
+            totales.total.proteinas / objetivo.total.proteinas
+            if objetivo and objetivo.total.proteinas > 0
+            else None
+        )
+        f_kcal = (
+            totales.total.kcal / objetivo.total.kcal
+            if objetivo and objetivo.total.kcal > 0
+            else None
+        )
+        if objetivo:
+            etiqueta = (
+                f"Proteína {gramos(totales.total.proteinas)} de"
+                f" {gramos(objetivo.total.proteinas)} gramos;"
+                f" calorías {cifra(totales.total.kcal)} de"
+                f" {cifra(objetivo.total.kcal)}"
+            )
+            texto_anillo = f"{gramos(totales.total.proteinas)} g"
+            subtexto_anillo = f"de {gramos(objetivo.total.proteinas)} g"
+        else:
+            etiqueta = (
+                f"Proteína {gramos(totales.total.proteinas)} gramos;"
+                f" calorías {cifra(totales.total.kcal)}"
+            )
+            texto_anillo = f"{gramos(totales.total.proteinas)} g"
+            subtexto_anillo = ""
+
+        anillos_resumen = graficas.anillos(
+            f_prot,
+            f_kcal,
+            clase_ext="proteina",
+            clase_int="kcal",
+            tamano=132,
+            texto=texto_anillo,
+            subtexto=subtexto_anillo,
+            etiqueta=etiqueta,
+        )
+        te_faltan_prot = (
+            max(0.0, objetivo.total.proteinas - totales.total.proteinas)
+            if objetivo
+            else 0.0
+        )
+        prog_hidratos = (
+            min(100, round(100 * totales.total.hidratos / objetivo.total.hidratos))
+            if objetivo and objetivo.total.hidratos > 0
+            else 0
+        )
+        prog_grasas = (
+            min(100, round(100 * totales.total.grasas / objetivo.total.grasas))
+            if objetivo and objetivo.total.grasas > 0
+            else 0
+        )
 
         return _render(
             "comida.html",
+            pestana="diario",
             seccion="comida",
             fecha=fecha.isoformat(),
             es_hoy=fecha == hoy(),
@@ -1612,12 +1637,10 @@ def crear_app(
             prog_momento=prog_momento,
             pct_minimo=pct_minimo,
             bajo_minimo=bajo_minimo,
-            recientes=recientes,
-            productos_propios=propios,
-            consejo=consejo_hoy,
-            aconsejando=aconsejando.locked(),
-            error_consejo=err_consejo,
-            proximo=proximo,
+            anillos_resumen=anillos_resumen,
+            te_faltan_prot=te_faltan_prot,
+            prog_hidratos=prog_hidratos,
+            prog_grasas=prog_grasas,
             momentos=db.MOMENTOS,
             momento_defecto=momento_defecto,
             momento_elegido=momento_elegido,

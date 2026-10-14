@@ -139,10 +139,16 @@ def anillos(
 ) -> Markup:
     """Dos anillos concéntricos (exterior e interior)."""
     c = tamano / 2
-    g_ext = max(2.0, tamano * 7.0 / 64.0)
-    g_int = max(2.0, tamano * 5.0 / 64.0)
-    r_ext = tamano * 26.0 / 64.0
-    r_int = tamano * 17.0 / 64.0
+    if tamano >= 100:
+        g_ext = 12.0
+        g_int = 8.0
+        r_ext = 56.0
+        r_int = 39.0
+    else:
+        g_ext = max(2.0, tamano * 7.0 / 64.0)
+        g_int = max(2.0, tamano * 5.0 / 64.0)
+        r_ext = tamano * 26.0 / 64.0
+        r_int = tamano * 17.0 / 64.0
     circ_ext = 2 * math.pi * r_ext
     circ_int = 2 * math.pi * r_int
 
@@ -175,22 +181,26 @@ def anillos(
         )
 
     if texto and subtexto:
+        y_txt = 64.0 if tamano >= 100 else c - 2.0
+        y_sub = 82.0 if tamano >= 100 else c + 11.0
         partes.append(
-            f'<text class="anillo-texto" x="{c:.1f}" y="{c - 2:.1f}"'
+            f'<text class="anillo-texto" x="{c:.1f}" y="{y_txt:.1f}"'
             f' text-anchor="middle">{escape(texto)}</text>'
         )
         partes.append(
-            f'<text class="anillo-subtexto" x="{c:.1f}" y="{c + 11:.1f}"'
+            f'<text class="anillo-subtexto" x="{c:.1f}" y="{y_sub:.1f}"'
             f' text-anchor="middle">{escape(subtexto)}</text>'
         )
     elif texto:
+        y_txt = 74.0 if tamano >= 100 else c + 5.0
         partes.append(
-            f'<text class="anillo-texto" x="{c:.1f}" y="{c + 5:.1f}"'
+            f'<text class="anillo-texto" x="{c:.1f}" y="{y_txt:.1f}"'
             f' text-anchor="middle">{escape(texto)}</text>'
         )
     elif subtexto:
+        y_sub = 74.0 if tamano >= 100 else c + 3.0
         partes.append(
-            f'<text class="anillo-subtexto" x="{c:.1f}" y="{c + 3:.1f}"'
+            f'<text class="anillo-subtexto" x="{c:.1f}" y="{y_sub:.1f}"'
             f' text-anchor="middle">{escape(subtexto)}</text>'
         )
 

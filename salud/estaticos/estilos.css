@@ -237,7 +237,7 @@ textarea:focus {
 /* --- Día y lectura ------------------------------------------------------- */
 
 .cabecera-dia { display: flex; align-items: center; gap: 8px; }
-.cabecera-dia h1 { flex: 1; text-align: center; margin: 4px 0 14px; font-size: 1.25rem; }
+.cabecera-dia h1, .cabecera-dia strong { flex: 1; text-align: center; margin: 4px 0 14px; font-size: 1.15rem; font-weight: 700; }
 .flecha {
   display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px;
   text-decoration: none; font-size: 1.5rem; line-height: 1; color: var(--marca); margin-bottom: 10px;
@@ -931,5 +931,236 @@ th { color: var(--suave); font-weight: 500; }
 .lecturas-anteriores:hover {
   color: var(--marca-hover);
 }
+
+/* --- Rediseño Comida: Cabecera y Diario ---------------------------------- */
+
+.comida-cabecera {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.comida-cabecera-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.comida-cabecera-fila h1 {
+  margin: 0;
+}
+.comida-enlace-objetivos {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 4px;
+  text-decoration: none;
+}
+.comida-enlace-objetivos:hover {
+  color: var(--marca-hover);
+}
+
+.icono-cuadro.gris {
+  background: #eef1f0;
+  color: var(--suave);
+}
+
+.comida-resumen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #ffffff;
+  border-radius: var(--radio-grande);
+  padding: 18px;
+  box-shadow: var(--sombra);
+  margin-bottom: 14px;
+}
+.comida-resumen-arriba {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.comida-resumen-metricas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.comida-resumen-metrica {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.comida-metrica-etiqueta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.comida-metrica-etiqueta.proteina { color: var(--proteina); }
+.comida-metrica-etiqueta.calorias { color: var(--marca); }
+.punto-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.punto-color.proteina { background: var(--proteina); }
+.punto-color.calorias { background: var(--marca); }
+.comida-metrica-valor {
+  font-size: 13px;
+  color: var(--suave);
+}
+
+.comida-resumen-macros {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.comida-macro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.comida-macro-cabecera {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.comida-macro-cabecera strong {
+  font-weight: 700;
+}
+.barra-macro {
+  height: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.barra-macro.hidratos { background: var(--hidratos-fondo); }
+.barra-macro.grasas { background: var(--grasas-fondo); }
+.barra-macro.hidratos .barra-macro-llena { background: var(--hidratos); }
+.barra-macro.grasas .barra-macro-llena { background: var(--grasas); }
+.barra-macro-llena {
+  height: 100%;
+  border-radius: 6px;
+}
+
+.anillos .anillo-texto { fill: var(--texto); font-size: 24px; font-weight: 800; }
+.anillos .anillo-subtexto { fill: var(--suave); font-size: 12px; font-weight: 600; }
+
+.tarjeta-momento {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #ffffff;
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  box-shadow: var(--sombra);
+  margin-bottom: 12px;
+}
+.tarjeta-momento.vacia {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: 1.5px dashed #c9d3d0;
+  box-shadow: none;
+  padding: 12px 16px;
+}
+.tarjeta-momento-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tarjeta-momento-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+.tarjeta-momento-info-vacia {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.tarjeta-momento-info-vacia strong {
+  font-size: 16px;
+}
+.tarjeta-momento-titular {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.tarjeta-momento-titular strong {
+  font-size: 16px;
+}
+.tarjeta-momento-cifra {
+  font-size: 14px;
+}
+.tarjeta-momento-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tarjeta-momento-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.item-descripcion {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.item-nombre {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-derecha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.item-kcal {
+  white-space: nowrap;
+}
+.boton-borrar {
+  background: none;
+  border: 0;
+  padding: 4px;
+  color: var(--suave);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.boton-borrar:hover {
+  color: var(--mal);
+}
+.boton-mas-momento {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--marca);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  flex: none;
+}
+.boton-mas-momento:hover {
+  background: var(--marca-hover);
+}
+
 
 
