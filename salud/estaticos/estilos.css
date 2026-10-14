@@ -1324,5 +1324,200 @@ th { color: var(--suave); font-weight: 500; }
   display: contents;
 }
 
+/* --- Rediseño Comida: ¿Qué como? --- */
+
+.panel-consejo-proximo {
+  background: var(--marca);
+  color: #f4f7f6;
+  border-radius: var(--radio-grande);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.consejo-proximo-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.icono-cuadro-transparente {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.consejo-proximo-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.consejo-proximo-info strong {
+  font-size: 16px;
+  color: #f4f7f6;
+}
+.proximo-detalles {
+  font-size: 13px;
+  opacity: .85;
+  color: #f4f7f6;
+}
+.esperando-consejo-texto {
+  margin: 0;
+  font-size: 14px;
+  opacity: .9;
+}
+.formulario-consejo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.label-nota {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: .9;
+  color: #f4f7f6;
+}
+.formulario-consejo textarea {
+  border-radius: 14px;
+  border: 0;
+  padding: 12px;
+  resize: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--texto);
+  background: #ffffff;
+}
+.boton-pedir-consejo {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  height: 48px;
+  border-radius: 14px;
+  border: 0;
+  background: var(--acento);
+  color: var(--acento-tinta);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.boton-pedir-consejo:hover {
+  filter: brightness(.95);
+}
+
+.consejo-resultado {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.consejo-cabecera h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--suave);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.consejo-resumen-texto {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.linea-tiempo {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.linea-tiempo-paso {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 14px;
+}
+.linea-tiempo-paso:last-child {
+  padding-bottom: 0;
+}
+.linea-tiempo-marcador {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.circulo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-weight: 800;
+}
+.circulo.ya {
+  background: var(--proteina);
+  color: #ffffff;
+  font-size: 12px;
+}
+.circulo.antes {
+  background: var(--marca-tinta);
+  color: var(--marca);
+}
+.circulo.durante {
+  background: var(--ambar-fondo);
+  color: var(--ambar);
+}
+.circulo.despues {
+  background: var(--violeta-fondo);
+  color: var(--violeta);
+}
+.linea-vertical {
+  flex: 1;
+  width: 2px;
+  background: #dde4e2;
+  margin-top: 4px;
+}
+.linea-tiempo-contenido {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.linea-tiempo-contenido strong {
+  font-size: 15px;
+}
+.linea-tiempo-contenido span {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #34454c;
+}
+
+.consejo-avisos-recuadro {
+  background: #fbf1dc;
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  color: #5a3b00;
+}
+.consejo-avisos-recuadro svg {
+  flex: none;
+  margin-top: 2px;
+}
+.consejo-avisos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 
 

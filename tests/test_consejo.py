@@ -275,12 +275,12 @@ def test_web_consejo(con, settings: Settings):
     r_post = client.post("/comida/consejo", data={"nota": "ceno fuera"})
     assert r_post.status_code == 303
     loc = r_post.headers["location"]
-    assert loc.startswith("/comida")
-    assert loc.endswith("#consejo")
+    assert loc.startswith("/comida/consejo")
+    assert "#consejo" not in loc
 
-    # Con el evento sin soltar, GET /comida contiene data-esperando-consejo
+    # Con el evento sin soltar, GET /comida/consejo contiene data-esperando-consejo
     # y no el formulario action="/comida/consejo"
-    r_esperando = client.get("/comida")
+    r_esperando = client.get("/comida/consejo")
     assert r_esperando.status_code == 200
     assert "data-esperando-consejo" in r_esperando.text
     assert 'action="/comida/consejo"' not in r_esperando.text
@@ -306,10 +306,11 @@ def test_web_consejo(con, settings: Settings):
     else:
         pytest.fail("El consejo no terminó a tiempo")
 
-    # GET /comida muestra el consejo y el formulario
-    r_listo = client.get("/comida")
+    # GET /comida/consejo muestra el consejo y el formulario
+    r_listo = client.get("/comida/consejo")
     assert r_listo.status_code == 200
     assert 'action="/comida/consejo"' in r_listo.text
+    assert "Pedir consejo" in r_listo.text
     assert "Consejo de las" in r_listo.text
     assert "Comer algo rico" in r_listo.text
     assert "Ahora" in r_listo.text
@@ -317,6 +318,7 @@ def test_web_consejo(con, settings: Settings):
     assert "Durante" in r_listo.text
     assert "Después" in r_listo.text
     assert "Descansa" in r_listo.text
+    assert "linea-tiempo" in r_listo.text
 
     # Falso que lanza ia.ErrorIA("Error simulado de IA")
     def pedir_error(_conexion: Any, _nota: str) -> dict[str, Any]:
@@ -342,19 +344,19 @@ def test_web_consejo(con, settings: Settings):
     else:
         pytest.fail("El consejo con error no terminó a tiempo")
 
-    # GET /comida muestra "Error simulado de IA"; un segundo GET ya no lo muestra
-    r_err1 = client_err.get("/comida")
+    # GET /comida/consejo muestra "Error simulado de IA"; un segundo GET ya no lo muestra
+    r_err1 = client_err.get("/comida/consejo")
     assert r_err1.status_code == 200
     assert "Error simulado de IA" in r_err1.text
 
-    r_err2 = client_err.get("/comida")
+    r_err2 = client_err.get("/comida/consejo")
     assert r_err2.status_code == 200
     assert "Error simulado de IA" not in r_err2.text
 
-    # GET /comida de otro día -> no aparece el panel
-    r_otro = client.get("/comida?fecha=2026-01-09")
+    # GET /comida/consejo de otro día -> no aparece el panel del consejo guardado
+    r_otro = client.get("/comida/consejo?fecha=2026-01-09")
     assert r_otro.status_code == 200
-    assert 'id="consejo"' not in r_otro.text
+    assert "Consejo de las" not in r_otro.text
 
     # Con planificado de hoy futuro -> "Próximo ejercicio"
     db.reemplazar_planificado(
@@ -375,7 +377,8 @@ def test_web_consejo(con, settings: Settings):
             )
         ],
     )
-    r_prox = client.get("/comida")
+    r_prox = client.get("/comida/consejo")
     assert r_prox.status_code == 200
     assert "Próximo ejercicio" in r_prox.text
-    assert "Pádel hoy 23:59 · 90 min · alta" in r_prox.text
+    assert "Pádel hoy · 23:59" in r_prox.text
+    assert "90 min · alta" in r_prox.text

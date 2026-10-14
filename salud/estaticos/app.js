@@ -456,7 +456,7 @@ if (esperandoConsejo) {
         const datos = await resp.json();
         if (!datos.preparando) {
           clearInterval(intervalo);
-          location.replace("/comida#consejo");
+          location.replace("/comida/consejo");
         }
       }
     } catch {

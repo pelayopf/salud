@@ -1607,9 +1607,7 @@ def crear_app(
             etiqueta=etiqueta,
         )
         te_faltan_prot = (
-            max(0.0, objetivo.total.proteinas - totales.total.proteinas)
-            if objetivo
-            else 0.0
+            max(0.0, objetivo.total.proteinas - totales.total.proteinas) if objetivo else 0.0
         )
         prog_hidratos = (
             min(100, round(100 * totales.total.hidratos / objetivo.total.hidratos))
@@ -2356,11 +2354,76 @@ def crear_app(
         await run_in_threadpool(_hacer_borrar)
         return _volver("Entrada borrada", f"/comida?fecha={fecha}")
 
+    def ver_comida_consejo(request: Request) -> Response:
+        fecha = _fecha(request)
+        momento_elegido = momento_valido(request.query_params.get("momento"))
+        con = abrir_db()
+        try:
+            consejo_guardado = db.ultimo_consejo(con, fecha.isoformat()) if fecha == hoy() else None
+            manana = fecha + timedelta(days=1)
+            items_plan = calendario.plan(con, fecha, manana, fecha)
+            acts = db.actividades(con, fecha.isoformat(), manana.isoformat())
+            ahora_hora = datetime.now(ZONA).strftime("%H:%M")
+            proximo_titulo: str | None = None
+            proximo_detalles: list[str] = []
+            for p in items_plan:
+                if calendario.hecho(p, acts):
+                    continue
+                if p.fecha == fecha.isoformat():
+                    if p.inicio and len(p.inicio) >= 5 and p.inicio[:5] <= ahora_hora:
+                        continue
+                deporte = metricas.nombre_tipo(p.tipo) if p.tipo else p.titulo
+                dia_str = "hoy" if p.fecha == fecha.isoformat() else "mañana"
+                hora_str = f" · {p.inicio[:5]}" if p.inicio else ""
+                proximo_titulo = f"{deporte} {dia_str}{hora_str}"
+                if p.duracion_min:
+                    proximo_detalles.append(f"{p.duracion_min} min")
+                if p.intensidad:
+                    proximo_detalles.append(p.intensidad)
+                break
+
+            resumen_trat = tratamiento.resumen(con, hoy())
+            if resumen_trat:
+                farmaco = resumen_trat["farmaco"]
+                dias = resumen_trat["dias_desde_ultima"]
+                proximo_detalles.append(f"{farmaco}: día {dias} tras el pinchazo")
+
+            proximo_info = None
+            if proximo_titulo:
+                proximo_info = {
+                    "titulo": proximo_titulo,
+                    "detalle": " · ".join(proximo_detalles),
+                }
+            elif proximo_detalles:
+                proximo_info = {
+                    "titulo": "Sin ejercicio planificado",
+                    "detalle": " · ".join(proximo_detalles),
+                }
+        finally:
+            con.close()
+
+        err_consejo = error_consejo["texto"]
+        error_consejo["texto"] = None
+
+        return _render(
+            "comida_consejo.html",
+            pestana="consejo",
+            seccion="comida",
+            fecha=fecha.isoformat(),
+            momento_elegido=momento_elegido,
+            proximo=proximo_info,
+            consejo=consejo_guardado,
+            aconsejando=aconsejando.locked(),
+            error_consejo=err_consejo,
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
     async def pedir_consejo_web(request: Request) -> Response:
         datos = await _formulario(request)
         nota = datos.get("nota", "")
         if not aconsejando.acquire(blocking=False):
-            return _volver("Ya estoy preparando el consejo", "/comida#consejo")
+            return _volver("Ya estoy preparando el consejo", "/comida/consejo")
         error_consejo["texto"] = None
 
         def _trabajo() -> None:
@@ -2380,7 +2443,7 @@ def crear_app(
                 aconsejando.release()
 
         threading.Thread(target=_trabajo, daemon=True).start()
-        return _volver("Preparando el consejo", "/comida#consejo")
+        return _volver("Preparando el consejo", "/comida/consejo")
 
     def estado_consejo(_request: Request) -> Response:
         return JSONResponse({"preparando": aconsejando.locked()})
@@ -2585,6 +2648,7 @@ def crear_app(
             Route("/comida/buscar", buscar_comida),
             Route("/comida/repetir", repetir_comida, methods=["POST"]),
             Route("/comida/estimar", estimar_comida_web, methods=["POST"]),
+            Route("/comida/consejo", ver_comida_consejo),
             Route("/comida/consejo", pedir_consejo_web, methods=["POST"]),
             Route("/comida/consejo/estado", estado_consejo),
             Route("/comida/objetivos", ver_comida_objetivos),

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block titulo %}¿Qué como? · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+{% include "_comida_cabecera.html" %}
+
+<section class="panel-consejo-proximo" aria-label="Próximo ejercicio">
+  <div class="consejo-proximo-fila">
+    <span class="icono-cuadro-transparente">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--acento)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/><circle cx="19" cy="5" r="1.6"/></svg>
+    </span>
+    <div class="consejo-proximo-info">
+      {% if proximo %}
+      <strong>{{ proximo.titulo }}</strong>
+      <span class="proximo-detalles">{{ proximo.detalle }}</span>
+      {% else %}
+      <strong>Nada planificado hoy ni mañana</strong>
+      <span class="proximo-detalles">Añade tu próximo ejercicio en Google Calendar</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if aconsejando %}
+  <p class="esperando-consejo-texto" data-esperando-consejo>Preparando el consejo… tarda entre 30 s y minuto y medio. Puedes seguir usando la app.</p>
+  {% else %}
+  {% if error_consejo %}
+  <p class="aviso error" role="alert">{{ error_consejo }}</p>
+  {% endif %}
+  <form class="formulario-consejo" method="post" action="/comida/consejo" data-consejo>
+    <label for="nota" class="label-nota">¿Algo que deba saber?</label>
+    <textarea id="nota" name="nota" rows="2" maxlength="300" placeholder="Opcional: ceno fuera, tengo poco hambre…"></textarea>
+    <button type="submit" class="boton-pedir-consejo">Pedir consejo</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if consejo %}
+<section class="panel consejo-resultado" aria-label="Consejo">
+  <div class="consejo-cabecera">
+    <h2>Consejo de las {{ consejo.creado | hora_local }}</h2>
+  </div>
+  <p class="consejo-resumen-texto"><strong>{{ consejo.resumen }}</strong></p>
+
+  <ol class="linea-tiempo">
+    <li class="linea-tiempo-paso">
+      <div class="linea-tiempo-marcador">
+        <span class="circulo ya">YA</span>
+        <span class="linea-vertical"></span>
+      </div>
+      <div class="linea-tiempo-contenido">
+        <strong>Ahora</strong>
+        <span>{{ consejo.ahora }}</span>
+      </div>
+    </li>
+    <li class="linea-tiempo-paso">
+      <div class="linea-tiempo-marcador">
+        <span class="circulo antes">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </span>
+        {% if consejo.durante or consejo.despues %}<span class="linea-vertical"></span>{% endif %}
+      </div>
+      <div class="linea-tiempo-contenido">
+        <strong>Antes</strong>
+        <span>{{ consejo.antes }}</span>
+      </div>
+    </li>
+    {% if consejo.durante %}
+    <li class="linea-tiempo-paso">
+      <div class="linea-tiempo-marcador">
+        <span class="circulo durante">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.7S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.3-6-11.3z"/></svg>
+        </span>
+        {% if consejo.despues %}<span class="linea-vertical"></span>{% endif %}
+      </div>
+      <div class="linea-tiempo-contenido">
+        <strong>Durante</strong>
+        <span>{{ consejo.durante }}</span>
+      </div>
+    </li>
+    {% endif %}
+    {% if consejo.despues %}
+    <li class="linea-tiempo-paso">
+      <div class="linea-tiempo-marcador">
+        <span class="circulo despues">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
+        </span>
+      </div>
+      <div class="linea-tiempo-contenido">
+        <strong>Después</strong>
+        <span>{{ consejo.despues }}</span>
+      </div>
+    </li>
+    {% endif %}
+  </ol>
+
+  {% if consejo.avisos %}
+  <div class="consejo-avisos-recuadro">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A5A00" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div class="consejo-avisos-lista">
+      {% for aviso in consejo.avisos %}
+      <span>{{ aviso }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
