@@ -389,3 +389,27 @@ def test_fecha_futura_rechazada(settings):
     )
     assert r.status_code == 303
     assert "posterior+a+hoy" in r.headers["location"]
+
+
+def test_producto_preparado_muestra_aviso(settings):
+    payload = {
+        "status": 1,
+        "product": {
+            "code": EAN13,
+            "product_name": "Sopa deshidratada",
+            "brands": "Marca Test",
+            "nutriscore_grade": "a",
+            "product_quantity_unit": "g",
+            "nutriments": {
+                "energy-kcal_prepared_100g": 40.0,
+                "proteins_prepared_100g": 1.5,
+                "carbohydrates_prepared_100g": 6.0,
+                "fat_prepared_100g": 0.5,
+            },
+        },
+    }
+    off, _ = cliente_off_mock({EAN13: payload})
+    c = cliente_web(settings, cliente_off=off)
+    r = c.get(f"/comida/producto?codigo={EAN13}&fecha=2026-01-10")
+    assert r.status_code == 200
+    assert "Valores del producto preparado, según Open Food Facts" in r.text

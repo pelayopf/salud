@@ -8,6 +8,7 @@ producto queda marcado como incompleto para que la app pueda avisar.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -70,6 +71,7 @@ class Producto:
     proteinas: float | None
     hidratos: float | None
     grasas: float | None
+    preparado: bool = False
 
     @property
     def incompleto(self) -> bool:
@@ -180,10 +182,46 @@ def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
     """Convierte el `product` de la API de Open Food Facts en un `Producto`."""
     nutrientes = p.get("nutriments")
     n: dict[str, Any] = nutrientes if isinstance(nutrientes, dict) else {}
+
+    preparado = False
+
     kcal = _numero(n.get("energy-kcal_100g"))
     if kcal is None:
         kj = _numero(n.get("energy_100g"))
-        kcal = round(kj / KJ_POR_KCAL, 1) if kj is not None else None
+        if kj is not None:
+            kcal = round(kj / KJ_POR_KCAL, 1)
+        else:
+            kcal_prep = _numero(n.get("energy-kcal_prepared_100g"))
+            if kcal_prep is not None:
+                kcal = kcal_prep
+                preparado = True
+            else:
+                kj_prep = _numero(n.get("energy_prepared_100g"))
+                if kj_prep is not None:
+                    kcal = round(kj_prep / KJ_POR_KCAL, 1)
+                    preparado = True
+
+    proteinas = _numero(n.get("proteins_100g"))
+    if proteinas is None:
+        proteinas_prep = _numero(n.get("proteins_prepared_100g"))
+        if proteinas_prep is not None:
+            proteinas = proteinas_prep
+            preparado = True
+
+    hidratos = _numero(n.get("carbohydrates_100g"))
+    if hidratos is None:
+        hidratos_prep = _numero(n.get("carbohydrates_prepared_100g"))
+        if hidratos_prep is not None:
+            hidratos = hidratos_prep
+            preparado = True
+
+    grasas = _numero(n.get("fat_100g"))
+    if grasas is None:
+        grasas_prep = _numero(n.get("fat_prepared_100g"))
+        if grasas_prep is not None:
+            grasas = grasas_prep
+            preparado = True
+
     return Producto(
         codigo=codigo,
         nombre=_texto(p.get("product_name_es")) or _texto(p.get("product_name")),
@@ -191,14 +229,28 @@ def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
         nutriscore=_nutriscore(p.get("nutriscore_grade")),
         unidad=_unidad(p),
         kcal=kcal,
-        proteinas=_numero(n.get("proteins_100g")),
-        hidratos=_numero(n.get("carbohydrates_100g")),
-        grasas=_numero(n.get("fat_100g")),
+        proteinas=proteinas,
+        hidratos=hidratos,
+        grasas=grasas,
+        preparado=preparado,
     )
 
 
 def producto_desde_fila(fila: sqlite3.Row) -> Producto:
     """Construye un Producto a partir de una fila de la tabla productos."""
+    try:
+        raw = fila["datos"]
+    except (IndexError, KeyError):
+        raw = None
+
+    if raw and isinstance(raw, str) and raw.strip():
+        try:
+            datos = json.loads(raw)
+            if isinstance(datos, dict) and datos:
+                return producto_desde_json(fila["codigo"], datos)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
     return Producto(
         codigo=fila["codigo"],
         nombre=fila["nombre"],

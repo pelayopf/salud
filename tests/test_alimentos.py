@@ -259,7 +259,17 @@ def test_obtener_producto_caducado_falla_off_devuelve_cache(con):
         proteinas=9.0,
         hidratos=65.0,
         grasas=3.0,
-        datos={"raw": "antiguo"},
+        datos={
+            "product_name": "Cereal antiguo",
+            "brands": "Bio",
+            "nutriscore_grade": "a",
+            "nutriments": {
+                "energy-kcal_100g": 350.0,
+                "proteins_100g": 9.0,
+                "carbohydrates_100g": 65.0,
+                "fat_100g": 3.0,
+            },
+        },
         consultado=hace_40_dias,
     )
 
@@ -401,3 +411,139 @@ def test_cli_producto(settings, monkeypatch, capsys):
     salida_inc = capsys.readouterr().out
     assert "Té verde" in salida_inc
     assert "Aviso: datos nutricionales incompletos" in salida_inc
+
+
+def test_producto_solo_valores_preparados():
+    cliente = con_json(
+        encontrado(
+            {
+                "code": EAN13,
+                "product_name": "Sopa deshidratada inventada",
+                "nutriments": {
+                    "energy-kcal_prepared_100g": 35.0,
+                    "proteins_prepared_100g": 1.2,
+                    "carbohydrates_prepared_100g": 5.4,
+                    "fat_prepared_100g": 0.8,
+                },
+            }
+        )
+    )
+    p = buscar_producto(EAN13, cliente)
+    assert (p.kcal, p.proteinas, p.hidratos, p.grasas) == (35.0, 1.2, 5.4, 0.8)
+    assert p.preparado is True
+    assert not p.incompleto
+
+
+def test_producto_mezcla_normal_y_preparado():
+    cliente = con_json(
+        encontrado(
+            {
+                "code": EAN13,
+                "product_name": "Puré inventado",
+                "nutriments": {
+                    "energy-kcal_100g": 200.0,
+                    "proteins_100g": 6.0,
+                    "carbohydrates_prepared_100g": 40.0,
+                    "fat_100g": 2.0,
+                },
+            }
+        )
+    )
+    p = buscar_producto(EAN13, cliente)
+    assert (p.kcal, p.proteinas, p.hidratos, p.grasas) == (200.0, 6.0, 40.0, 2.0)
+    assert p.preparado is True
+    assert not p.incompleto
+
+
+def test_producto_solo_kj_preparados_se_convierte():
+    cliente = con_json(
+        encontrado(
+            {
+                "code": EAN13,
+                "product_name": "Caldo inventado",
+                "nutriments": {
+                    "energy_prepared_100g": 418.4,
+                    "proteins_prepared_100g": 2.0,
+                    "carbohydrates_prepared_100g": 10.0,
+                    "fat_prepared_100g": 1.0,
+                },
+            }
+        )
+    )
+    p = buscar_producto(EAN13, cliente)
+    assert p.kcal == 100.0
+    assert (p.proteinas, p.hidratos, p.grasas) == (2.0, 10.0, 1.0)
+    assert p.preparado is True
+    assert not p.incompleto
+
+
+def test_producto_cache_con_columnas_vacias_reconstruye_desde_datos(con):
+    datos_crudos = {
+        "code": EAN13,
+        "product_name": "Copos inventados",
+        "brands": "Marca Test",
+        "nutriscore_grade": "a",
+        "quantity": "500 g",
+        "nutriments": {
+            "energy-kcal_prepared_100g": 85.0,
+            "proteins_prepared_100g": 2.5,
+            "carbohydrates_prepared_100g": 18.0,
+            "fat_prepared_100g": 0.5,
+        },
+    }
+    # Guardamos en la base de datos con columnas nutricionales vacías pero datos con preparados
+    db.guardar_producto(
+        con,
+        codigo=EAN13,
+        nombre="Copos inventados",
+        marca="Marca Test",
+        nutriscore="A",
+        unidad="g",
+        kcal=None,
+        proteinas=None,
+        hidratos=None,
+        grasas=None,
+        datos=datos_crudos,
+    )
+
+    cliente_sin_red, peticiones = cliente_falso(lambda _: httpx.Response(500))
+    res = alimentos.obtener_producto(con, EAN13, cliente=cliente_sin_red)
+    assert res.desde_cache is True
+    assert len(peticiones) == 0
+    p = res.producto
+    assert p.nombre == "Copos inventados"
+    assert (p.kcal, p.proteinas, p.hidratos, p.grasas) == (85.0, 2.5, 18.0, 0.5)
+    assert p.preparado is True
+    assert not p.incompleto
+
+
+def test_producto_desde_fila_datos_vacios_o_invalidos(con):
+    db.guardar_producto(
+        con,
+        codigo=EAN13,
+        nombre="Producto clásico",
+        marca="Marca",
+        nutriscore="B",
+        unidad="g",
+        kcal=120.0,
+        proteinas=3.0,
+        hidratos=20.0,
+        grasas=1.0,
+        datos={},
+    )
+    # 1. Con datos={} (vacío)
+    fila = db.leer_producto(con, EAN13)
+    assert fila is not None
+    p = alimentos.producto_desde_fila(fila)
+    assert p.nombre == "Producto clásico"
+    assert (p.kcal, p.proteinas, p.hidratos, p.grasas) == (120.0, 3.0, 20.0, 1.0)
+    assert p.preparado is False
+
+    # 2. Con datos como texto no JSON
+    con.execute("UPDATE productos SET datos = 'no-es-json' WHERE codigo = ?", (EAN13,))
+    fila_invalida = db.leer_producto(con, EAN13)
+    assert fila_invalida is not None
+    p2 = alimentos.producto_desde_fila(fila_invalida)
+    assert p2.nombre == "Producto clásico"
+    assert (p2.kcal, p2.proteinas, p2.hidratos, p2.grasas) == (120.0, 3.0, 20.0, 1.0)
+    assert p2.preparado is False

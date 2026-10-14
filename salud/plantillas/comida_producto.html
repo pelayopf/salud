@@ -40,6 +40,9 @@
       <strong>{% if producto.grasas is not none %}{{ producto.grasas | cifra }} g{% else %}—{% endif %}</strong>
     </div>
   </div>
+  {% if producto.preparado %}
+  <p class="suave">Valores del producto preparado, según Open Food Facts</p>
+  {% endif %}
 
   <h2>Añadir al día</h2>
   <form class="formulario" method="post" action="/comida/anadir">
