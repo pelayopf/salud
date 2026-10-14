@@ -87,3 +87,121 @@ for (const marca of document.querySelectorAll("[data-tip]")) {
   marca.addEventListener("pointerleave", ocultar);
   marca.addEventListener("blur", ocultar);
 }
+
+// Botones de cantidad rápida
+for (const boton of document.querySelectorAll("button[data-cantidad]")) {
+  boton.addEventListener("click", () => {
+    const input = document.getElementById("cantidad") || document.querySelector('input[name="cantidad"]');
+    if (input) {
+      input.value = boton.dataset.cantidad;
+    }
+  });
+}
+
+// Escáner de código de barras
+const botonEscanear = document.querySelector("[data-escanear]");
+if (
+  botonEscanear &&
+  "BarcodeDetector" in window &&
+  navigator.mediaDevices &&
+  typeof navigator.mediaDevices.getUserMedia === "function"
+) {
+  botonEscanear.hidden = false;
+
+  botonEscanear.addEventListener("click", async () => {
+    let detector;
+    try {
+      detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a"] });
+    } catch (_err) {
+      mostrarErrorEscaner("No se pudo iniciar el detector de códigos de barras.");
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+    } catch (_err) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch (_err2) {
+        mostrarErrorEscaner("No se pudo acceder a la cámara.");
+        return;
+      }
+    }
+
+    const contenedor = document.createElement("div");
+    contenedor.className = "escaner-contenedor";
+
+    const video = document.createElement("video");
+    video.className = "escaner-video";
+    video.setAttribute("playsinline", "true");
+    video.srcObject = stream;
+
+    const botonCerrar = document.createElement("button");
+    botonCerrar.type = "button";
+    botonCerrar.className = "boton secundario escaner-cerrar";
+    botonCerrar.textContent = "Cerrar cámara";
+
+    contenedor.append(video, botonCerrar);
+    const form = botonEscanear.closest("form") || botonEscanear.parentElement;
+    form.after(contenedor);
+
+    try {
+      await video.play();
+    } catch (_err) {
+      cerrar();
+      mostrarErrorEscaner("No se pudo reproducir el vídeo de la cámara.");
+      return;
+    }
+
+    let timer = null;
+
+    function cerrar() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      if (stream) {
+        for (const pista of stream.getTracks()) {
+          pista.stop();
+        }
+      }
+      contenedor.remove();
+    }
+
+    botonCerrar.addEventListener("click", cerrar);
+
+    timer = setInterval(async () => {
+      if (video.readyState < 2) return;
+      try {
+        const codigos = await detector.detect(video);
+        if (codigos && codigos.length > 0) {
+          const valor = codigos[0].rawValue;
+          cerrar();
+          const campoCodigo = document.getElementById("codigo") || document.querySelector('input[name="codigo"]');
+          if (campoCodigo) {
+            campoCodigo.value = valor;
+            const formActual = campoCodigo.closest("form");
+            if (formActual) formActual.submit();
+          }
+        }
+      } catch (_err) {
+        // Ignorar fallos puntuales en un fotograma
+      }
+    }, 300);
+  });
+}
+
+function mostrarErrorEscaner(mensaje) {
+  const anterior = document.querySelector(".escaner-error");
+  if (anterior) anterior.remove();
+  const p = document.createElement("p");
+  p.className = "aviso error escaner-error";
+  p.textContent = mensaje;
+  const form = document.querySelector(".formulario");
+  if (form) {
+    form.before(p);
+  }
+}

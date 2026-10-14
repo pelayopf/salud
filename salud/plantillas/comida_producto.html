@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}{{ producto.nombre or producto.codigo }} · Salud{% endblock %}
+{% block contenido %}
+<p><a class="suave" href="/comida?fecha={{ fecha }}">‹ Volver a Comida</a></p>
+
+<section class="panel">
+  <div class="cabecera">
+    <h1>{{ producto.nombre or producto.codigo }}</h1>
+    {% if desde_cache %}
+    <span class="etiqueta neutro">de la caché</span>
+    {% endif %}
+  </div>
+  {% if producto.marca %}
+  <p class="suave">{{ producto.marca }}</p>
+  {% endif %}
+  {% if producto.nutriscore %}
+  <p><span class="etiqueta">Nutri-Score {{ producto.nutriscore }}</span></p>
+  {% endif %}
+
+  {% if producto.incompleto %}
+  <p class="aviso">Valores nutricionales incompletos en Open Food Facts</p>
+  {% endif %}
+
+  <h2>Valores por 100 {{ producto.unidad }}</h2>
+  <div class="lista">
+    <div class="fila">
+      <span>Calorías</span>
+      <strong>{% if producto.kcal is not none %}{{ producto.kcal | cifra }} kcal{% else %}—{% endif %}</strong>
+    </div>
+    <div class="fila">
+      <span>Proteínas</span>
+      <strong>{% if producto.proteinas is not none %}{{ producto.proteinas | cifra }} g{% else %}—{% endif %}</strong>
+    </div>
+    <div class="fila">
+      <span>Hidratos de carbono</span>
+      <strong>{% if producto.hidratos is not none %}{{ producto.hidratos | cifra }} g{% else %}—{% endif %}</strong>
+    </div>
+    <div class="fila">
+      <span>Grasas</span>
+      <strong>{% if producto.grasas is not none %}{{ producto.grasas | cifra }} g{% else %}—{% endif %}</strong>
+    </div>
+  </div>
+
+  <h2>Añadir al día</h2>
+  <form class="formulario" method="post" action="/comida/anadir">
+    <input type="hidden" name="codigo" value="{{ producto.codigo }}">
+    <input type="hidden" name="fecha" value="{{ fecha }}">
+
+    <label for="cantidad">Cantidad ({{ producto.unidad }})</label>
+    <input id="cantidad" name="cantidad" type="number" min="1" value="100" required>
+    <div class="acciones botones-rapidos">
+      <button type="button" class="boton secundario" data-cantidad="50">50</button>
+      <button type="button" class="boton secundario" data-cantidad="100">100</button>
+      <button type="button" class="boton secundario" data-cantidad="150">150</button>
+      <button type="button" class="boton secundario" data-cantidad="200">200</button>
+    </div>
+
+    <label for="momento">Momento</label>
+    <select id="momento" name="momento" required>
+      {% for m in momentos %}
+      <option value="{{ m }}"{% if m == momento_defecto %} selected{% endif %}>{{ m | capitalize }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="acciones">
+      <button type="submit" class="boton">Añadir</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

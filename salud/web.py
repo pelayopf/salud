@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
+import httpx
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from starlette.applications import Starlette
@@ -28,7 +29,7 @@ from starlette.responses import FileResponse, HTMLResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import db, garmin, graficas, lectura, sync
+from . import alimentos, db, garmin, graficas, lectura, sync
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -376,6 +377,20 @@ def _actividades(filas: list[sqlite3.Row]) -> list[dict[str, Any]]:
     ]
 
 
+def momento_por_hora(hora: int) -> str:
+    """Devuelve el momento según la hora (0-23).
+
+    desayuno si hora < 11, comida si < 16, merienda si < 20, cena el resto.
+    """
+    if hora < 11:
+        return "desayuno"
+    if hora < 16:
+        return "comida"
+    if hora < 20:
+        return "merienda"
+    return "cena"
+
+
 # --- Aplicación ----------------------------------------------------------------
 
 
@@ -388,6 +403,7 @@ def crear_app(
     hoy: Callable[[], date] = lambda: datetime.now(ZONA).date(),
     crear_cliente_garmin: Callable[[str, str], Any] = garmin.cliente_nuevo,
     reloj: Callable[[], float] = time.monotonic,
+    cliente_off: httpx.Client | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     generando = threading.Lock()
@@ -707,12 +723,213 @@ def crear_app(
             ESTATICOS / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"}
         )
 
+    # --- Comida --------------------------------------------------------------
+
+    def ver_comida(request: Request) -> Response:
+        fecha = _fecha(request)
+        con = abrir_db()
+        try:
+            comidas_dia = db.comidas(con, fecha.isoformat())
+            totales = db.totales_dia(con, fecha.isoformat())
+            recientes = db.productos_recientes(con)
+        finally:
+            con.close()
+        comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
+        for c in comidas_dia:
+            comidas_por_momento.setdefault(c.momento, []).append(c)
+        return _render(
+            "comida.html",
+            seccion="comida",
+            fecha=fecha.isoformat(),
+            es_hoy=fecha == hoy(),
+            anterior=(fecha - timedelta(days=1)).isoformat(),
+            siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
+            comidas_por_momento=comidas_por_momento,
+            totales=totales,
+            recientes=recientes,
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    def ver_producto(request: Request) -> Response:
+        fecha = _fecha(request)
+        codigo = request.query_params.get("codigo", "").strip()
+        if not codigo:
+            con = abrir_db()
+            try:
+                comidas_dia = db.comidas(con, fecha.isoformat())
+                totales = db.totales_dia(con, fecha.isoformat())
+                recientes = db.productos_recientes(con)
+            finally:
+                con.close()
+            comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
+            for c in comidas_dia:
+                comidas_por_momento.setdefault(c.momento, []).append(c)
+            return _render(
+                "comida.html",
+                seccion="comida",
+                fecha=fecha.isoformat(),
+                es_hoy=fecha == hoy(),
+                anterior=(fecha - timedelta(days=1)).isoformat(),
+                siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
+                comidas_por_momento=comidas_por_momento,
+                totales=totales,
+                recientes=recientes,
+                momentos=db.MOMENTOS,
+                momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+                codigo_buscado="",
+                error="Escribe un código de barras",
+            )
+        con = abrir_db()
+        try:
+            try:
+                res = alimentos.obtener_producto(con, codigo, cliente_off)
+            except alimentos.ErrorAlimentos as exc:
+                comidas_dia = db.comidas(con, fecha.isoformat())
+                totales = db.totales_dia(con, fecha.isoformat())
+                recientes = db.productos_recientes(con)
+                comidas_por_momento = {m: [] for m in db.MOMENTOS}
+                for c in comidas_dia:
+                    comidas_por_momento.setdefault(c.momento, []).append(c)
+                if isinstance(exc, alimentos.CodigoInvalido):
+                    error_msg = f"Código no válido: {codigo}"
+                elif isinstance(exc, alimentos.ProductoNoEncontrado):
+                    error_msg = f"Producto no encontrado: {codigo}"
+                else:
+                    error_msg = "Open Food Facts no responde en este momento"
+                return _render(
+                    "comida.html",
+                    seccion="comida",
+                    fecha=fecha.isoformat(),
+                    es_hoy=fecha == hoy(),
+                    anterior=(fecha - timedelta(days=1)).isoformat(),
+                    siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
+                    comidas_por_momento=comidas_por_momento,
+                    totales=totales,
+                    recientes=recientes,
+                    momentos=db.MOMENTOS,
+                    momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+                    codigo_buscado=codigo,
+                    error=error_msg,
+                )
+        finally:
+            con.close()
+        return _render(
+            "comida_producto.html",
+            seccion="comida",
+            producto=res.producto,
+            desde_cache=res.desde_cache,
+            fecha=fecha.isoformat(),
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+        )
+
+    async def anadir(request: Request) -> Response:
+        datos = await _formulario(request)
+        fecha = datos.get("fecha", "").strip() or hoy().isoformat()
+        try:
+            date.fromisoformat(fecha)
+        except ValueError:
+            fecha = hoy().isoformat()
+
+        codigo = datos.get("codigo", "").strip()
+        con = abrir_db()
+        try:
+            if codigo:
+                res = alimentos.obtener_producto(con, codigo, cliente_off)
+                prod = res.producto
+                try:
+                    cantidad = float(datos.get("cantidad", "100").strip().replace(",", "."))
+                except ValueError:
+                    return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha}")
+                momento = datos.get("momento", "").strip()
+                nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
+                nombre = prod.nombre or f"Producto {codigo}"
+                db.anadir_comida(
+                    con,
+                    fecha=fecha,
+                    momento=momento,
+                    nombre=nombre,
+                    cantidad=cantidad,
+                    unidad=prod.unidad,
+                    kcal=nutrientes.kcal,
+                    proteinas=nutrientes.proteinas,
+                    hidratos=nutrientes.hidratos,
+                    grasas=nutrientes.grasas,
+                    codigo=codigo,
+                )
+                return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha}")
+            else:
+                nombre = datos.get("nombre", "").strip()
+                momento = datos.get("momento", "").strip()
+                unidad = datos.get("unidad", "").strip()
+                cantidad_str = datos.get("cantidad", "").strip().replace(",", ".")
+                try:
+                    cantidad = float(cantidad_str)
+                except ValueError:
+                    return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha}")
+
+                def _parse_nutriente(campo: str) -> float | None:
+                    v = datos.get(campo, "").strip().replace(",", ".")
+                    return float(v) if v else None
+
+                try:
+                    kcal = _parse_nutriente("kcal")
+                    proteinas = _parse_nutriente("proteinas")
+                    hidratos = _parse_nutriente("hidratos")
+                    grasas = _parse_nutriente("grasas")
+                except ValueError:
+                    return _volver("Los nutrientes deben ser números", f"/comida?fecha={fecha}")
+
+                db.anadir_comida(
+                    con,
+                    fecha=fecha,
+                    momento=momento,
+                    nombre=nombre,
+                    cantidad=cantidad,
+                    unidad=unidad,
+                    kcal=kcal,
+                    proteinas=proteinas,
+                    hidratos=hidratos,
+                    grasas=grasas,
+                )
+                return _volver(f"Añadido {nombre}", f"/comida?fecha={fecha}")
+        except ValueError as exc:
+            return _volver(str(exc), f"/comida?fecha={fecha}")
+        except alimentos.ErrorAlimentos as exc:
+            return _volver(str(exc), f"/comida?fecha={fecha}")
+        finally:
+            con.close()
+
+    async def borrar(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        fecha = request.query_params.get("fecha", "").strip()
+        if not fecha:
+            datos = await _formulario(request)
+            fecha = datos.get("fecha", "").strip() or hoy().isoformat()
+        try:
+            date.fromisoformat(fecha)
+        except ValueError:
+            fecha = hoy().isoformat()
+        con = abrir_db()
+        try:
+            db.borrar_comida(con, id_)
+        finally:
+            con.close()
+        return _volver("Entrada borrada", f"/comida?fecha={fecha}")
+
     return Starlette(
         routes=[
             Route("/", ver_hoy),
             Route("/tendencias", ver_tendencias),
             Route("/actividades", ver_actividades),
             Route("/lecturas", ver_lecturas),
+            Route("/comida", ver_comida),
+            Route("/comida/producto", ver_producto),
+            Route("/comida/anadir", anadir, methods=["POST"]),
+            Route("/comida/{id:int}/borrar", borrar, methods=["POST"]),
             Route("/sincronizar", sincronizar, methods=["POST"]),
             Route("/lectura", pedir_lectura, methods=["POST"]),
             Route("/conexiones", ver_conexiones),

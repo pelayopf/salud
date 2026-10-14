@@ -69,6 +69,9 @@ iniciada en calamar, no con la API:
 
 - `salud serve` en `127.0.0.1:8791`, detrás de Tailscale Serve. Solo pasan
   los logins de `SALUD_USUARIOS`; formularios de otras webs rechazados.
+- Comida (`/comida`): diario de comidas del día agrupado por momentos,
+  con búsqueda y escaneo de productos en Open Food Facts, cálculo automático de
+  nutrientes, alimentos recientes y alta manual.
 - Conexiones (`/conexiones`, icono de la cabecera): estado de la sesión de
   Garmin, probarla y volver a entrar. FatSecret y Strava, más adelante.
 - Gráficas en SVG hechas en el servidor, de una serie cada una: línea de

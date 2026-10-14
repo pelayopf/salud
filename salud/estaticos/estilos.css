@@ -252,11 +252,23 @@ th { color: var(--suave); font-weight: 500; }
 .formulario { display: grid; gap: 6px; max-width: 380px; margin-top: 12px; }
 .formulario p { margin: 0 0 6px; }
 .formulario label { font-size: .85rem; font-weight: 500; margin-top: 6px; }
-.formulario input {
+.formulario input, .formulario select {
   font: inherit; padding: 9px 12px; border: 1px solid var(--borde); border-radius: 10px;
   background: var(--crema); color: var(--texto);
 }
-.formulario input:focus { outline: 2px solid var(--marca); outline-offset: 1px; background: var(--panel); }
+.formulario input:focus, .formulario select:focus { outline: 2px solid var(--marca); outline-offset: 1px; background: var(--panel); }
 .acciones { display: flex; align-items: center; gap: 14px; margin: 8px 0 0; }
 .acciones a { font-size: .9rem; }
 .nota-conexiones { margin-top: 16px; }
+
+/* --- Comida --------------------------------------------------------------- */
+
+.botones-rapidos { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.botones-rapidos .boton { padding: 5px 12px; font-size: .82rem; }
+
+.escaner-contenedor {
+  margin: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: #000; border-radius: 12px; overflow: hidden; padding: 8px;
+}
+.escaner-video { width: 100%; max-width: 360px; max-height: 240px; object-fit: cover; border-radius: 8px; }
+

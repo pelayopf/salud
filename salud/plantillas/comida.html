@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block titulo %}Comida · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+<div class="cabecera-dia">
+  <a class="flecha" href="/comida?fecha={{ anterior }}" aria-label="Día anterior">‹</a>
+  <h1>{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</h1>
+  {% if siguiente %}<a class="flecha" href="/comida?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
+</div>
+
+<section class="panel">
+  <form class="formulario" method="get" action="/comida/producto">
+    <input type="hidden" name="fecha" value="{{ fecha }}">
+    <label for="codigo">Buscar producto por código de barras</label>
+    <input id="codigo" name="codigo" inputmode="numeric" placeholder="Ej. 8410000000000" value="{{ codigo_buscado | default('') }}" required>
+    <div class="acciones">
+      <button type="submit" class="boton">Buscar</button>
+      <button type="button" class="boton secundario" data-escanear hidden>Escanear</button>
+    </div>
+  </form>
+</section>
+
+{% for m in momentos %}
+  {% set items = comidas_por_momento.get(m, []) %}
+  {% if items %}
+  {% set tot_m = totales.por_momento.get(m) %}
+  <section class="panel">
+    <div class="cabecera">
+      <h2>{{ m | capitalize }}</h2>
+      <span class="derecha">
+        <strong>{% if tot_m and tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}</strong>
+      </span>
+    </div>
+    <div class="lista">
+      {% for c in items %}
+      <div class="fila">
+        <div>
+          <strong>{{ c.nombre }}</strong>
+          <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
+          <div class="suave">
+            <span>{% if c.kcal is not none %}{{ c.kcal | cifra }} kcal{% else %}—{% endif %}</span>
+            <span>· P: {% if c.proteinas is not none %}{{ c.proteinas | cifra }} g{% else %}—{% endif %}</span>
+            <span>· HC: {% if c.hidratos is not none %}{{ c.hidratos | cifra }} g{% else %}—{% endif %}</span>
+            <span>· G: {% if c.grasas is not none %}{{ c.grasas | cifra }} g{% else %}—{% endif %}</span>
+          </div>
+        </div>
+        <form method="post" action="/comida/{{ c.id }}/borrar?fecha={{ fecha }}" onsubmit="return confirm('¿Borrar esta entrada?')">
+          <button type="submit" class="boton secundario" aria-label="Borrar">Borrar</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% if tot_m %}
+    <div class="pie suave">
+      <p>
+        Subtotal: {% if tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}
+        · P: {% if tot_m.sin_proteinas == tot_m.entradas %}—{% else %}{{ tot_m.proteinas | cifra }} g{% endif %}
+        · HC: {% if tot_m.sin_hidratos == tot_m.entradas %}—{% else %}{{ tot_m.hidratos | cifra }} g{% endif %}
+        · G: {% if tot_m.sin_grasas == tot_m.entradas %}—{% else %}{{ tot_m.grasas | cifra }} g{% endif %}
+      </p>
+      {% if tot_m.incompletas > 0 %}
+      <p class="suave">faltan datos de {{ tot_m.incompletas }} entrada{% if tot_m.incompletas > 1 %}s{% endif %}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+{% endfor %}
+
+{% if totales.total.entradas > 0 %}
+<section class="panel">
+  <div class="cabecera">
+    <h2>Total del día</h2>
+    <span class="derecha">
+      <strong>{% if totales.total.sin_kcal == totales.total.entradas %}—{% else %}{{ totales.total.kcal | cifra }} kcal{% endif %}</strong>
+    </span>
+  </div>
+  <p class="suave">
+    Proteínas: <strong>{% if totales.total.sin_proteinas == totales.total.entradas %}—{% else %}{{ totales.total.proteinas | cifra }} g{% endif %}</strong>
+    · Hidratos: <strong>{% if totales.total.sin_hidratos == totales.total.entradas %}—{% else %}{{ totales.total.hidratos | cifra }} g{% endif %}</strong>
+    · Grasas: <strong>{% if totales.total.sin_grasas == totales.total.entradas %}—{% else %}{{ totales.total.grasas | cifra }} g{% endif %}</strong>
+  </p>
+  {% if totales.total.incompletas > 0 %}
+  <p class="suave">faltan datos de {{ totales.total.incompletas }} entrada{% if totales.total.incompletas > 1 %}s{% endif %}</p>
+  {% endif %}
+</section>
+{% else %}
+<p class="panel suave">Sin comidas registradas este día.</p>
+{% endif %}
+
+<details class="panel"{% if recientes %} open{% endif %}>
+  <summary>Recientes</summary>
+  {% if recientes %}
+  <div class="lista">
+    {% for r in recientes %}
+    <div class="fila">
+      <a class="enlace" href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}">
+        <strong>{{ r.nombre or r.codigo }}</strong>{% if r.marca %} <span class="suave">· {{ r.marca }}</span>{% endif %}
+      </a>
+      <span class="suave">{{ r.unidad }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="suave">Aún no hay productos recientes.</p>
+  {% endif %}
+</details>
+
+<details class="panel">
+  <summary>Añadir a mano</summary>
+  <form class="formulario" method="post" action="/comida/anadir">
+    <input type="hidden" name="fecha" value="{{ fecha }}">
+    <label for="nombre">Nombre</label>
+    <input id="nombre" name="nombre" required>
+    <label for="momento">Momento</label>
+    <select id="momento" name="momento" required>
+      {% for m in momentos %}
+      <option value="{{ m }}"{% if m == momento_defecto %} selected{% endif %}>{{ m | capitalize }}</option>
+      {% endfor %}
+    </select>
+    <label for="cantidad">Cantidad</label>
+    <input id="cantidad" name="cantidad" type="number" step="any" min="0.1" required>
+    <label for="unidad">Unidad</label>
+    <select id="unidad" name="unidad" required>
+      <option value="g">g</option>
+      <option value="ml">ml</option>
+    </select>
+    <label for="kcal">Calorías (kcal)</label>
+    <input id="kcal" name="kcal" type="number" step="any" min="0">
+    <label for="proteinas">Proteínas (g)</label>
+    <input id="proteinas" name="proteinas" type="number" step="any" min="0">
+    <label for="hidratos">Hidratos (g)</label>
+    <input id="hidratos" name="hidratos" type="number" step="any" min="0">
+    <label for="grasas">Grasas (g)</label>
+    <input id="grasas" name="grasas" type="number" step="any" min="0">
+    <div class="acciones">
+      <button type="submit" class="boton">Añadir</button>
+    </div>
+  </form>
+</details>
+{% endblock %}
