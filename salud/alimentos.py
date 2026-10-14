@@ -18,8 +18,7 @@ from typing import Any, Literal, NamedTuple
 
 import httpx
 
-from . import ciqual, db
-from .raciones import limpiar_racion_nombre
+from . import ciqual, db, raciones
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
 # Buscador nuevo de Open Food Facts (search-a-licious): el antiguo cgi/search.pl da 503 a menudo.
@@ -412,7 +411,7 @@ def nombre_con_raciones(
     racion_nombre: str | None,
 ) -> str:
     """Añade la ración al nombre si la cantidad es un múltiplo exacto de la ración."""
-    racion_limpia = limpiar_racion_nombre(racion_nombre)
+    racion_limpia = raciones.limpiar_racion_nombre(racion_nombre)
     if not racion_g or racion_g <= 0 or not racion_limpia:
         return nombre
 

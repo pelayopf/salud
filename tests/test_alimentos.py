@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 import pytest
 
-from salud import alimentos, db
+from salud import alimentos, db, raciones
 from salud.alimentos import (
     CodigoInvalido,
     OpenFoodFactsNoDisponible,
@@ -562,17 +562,15 @@ def test_producto_desde_json_serving_quantity():
 
 
 def test_limpiar_racion_nombre():
-    assert alimentos.limpiar_racion_nombre("1 plátano mediano (sin piel)") == "plátano mediano"
-    assert (
-        alimentos.limpiar_racion_nombre("Taza media (aprox. 150 ml de leche semi") == "taza media"
-    )
-    assert alimentos.limpiar_racion_nombre("Una taza") == "taza"
-    assert alimentos.limpiar_racion_nombre("2,5 rebanadas") == "rebanadas"
-    assert alimentos.limpiar_racion_nombre("  Lata. ") == "lata"
-    assert alimentos.limpiar_racion_nombre("(algo)") is None
-    assert alimentos.limpiar_racion_nombre(None) is None
+    assert raciones.limpiar_racion_nombre("1 plátano mediano (sin piel)") == "plátano mediano"
+    assert raciones.limpiar_racion_nombre("Taza media (aprox. 150 ml de leche semi") == "taza media"
+    assert raciones.limpiar_racion_nombre("Una taza") == "taza"
+    assert raciones.limpiar_racion_nombre("2,5 rebanadas") == "rebanadas"
+    assert raciones.limpiar_racion_nombre("  Lata. ") == "lata"
+    assert raciones.limpiar_racion_nombre("(algo)") is None
+    assert raciones.limpiar_racion_nombre(None) is None
     largo = "a" * 60
-    limpio_largo = alimentos.limpiar_racion_nombre(largo)
+    limpio_largo = raciones.limpiar_racion_nombre(largo)
     assert limpio_largo is not None
     assert len(limpio_largo) <= 30
     assert limpio_largo == "a" * 30

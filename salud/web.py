@@ -48,6 +48,7 @@ from . import (
     lectura,
     metricas,
     nutricion,
+    raciones,
     sync,
 )
 from .acceso import AccesoMiddleware
@@ -520,7 +521,7 @@ def datos_producto(datos: dict[str, str]) -> DatosProducto:
         if not (1 <= val_rac <= 2000):
             raise ValueError("El peso de la ración debe estar entre 1 y 2000")
         racion_g = val_rac
-        racion_nombre = alimentos.limpiar_racion_nombre(racion_nombre_raw) or "ración"
+        racion_nombre = raciones.limpiar_racion_nombre(racion_nombre_raw) or "ración"
     else:
         racion_g = None
         racion_nombre = None
@@ -1914,11 +1915,11 @@ def crear_app(
         return _volver("Entrada borrada", f"/comida?fecha={fecha}")
 
     async def pedir_consejo_web(request: Request) -> Response:
+        datos = await _formulario(request)
+        nota = datos.get("nota", "")
         if not aconsejando.acquire(blocking=False):
             return _volver("Ya estoy preparando el consejo", "/comida#consejo")
         error_consejo["texto"] = None
-        datos = await _formulario(request)
-        nota = datos.get("nota", "")
 
         def _trabajo() -> None:
             con = abrir_db()
