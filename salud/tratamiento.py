@@ -28,7 +28,7 @@ _OPUESTOS = {
 }
 
 EstadoProxima = Literal["esperar", "puede_adelantar", "hoy", "retrasada", "saltar"]
-EstadoDiaCiclo = Literal["puesta", "esperar", "puede", "toca", "margen", "hoy"]
+EstadoDiaCiclo = Literal["puesta", "esperar", "puede", "toca", "margen"]
 
 LETRAS_SEMANA = ("L", "M", "X", "J", "V", "S", "D")
 
@@ -120,13 +120,12 @@ def dias_ciclo(pauta: db.Pauta, ultima: db.Dosis | None, hoy: date) -> list[DiaC
     farmacológico ("puesta", "esperar", "puede", "toca", "margen") y marcando si
     coincide con la fecha de hoy.
     """
-    if ultima is None:
+    prox = proxima(pauta, ultima, hoy)
+    if ultima is None or prox is None:
         return []
 
     u_fecha = date.fromisoformat(ultima.fecha)
-    prevista = u_fecha + timedelta(days=pauta.intervalo_dias)
-    adelantar_desde = u_fecha + timedelta(days=pauta.separacion_min_dias)
-    limite = prevista + timedelta(days=pauta.margen_olvido_dias)
+    prevista, adelantar_desde, limite = prox.prevista, prox.adelantar_desde, prox.limite
 
     num_dias = min(pauta.intervalo_dias, 13)
     fechas = [u_fecha + timedelta(days=i) for i in range(num_dias + 1)]
