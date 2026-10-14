@@ -43,8 +43,11 @@ class Settings:
     agy_token: Path = Path("~/.gemini/antigravity-cli/antigravity-oauth-token").expanduser()
     ia_modelo_agy: str = "gemini-3.8-flash-low"
     ia_modelo_claude: str = "haiku"
-    # Flash Low da consejos vagos; High tarda ~35 s pero es concreto
-    ia_modelo_consejo: str = "gemini-3.8-flash-high"
+    # Prima la calidad (Pelayo, 2026-10-14): Sonnet desde agy (~25 s, gasta
+    # ~2 % del cupo semanal de Claude/GPT en agy); si ese cupo se agota, Flash
+    # High (Gemini, de 35 s a más de 2 min). Flash Low da consejos vagos.
+    ia_modelo_consejo: str = "claude-sonnet-5-5-medium"
+    ia_modelo_consejo_respaldo: str = "gemini-3.8-flash-high"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -87,6 +90,8 @@ def load_settings() -> Settings:
         ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip() or "gemini-3.8-flash-low",
         ia_modelo_claude=os.environ.get("SALUD_IA_MODELO_CLAUDE", "").strip() or "haiku",
         ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
+        or "claude-sonnet-5-5-medium",
+        ia_modelo_consejo_respaldo=os.environ.get("SALUD_IA_MODELO_CONSEJO_RESPALDO", "").strip()
         or "gemini-3.8-flash-high",
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),

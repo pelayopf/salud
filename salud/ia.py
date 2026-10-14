@@ -65,6 +65,10 @@ class ErrorIA(Exception):
     """La IA no ha podido hacer la tarea. El mensaje se enseña tal cual en la web."""
 
 
+class CupoAgotado(ErrorIA):
+    """Se ha agotado el cupo del grupo de modelos en agy (Gemini o Claude/GPT)."""
+
+
 class SinDatos(ErrorIA):
     """agy terminó bien pero sin devolver los datos pedidos (fallo intermitente)."""
 
@@ -91,6 +95,9 @@ class Tarea:
     adjuntos: tuple[Adjunto, ...] = ()
     modelo_agy: str | None = None
     modelo_claude: str | None = None
+    # Lo que se espera a la IA. 90 s para lo que se espera delante de la
+    # pantalla; más para lo que va en segundo plano (el consejo).
+    tiempo_maximo_s: int = TIEMPO_MAXIMO_S
 
 
 @dataclass(frozen=True)
@@ -157,7 +164,7 @@ def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
     if datos.get("status") != "SUCCESS":
         error = str(datos.get("error") or "desconocido")
         if "quota" in error.lower():
-            raise ErrorIA("Se ha agotado el cupo de Gemini en agy; prueba más tarde")
+            raise CupoAgotado("Se ha agotado el cupo de la IA en agy; prueba más tarde")
         raise ErrorIA(f"agy dio un error: {error[:200]}")
 
     structured = datos.get("structured_output")
@@ -220,7 +227,7 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             json.dumps(tarea.esquema),
             "--disable-slash-commands",
             "--print-timeout",
-            f"{TIEMPO_MAXIMO_S}s",
+            f"{tarea.tiempo_maximo_s}s",
         ]
 
         entorno = {
@@ -238,18 +245,18 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
                     env=entorno,
                     capture_output=True,
                     text=True,
-                    timeout=TIEMPO_MAXIMO_S + 15,
+                    timeout=tarea.tiempo_maximo_s + 15,
                     stdin=subprocess.DEVNULL,
                 )
             except subprocess.TimeoutExpired as exc:
-                raise ErrorIA(f"La IA tardó más de {TIEMPO_MAXIMO_S} s") from exc
+                raise ErrorIA(f"La IA tardó más de {tarea.tiempo_maximo_s} s") from exc
             except OSError as exc:
                 raise ErrorIA("No se pudo lanzar agy") from exc
             try:
                 return interpretar_agy(proceso.stdout, proceso.stderr)
             except SinDatos:
                 # Un solo reintento, y solo si da tiempo dentro de lo que espera la web.
-                if intento == 2 or time.monotonic() - inicio > TIEMPO_MAXIMO_S / 2:
+                if intento == 2 or time.monotonic() - inicio > tarea.tiempo_maximo_s / 2:
                     raise
                 log.warning("agy terminó sin los datos pedidos; se reintenta una vez")
         raise AssertionError("inalcanzable")
@@ -329,10 +336,10 @@ def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
                 cwd=Path(tmp),
                 capture_output=True,
                 text=True,
-                timeout=TIEMPO_MAXIMO_S,
+                timeout=tarea.tiempo_maximo_s,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ErrorIA(f"La IA tardó más de {TIEMPO_MAXIMO_S} s") from exc
+            raise ErrorIA(f"La IA tardó más de {tarea.tiempo_maximo_s} s") from exc
         except OSError as exc:
             raise ErrorIA("No se pudo lanzar Claude Code") from exc
 

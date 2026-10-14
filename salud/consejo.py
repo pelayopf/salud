@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 from typing import Any
 
 from . import calendario, db, ia, lectura, metricas, nutricion, tratamiento
 from .config import Settings
+
+log = logging.getLogger(__name__)
 
 INSTRUCCIONES = """\
 Eres el nutricionista deportivo de la persona dueña de estos datos. Te pide qué comer \
@@ -59,6 +62,9 @@ MAX_TEXTO = 600
 MAX_AVISO = 200
 MAX_AVISOS = 3
 MAX_NOTA = 300
+# El consejo se prepara en segundo plano y la web espera lo que haga falta:
+# prima la calidad (Flash High tarda de 35 s a más de 2 min según el día).
+TIEMPO_CONSEJO_S = 300
 
 
 def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> dict[str, Any]:
@@ -223,9 +229,21 @@ def pedir_consejo(
         prompt,
         ESQUEMA,
         modelo_agy=settings.ia_modelo_consejo,
+        tiempo_maximo_s=TIEMPO_CONSEJO_S,
     )
     inicio = time.monotonic()
-    datos = ejecutar(tarea, settings)
+    try:
+        datos = ejecutar(tarea, settings)
+    except ia.CupoAgotado:
+        if settings.ia_motor != "agy":
+            raise
+        log.warning(
+            "Sin cupo para %s; el consejo va con %s",
+            tarea.modelo_agy,
+            settings.ia_modelo_consejo_respaldo,
+        )
+        tarea = replace(tarea, modelo_agy=settings.ia_modelo_consejo_respaldo)
+        datos = ejecutar(tarea, settings)
     segundos = round(time.monotonic() - inicio, 1)
 
     contenido = interpretar(datos)

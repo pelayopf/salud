@@ -2,7 +2,8 @@ import base64
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -10,7 +11,9 @@ from salud.config import Settings
 from salud.ia import (
     MAX_BYTES_IMAGEN,
     MOTORES,
+    TIEMPO_MAXIMO_S,
     Adjunto,
+    CupoAgotado,
     ErrorIA,
     Estimacion,
     Etiqueta,
@@ -202,7 +205,9 @@ def test_interpretar_agy_status_error():
 
 def test_interpretar_agy_quota():
     salida = json.dumps({"status": "ERROR", "error": "Individual quota reached for Gemini"})
-    with pytest.raises(ErrorIA, match="Se ha agotado el cupo de Gemini en agy; prueba más tarde"):
+    with pytest.raises(
+        CupoAgotado, match="Se ha agotado el cupo de la IA en agy; prueba más tarde"
+    ):
         interpretar_agy(salida)
 
 
@@ -720,3 +725,22 @@ def test_estimar_alimento_texto_invalido(tmp_path):
 
     with pytest.raises(ErrorIA, match="Escribe el alimento a estimar"):
         estimar_alimento(settings, "x" * 81, motor=motor_no_llamar)
+
+
+def test_el_tiempo_maximo_es_el_de_la_tarea(monkeypatch, tmp_path):
+    """El consejo espera más que una etiqueta: agy y el subprocess usan el de la tarea."""
+    token = tmp_path / "token"
+    token.write_text("x")
+    settings = cast(Settings, SimpleNamespace(agy="agy", agy_token=token, ia_modelo_agy="m"))
+    llamadas = []
+
+    def falso_run(orden, **kwargs):
+        llamadas.append((orden[orden.index("--print-timeout") + 1], kwargs["timeout"]))
+        salida = {"status": "SUCCESS", "structured_output": {"ok": True}}
+        return SimpleNamespace(stdout=json.dumps(salida), stderr="", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", falso_run)
+    tarea = Tarea("consejo", "hola", {"type": "object"}, tiempo_maximo_s=300)
+    assert motor_agy(tarea, settings) == {"ok": True}
+    assert motor_agy(Tarea("etiqueta", "hola", {"type": "object"}), settings) == {"ok": True}
+    assert llamadas == [("300s", 315), (f"{TIEMPO_MAXIMO_S}s", TIEMPO_MAXIMO_S + 15)]

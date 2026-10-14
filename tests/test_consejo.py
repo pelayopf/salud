@@ -382,3 +382,26 @@ def test_web_consejo(con, settings: Settings):
     assert "Próximo ejercicio" in r_prox.text
     assert "Pádel hoy · 23:59" in r_prox.text
     assert "90 min · alta" in r_prox.text
+
+
+def test_sin_cupo_de_sonnet_el_consejo_va_con_el_respaldo(con, settings):
+    """Si se agota el cupo del modelo del consejo, se repite con el de respaldo."""
+    modelos: list[str | None] = []
+
+    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> dict[str, Any]:
+        modelos.append(tarea.modelo_agy)
+        if tarea.modelo_agy == settings.ia_modelo_consejo:
+            raise ia.CupoAgotado("sin cupo")
+        return {
+            "resumen": "Resumen",
+            "ahora": "Ahora",
+            "antes": "",
+            "durante": "",
+            "despues": "",
+            "avisos": [],
+        }
+
+    ahora = datetime(2026, 1, 10, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))
+    res = consejo.pedir_consejo(con, settings, ahora, nota="", ejecutar=fake_ejecutar)
+    assert modelos == [settings.ia_modelo_consejo, settings.ia_modelo_consejo_respaldo]
+    assert res["modelo"] == settings.ia_modelo_consejo_respaldo
