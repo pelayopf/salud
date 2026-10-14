@@ -408,6 +408,7 @@ th { color: var(--suave); font-weight: 500; }
 /* --- Progreso y objetivos de comida ------------------------------------- */
 
 .progreso {
+  position: relative;
   height: 8px;
   background: var(--borde);
   border-radius: 999px;
@@ -426,6 +427,14 @@ th { color: var(--suave); font-weight: 500; }
 .progreso-barra.pasado {
   background: var(--cuidado);
 }
+.progreso-minimo {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--suave);
+  margin-left: -1px;
+}
 .barras-objetivo {
   display: grid;
   gap: 10px;
@@ -435,6 +444,12 @@ th { color: var(--suave); font-weight: 500; }
   display: flex;
   justify-content: space-between;
   font-size: .85rem;
+}
+.progreso-item.principal .progreso-item-cabecera {
+  font-weight: 600;
+}
+.progreso-item.principal .progreso {
+  height: 10px;
 }
 .fila-total {
   border-top: 1px solid var(--borde);

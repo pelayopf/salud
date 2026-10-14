@@ -1385,3 +1385,64 @@ def test_estimar_comida_web_error_ia(settings):
     assert r.status_code == 303
     assert "/comida/buscar?" in r.headers["location"]
     assert "La+IA+no+reconoce+ese+alimento" in r.headers["location"]
+
+
+def test_web_comida_proteinas_primero_y_minimo(settings, con):
+    hoy = date(2026, 1, 10)
+    ayer = hoy - timedelta(days=1)
+    ayer_str = ayer.isoformat()
+
+    for i in range(1, 29):
+        f = (hoy - timedelta(days=i)).isoformat()
+        db.guardar_metricas(
+            con,
+            [
+                Metrica(f, "kcal", "garmin", 2500.0),
+                Metrica(f, "kcal_activas", "garmin", 500.0),
+            ],
+        )
+    db.guardar_metricas(con, [Metrica(hoy.isoformat(), "peso", "garmin", 80.0)])
+
+    c = cliente_web(settings, hoy=hoy)
+
+    db.anadir_comida(
+        con,
+        fecha=ayer_str,
+        momento="comida",
+        nombre="Manzana",
+        cantidad=100.0,
+        unidad="g",
+        kcal=400.0,
+        proteinas=1.0,
+        hidratos=20.0,
+        grasas=0.5,
+    )
+
+    r_ayer = c.get(f"/comida?fecha={ayer_str}")
+    assert r_ayer.status_code == 200
+    texto = r_ayer.text
+
+    pos_prot = texto.find("Proteínas")
+    pos_kcal = texto.find("Calorías")
+    assert pos_prot != -1 and pos_kcal != -1
+    assert pos_prot < pos_kcal
+
+    assert "progreso-minimo" in texto
+    assert "Por debajo del mínimo" in texto
+
+    db.anadir_comida(
+        con,
+        fecha=ayer_str,
+        momento="cena",
+        nombre="Cena abundante",
+        cantidad=500.0,
+        unidad="g",
+        kcal=2000.0,
+        proteinas=50.0,
+        hidratos=200.0,
+        grasas=50.0,
+    )
+
+    r_ayer_ok = c.get(f"/comida?fecha={ayer_str}")
+    assert r_ayer_ok.status_code == 200
+    assert "Por debajo del mínimo" not in r_ayer_ok.text

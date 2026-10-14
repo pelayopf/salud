@@ -175,7 +175,8 @@ CREATE TABLE IF NOT EXISTS ajustes_comida (
     grasas_g_kg REAL NOT NULL,
     peso_kg REAL,
     reparto TEXT NOT NULL,
-    actualizado TEXT NOT NULL
+    actualizado TEXT NOT NULL,
+    kcal_minimo INTEGER
 );
 CREATE TABLE IF NOT EXISTS consejos_comida (
     id INTEGER PRIMARY KEY,
@@ -249,6 +250,7 @@ class AjustesComida:
     grasas_g_kg: float = 0.9
     peso_kg: float | None = None
     reparto: dict[str, int] = field(default_factory=lambda: dict(REPARTO_DEFECTO))
+    kcal_minimo: int | None = None
 
 
 @dataclass(frozen=True)
@@ -367,6 +369,7 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
     _añadir_columnas(con, "productos_propios", {"racion_g": "REAL", "racion_nombre": "TEXT"})
+    _añadir_columnas(con, "ajustes_comida", {"kcal_minimo": "INTEGER"})
     return con
 
 
@@ -672,16 +675,18 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
         con.execute(
             """
             INSERT INTO ajustes_comida (
-                id, deficit_kcal, proteinas_g_kg, grasas_g_kg, peso_kg, reparto, actualizado
+                id, deficit_kcal, proteinas_g_kg, grasas_g_kg, peso_kg, reparto,
+                actualizado, kcal_minimo
             )
-            VALUES (1, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 deficit_kcal = excluded.deficit_kcal,
                 proteinas_g_kg = excluded.proteinas_g_kg,
                 grasas_g_kg = excluded.grasas_g_kg,
                 peso_kg = excluded.peso_kg,
                 reparto = excluded.reparto,
-                actualizado = excluded.actualizado
+                actualizado = excluded.actualizado,
+                kcal_minimo = excluded.kcal_minimo
             """,
             (
                 ajustes.deficit_kcal,
@@ -690,6 +695,7 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
                 ajustes.peso_kg,
                 reparto_json,
                 momento,
+                ajustes.kcal_minimo,
             ),
         )
 
@@ -1088,12 +1094,18 @@ def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
             reparto = {str(k): int(v) for k, v in reparto.items()}
     except (json.JSONDecodeError, TypeError, ValueError):
         reparto = dict(REPARTO_DEFECTO)
+    kcal_min = (
+        int(fila["kcal_minimo"])
+        if "kcal_minimo" in fila.keys() and fila["kcal_minimo"] is not None
+        else None
+    )
     return AjustesComida(
         deficit_kcal=int(fila["deficit_kcal"]),
         proteinas_g_kg=float(fila["proteinas_g_kg"]),
         grasas_g_kg=float(fila["grasas_g_kg"]),
         peso_kg=float(fila["peso_kg"]) if fila["peso_kg"] is not None else None,
         reparto=reparto,
+        kcal_minimo=kcal_min,
     )
 
 

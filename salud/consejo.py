@@ -100,6 +100,7 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
             "total": asdict(obj.total),
             "por_momento": {m: asdict(mac) for m, mac in obj.por_momento.items()},
             "desglose": list(obj.desglose),
+            "kcal_minimo": obj.kcal_minimo,
         }
         queda_hoy: dict[str, float] | None = {
             "kcal": round(obj.total.kcal - tot.kcal, 1),

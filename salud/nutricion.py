@@ -44,6 +44,7 @@ class ObjetivoDia:
     por_momento: dict[str, Macros]
     desglose: list[tuple[str, int]]
     peso_kg: float
+    kcal_minimo: int
 
 
 def basal(con: sqlite3.Connection, hoy: date) -> int | None:
@@ -213,7 +214,14 @@ def objetivo_dia(
                 grasas=round(total.grasas * pct / 100),
             )
 
-    return ObjetivoDia(total=total, por_momento=por_momento, desglose=desglose, peso_kg=peso_kg)
+    minimo = ajustes.kcal_minimo if ajustes.kcal_minimo is not None else b
+    return ObjetivoDia(
+        total=total,
+        por_momento=por_momento,
+        desglose=desglose,
+        peso_kg=peso_kg,
+        kcal_minimo=minimo,
+    )
 
 
 def ajustes_desde_formulario(datos: dict[str, str]) -> db.AjustesComida:
@@ -253,6 +261,18 @@ def ajustes_desde_formulario(datos: dict[str, str]) -> db.AjustesComida:
     else:
         peso = None
 
+    min_str = datos.get("kcal_minimo", "").strip()
+    if min_str:
+        try:
+            kcal_minimo: int | None = int(min_str)
+        except (ValueError, TypeError):
+            msg = "El mínimo de calorías debe ser un número entero entre 800 y 4000"
+            raise ValueError(msg) from None
+        if not (800 <= kcal_minimo <= 4000):
+            raise ValueError("El mínimo de calorías debe ser un número entero entre 800 y 4000")
+    else:
+        kcal_minimo = None
+
     reparto: dict[str, int] = {}
     for i, m in enumerate(db.REPARTO_DEFECTO):
         val_str = datos.get(f"reparto-{i}", "").strip()
@@ -275,4 +295,5 @@ def ajustes_desde_formulario(datos: dict[str, str]) -> db.AjustesComida:
         grasas_g_kg=gras,
         peso_kg=peso,
         reparto=reparto,
+        kcal_minimo=kcal_minimo,
     )

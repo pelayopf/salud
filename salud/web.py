@@ -1256,6 +1256,16 @@ def crear_app(
                 llevas_m = tot_m.kcal if tot_m else 0.0
                 prog_momento[m] = _progreso(llevas_m, obj_m.kcal)
 
+        pct_minimo = 0
+        if objetivo is not None and objetivo.total.kcal > 0:
+            pct_minimo = min(100, round(100 * objetivo.kcal_minimo / objetivo.total.kcal))
+
+        bajo_minimo = False
+        if objetivo is not None and totales.total.entradas > 0:
+            es_tarde = fecha == hoy() and datetime.now(ZONA).hour >= 21
+            if (fecha < hoy() or es_tarde) and totales.total.kcal < objetivo.kcal_minimo:
+                bajo_minimo = True
+
         err_consejo = error_consejo["texto"]
         error_consejo["texto"] = None
 
@@ -1271,6 +1281,8 @@ def crear_app(
             objetivo=objetivo,
             prog_dia=prog_dia,
             prog_momento=prog_momento,
+            pct_minimo=pct_minimo,
+            bajo_minimo=bajo_minimo,
             recientes=recientes,
             productos_propios=propios,
             consejo=consejo_hoy,
@@ -1469,6 +1481,7 @@ def crear_app(
         con = abrir_db()
         try:
             ajustes = db.ajustes_comida(con)
+            b = nutricion.basal(con, hoy())
             objetivo_hoy = nutricion.objetivo_dia(con, hoy(), hoy(), ajustes=ajustes)
         finally:
             con.close()
@@ -1481,6 +1494,7 @@ def crear_app(
             seccion="comida",
             ajustes=ajustes,
             objetivo=objetivo_hoy,
+            basal=b,
             momentos_reparto=momentos_reparto,
             mensaje=request.query_params.get("mensaje"),
             error=request.query_params.get("error"),

@@ -150,19 +150,22 @@
   </div>
   {% if objetivo and prog_dia %}
   <div class="barras-objetivo">
-    <div class="progreso-item">
-      <div class="progreso-item-cabecera">
-        <span>Calorías</span>
-        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal</span>
-      </div>
-      <div class="progreso"><div class="progreso-barra{% if prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct }}%"></div></div>
-    </div>
-    <div class="progreso-item">
+    <div class="progreso-item principal">
       <div class="progreso-item-cabecera">
         <span>Proteínas</span>
         <span><strong>{{ totales.total.proteinas | gramos }}</strong> / {{ objetivo.total.proteinas | gramos }} g</span>
       </div>
       <div class="progreso"><div class="progreso-barra{% if prog_dia.proteinas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.proteinas.pct }}%"></div></div>
+    </div>
+    <div class="progreso-item">
+      <div class="progreso-item-cabecera">
+        <span>Calorías</span>
+        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal · mínimo {{ objetivo.kcal_minimo | cifra }}</span>
+      </div>
+      <div class="progreso">
+        <div class="progreso-barra{% if prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct }}%"></div>
+        <div class="progreso-minimo" style="left: {{ pct_minimo }}%" title="Mínimo"></div>
+      </div>
     </div>
     <div class="progreso-item">
       <div class="progreso-item-cabecera">
@@ -179,6 +182,9 @@
       <div class="progreso"><div class="progreso-barra{% if prog_dia.grasas.pasado %} pasado{% endif %}" style="width: {{ prog_dia.grasas.pct }}%"></div></div>
     </div>
   </div>
+  {% if bajo_minimo %}
+  <p class="aviso">Por debajo del mínimo: {{ totales.total.kcal | cifra }} de {{ objetivo.kcal_minimo | cifra }} kcal. Con poco apetito, prioriza proteína y algo denso.</p>
+  {% endif %}
   <p class="suave">Objetivo dinámico: basal + actividad − déficit · <a href="/comida/objetivos">Ajustar</a></p>
   {% else %}
   <p class="suave">

@@ -338,3 +338,82 @@ def test_ajustes_desde_formulario_valido_y_errores():
     datos_def_invalido = dict(datos_validos, deficit_kcal="x")
     with pytest.raises(ValueError, match="déficit"):
         nutricion.ajustes_desde_formulario(datos_def_invalido)
+
+    # Mínimo de calorías vacío -> None
+    datos_min_vacio = dict(datos_validos, kcal_minimo="")
+    assert nutricion.ajustes_desde_formulario(datos_min_vacio).kcal_minimo is None
+
+    # Mínimo de calorías 1500 -> 1500
+    datos_min_1500 = dict(datos_validos, kcal_minimo="1500")
+    assert nutricion.ajustes_desde_formulario(datos_min_1500).kcal_minimo == 1500
+
+    # Mínimo de calorías 500 (fuera de rango 800-4000) -> error
+    datos_min_500 = dict(datos_validos, kcal_minimo="500")
+    with pytest.raises(
+        ValueError, match="El mínimo de calorías debe ser un número entero entre 800 y 4000"
+    ):
+        nutricion.ajustes_desde_formulario(datos_min_500)
+
+
+def test_objetivo_dia_kcal_minimo(con):
+    hoy = date(2026, 1, 10)
+    _preparar_historial_basal_y_neat(con, hoy, b_kcal=2000, neat_kcal=200)
+    guardar_metrica(con, hoy.isoformat(), "peso", 80.0)
+
+    # Con kcal_minimo = None, usa el basal (2000)
+    ajustes_none = db.AjustesComida(kcal_minimo=None)
+    obj_none = nutricion.objetivo_dia(con, hoy, hoy, ajustes=ajustes_none)
+    assert obj_none is not None
+    assert obj_none.kcal_minimo == 2000
+
+    # Con kcal_minimo = 1800, usa 1800
+    ajustes_1800 = db.AjustesComida(kcal_minimo=1800)
+    obj_1800 = nutricion.objetivo_dia(con, hoy, hoy, ajustes=ajustes_1800)
+    assert obj_1800 is not None
+    assert obj_1800.kcal_minimo == 1800
+
+
+def test_guardar_y_leer_kcal_minimo(con):
+    ajustes = db.AjustesComida(kcal_minimo=1650)
+    db.guardar_ajustes_comida(con, ajustes)
+    leidos = db.ajustes_comida(con)
+    assert leidos.kcal_minimo == 1650
+
+    # Guardar None
+    db.guardar_ajustes_comida(con, db.AjustesComida(kcal_minimo=None))
+    assert db.ajustes_comida(con).kcal_minimo is None
+
+
+def test_migracion_ajustes_comida_sin_columna(tmp_path):
+    import sqlite3
+
+    db_file = tmp_path / "antigua.db"
+    con_raw = sqlite3.connect(db_file)
+    con_raw.execute(
+        """
+        CREATE TABLE ajustes_comida (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            deficit_kcal INTEGER NOT NULL,
+            proteinas_g_kg REAL NOT NULL,
+            grasas_g_kg REAL NOT NULL,
+            peso_kg REAL,
+            reparto TEXT NOT NULL,
+            actualizado TEXT NOT NULL
+        )
+        """
+    )
+    con_raw.execute(
+        """
+        INSERT INTO ajustes_comida (
+            id, deficit_kcal, proteinas_g_kg, grasas_g_kg, reparto, actualizado
+        )
+        VALUES (1, 250, 1.6, 0.9, '{}', '2026-01-01T00:00:00Z')
+        """
+    )
+    con_raw.commit()
+    con_raw.close()
+
+    con_migrada = db.conectar(db_file)
+    ajustes = db.ajustes_comida(con_migrada)
+    assert ajustes.kcal_minimo is None
+    con_migrada.close()
