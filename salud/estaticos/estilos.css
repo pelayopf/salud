@@ -356,6 +356,10 @@ textarea:focus {
 .grafica .punto-final, .grafica .cursor-punto { fill: var(--serie); stroke: var(--panel); stroke-width: 2; }
 .grafica .valor-final { fill: var(--texto); font-size: 12px; font-weight: 600; }
 .grafica .cursor { stroke: var(--suave); stroke-width: 1; }
+.grafica .linea-referencia { stroke: var(--verde); stroke-width: 1.5; }
+.grafica .eje-referencia { fill: var(--verde); font-size: 10px; font-weight: 700; }
+.grafica .marca-linea { stroke: var(--violeta); stroke-width: 1.5; stroke-dasharray: 2 3; opacity: 0.6; }
+.grafica .marca-eje { stroke: var(--violeta); stroke-width: 2; }
 .grafica .columna { fill: var(--serie); outline: none; }
 .grafica .columna:hover, .grafica .columna:focus { fill: #4b8fe0; }
 

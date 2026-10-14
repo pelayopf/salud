@@ -324,6 +324,8 @@ def linea(
     ancho: int = 400,
     alto: int = 190,
     titulo: str = "",
+    referencia: float | None = None,
+    marcas: Sequence[str] = (),
 ) -> Grafica | None:
     """Línea de una serie diaria con eje, rejilla, punto final, tooltip y tabla.
 
@@ -331,6 +333,8 @@ def linea(
     Con `unir_huecos` la línea salta los días sin dato (el peso no es diario);
     si no, se corta. `banda` dibuja una franja de referencia (la VFC equilibrada).
     `rango_minimo` abre el eje para que un cambio pequeño no parezca un salto.
+    `referencia` dibuja una línea horizontal discontinua y abre el eje.
+    `marcas` añade marcas y líneas verticales en las fechas indicadas dentro del periodo.
     """
     con_valor = [(i, f, v) for i, (f, v) in enumerate(puntos) if v is not None]
     if len(con_valor) < 2:
@@ -339,12 +343,14 @@ def linea(
     valores = [v for _, _, v in con_valor]
     if banda:
         valores += [x for _, lo, hi in banda for x in (lo, hi) if x is not None]
+    if referencia is not None:
+        valores.append(referencia)
     minimo, maximo = min(valores), max(valores)
     if maximo - minimo < rango_minimo:
         centro = (maximo + minimo) / 2
         minimo, maximo = centro - rango_minimo / 2, centro + rango_minimo / 2
-    marcas = ticks(minimo, maximo)
-    lo, hi = marcas[0], marcas[-1]
+    marcas_eje = ticks(minimo, maximo)
+    lo, hi = marcas_eje[0], marcas_eje[-1]
     ancho_util, alto_util = ancho - izq - der, alto - arriba - abajo
     paso = ancho_util / max(len(puntos) - 1, 1)
 
@@ -355,13 +361,35 @@ def linea(
         return arriba + alto_util - (v - lo) / (hi - lo) * alto_util
 
     partes: list[str] = []
-    dec_eje = _decimales_eje(marcas)
-    for m in marcas:
+    dec_eje = _decimales_eje(marcas_eje)
+    for m in marcas_eje:
         partes.append(
             f'<line class="rejilla" x1="{izq}" x2="{ancho - der}" y1="{y(m):.1f}" y2="{y(m):.1f}"/>'
             f'<text class="eje" x="{izq - 6}" y="{y(m) + 4:.1f}" text-anchor="end">'
             f"{cifra(m, dec_eje)}</text>"
         )
+    if referencia is not None:
+        y_ref = y(referencia)
+        dec_ref = 1 if (referencia % 1 != 0) else 0
+        partes.append(
+            f'<line class="linea-referencia" x1="{izq}" x2="{ancho - der}"'
+            f' y1="{y_ref:.1f}" y2="{y_ref:.1f}" stroke-dasharray="4 4"/>'
+            f'<text class="eje-referencia" x="{ancho - der - 2}" y="{y_ref - 4:.1f}"'
+            f' text-anchor="end">{cifra(referencia, dec_ref)}</text>'
+        )
+    if marcas:
+        indice_fechas = {f: i for i, (f, _) in enumerate(puntos)}
+        base_y = arriba + alto_util
+        for f_m in marcas:
+            if f_m in indice_fechas:
+                idx_m = indice_fechas[f_m]
+                xm = x(idx_m)
+                partes.append(
+                    f'<line class="marca-linea" x1="{xm:.1f}" x2="{xm:.1f}"'
+                    f' y1="{arriba}" y2="{base_y:.1f}"/>'
+                    f'<line class="marca-eje" x1="{xm:.1f}" x2="{xm:.1f}"'
+                    f' y1="{base_y:.1f}" y2="{base_y + 4:.1f}"/>'
+                )
     # Etiquetas del eje X: el día 1 de cada mes (o cada semana si el periodo es corto).
     for i, (f, _) in enumerate(puntos):
         d = date.fromisoformat(f)

@@ -114,3 +114,30 @@ def test_rango_dentro_y_fuera():
     assert "rango-punto fuera" in r_fuera_alto
 
     assert graficas.rango(50.0, None, 60.0) == ""
+
+
+def test_linea_con_referencia_y_marcas():
+    puntos = [
+        ("2026-10-01", 90.0),
+        ("2026-10-02", 89.5),
+        ("2026-10-03", 89.0),
+    ]
+    # Referencia a 85 (menor que el mínimo de puntos 89, abre el eje para que se vea)
+    g = graficas.linea(
+        puntos,
+        referencia=85.0,
+        marcas=["2026-10-02", "2026-10-15"],  # Una dentro del periodo y otra fuera
+    )
+    assert g is not None
+    # El SVG contiene la línea de referencia y su etiqueta
+    assert 'class="linea-referencia"' in g.svg
+    assert 'class="eje-referencia"' in g.svg
+    assert "85" in g.svg
+
+    # El SVG contiene marcas para la fecha dentro del periodo (2026-10-02)
+    assert 'class="marca-linea"' in g.svg
+    assert 'class="marca-eje"' in g.svg
+
+    # La fecha fuera de periodo (2026-10-15) no genera marcas adicionales
+    assert g.svg.count('class="marca-linea"') == 1
+    assert g.svg.count('class="marca-eje"') == 1
