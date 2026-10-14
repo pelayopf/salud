@@ -485,3 +485,159 @@ def test_productos_propios_ordenados_por_actualizado_desc(con):
 
     lista = db.productos_propios(con)
     assert [p["id"] for p in lista] == [id3, id2, id1]
+
+
+def test_normalizar_titulo():
+    assert db.normalizar_titulo("  Pádel  Chuen ") == "padel chuen"
+    assert db.normalizar_titulo("FÚTBOL") == "futbol"
+
+
+def test_reemplazar_planificado_solo_toca_su_origen_y_rango(con):
+    g1 = db.Planificado(
+        fecha="2026-05-01",
+        inicio="19:00",
+        duracion_min=60,
+        titulo="Fútbol",
+        tipo="soccer",
+        intensidad="alta",
+        origen="google",
+        uid="u1@2026-05-01",
+    )
+    g2 = db.Planificado(
+        fecha="2026-05-10",
+        inicio="10:00",
+        duracion_min=90,
+        titulo="Pádel",
+        tipo="paddelball",
+        intensidad="alta",
+        origen="google",
+        uid="u2@2026-05-10",
+    )
+    st = db.Planificado(
+        fecha="2026-05-02",
+        inicio=None,
+        duracion_min=None,
+        titulo="Bici",
+        tipo="cycling",
+        intensidad="moderada",
+        origen="semana-tipo",
+        uid="",
+    )
+    db.reemplazar_planificado(
+        con, origen="google", desde="2026-05-01", hasta="2026-05-10", filas=[g1, g2]
+    )
+    db.reemplazar_planificado(
+        con, origen="semana-tipo", desde="2026-05-01", hasta="2026-05-10", filas=[st]
+    )
+
+    # Reemplazamos rango 05-01 a 05-05 para google con un nuevo evento
+    g3 = db.Planificado(
+        fecha="2026-05-01",
+        inicio=None,
+        duracion_min=None,
+        titulo="Partido nuevo",
+        tipo="soccer",
+        intensidad="alta",
+        origen="google",
+        uid="u3@2026-05-01",
+    )
+    insertados = db.reemplazar_planificado(
+        con, origen="google", desde="2026-05-01", hasta="2026-05-05", filas=[g3]
+    )
+    assert insertados == 1
+
+    todas = db.planificado(con, "2026-05-01", "2026-05-15")
+    # g1 (del 05-01) fue borrado y reemplazado por g3 (inicio None).
+    # st (del 05-02, origen semana-tipo) sigue intacto.
+    # g2 (del 05-10, fuera del rango 05-01 a 05-05) sigue intacto.
+    assert len(todas) == 3
+    assert todas[0].uid == "u3@2026-05-01"
+    assert todas[0].inicio is None
+    assert todas[1].origen == "semana-tipo"
+    assert todas[2].uid == "u2@2026-05-10"
+
+
+def test_borrar_planificado_titulo(con):
+    filas = [
+        db.Planificado(
+            fecha="2026-05-01",
+            inicio="18:00",
+            duracion_min=60,
+            titulo="Pádel Chuen",
+            tipo="paddelball",
+            intensidad="alta",
+            origen="google",
+            uid="u1",
+        ),
+        db.Planificado(
+            fecha="2026-05-02",
+            inicio="19:00",
+            duracion_min=60,
+            titulo="padel   chuen",
+            tipo="paddelball",
+            intensidad="alta",
+            origen="google",
+            uid="u2",
+        ),
+        db.Planificado(
+            fecha="2026-05-03",
+            inicio="20:00",
+            duracion_min=60,
+            titulo="Fútbol",
+            tipo="soccer",
+            intensidad="alta",
+            origen="google",
+            uid="u3",
+        ),
+        db.Planificado(
+            fecha="2026-05-04",
+            inicio="18:00",
+            duracion_min=60,
+            titulo="Pádel Chuen",
+            tipo="paddelball",
+            intensidad="alta",
+            origen="semana-tipo",
+            uid="",
+        ),
+    ]
+    db.reemplazar_planificado(
+        con, origen="google", desde="2026-05-01", hasta="2026-05-10", filas=filas[:3]
+    )
+    db.reemplazar_planificado(
+        con, origen="semana-tipo", desde="2026-05-01", hasta="2026-05-10", filas=[filas[3]]
+    )
+
+    borrados = db.borrar_planificado_titulo(con, "  padel   CHUEN  ")
+    assert borrados == 2
+
+    restantes = db.planificado(con, "2026-05-01", "2026-05-10")
+    assert len(restantes) == 2
+    assert {r.titulo for r in restantes} == {"Fútbol", "Pádel Chuen"}
+    assert {r.origen for r in restantes} == {"google", "semana-tipo"}
+
+
+def test_marcar_titulo_upsert_y_titulos_calendario(con):
+    db.marcar_titulo(con, titulo="  Pádel Chuen ", deporte=True, tipo="paddelball")
+    assert db.titulos_calendario(con) == {"padel chuen": (True, "paddelball")}
+
+    # Upsert: modificar la misma entrada
+    db.marcar_titulo(con, titulo="padel chuen", deporte=False, tipo=None)
+    assert db.titulos_calendario(con) == {"padel chuen": (False, None)}
+
+
+def test_guardar_semana_tipo_reemplaza_todo(con):
+    e1 = db.EntradaSemana(dia=1, inicio="19:00", duracion_min=60, tipo="soccer", intensidad="alta")
+    e2 = db.EntradaSemana(
+        dia=3, inicio="18:30", duracion_min=90, tipo="cycling", intensidad="moderada"
+    )
+    db.guardar_semana_tipo(con, [e1, e2])
+
+    assert db.semana_tipo(con) == [e1, e2]
+
+    # Reemplazar todo
+    e3 = db.EntradaSemana(
+        dia=5, inicio=None, duracion_min=45, tipo="running", intensidad="moderada"
+    )
+    db.guardar_semana_tipo(con, [e3])
+
+    assert db.semana_tipo(con) == [e3]

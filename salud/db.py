@@ -9,12 +9,16 @@
 - `productos`: caché de Open Food Facts por código de barras.
 - `productos_propios`: productos creados o corregidos (manual o por etiqueta con IA).
 - `comidas`: diario de alimentos por fecha y momento del día.
+- `planificado`: actividades planificadas (Google Calendar o semana tipo).
+- `titulos_calendario`: clasificación de títulos del calendario (deporte y tipo).
+- `semana_tipo`: plantilla semanal propuesta a partir de los hábitos de Garmin.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -129,6 +133,35 @@ CREATE TABLE IF NOT EXISTS comidas (
     creado TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS comidas_fecha ON comidas (fecha);
+CREATE TABLE IF NOT EXISTS planificado (
+    id INTEGER PRIMARY KEY,
+    origen TEXT NOT NULL,
+    uid TEXT NOT NULL,
+    fecha TEXT NOT NULL,
+    inicio TEXT,
+    duracion_min INTEGER,
+    titulo TEXT NOT NULL,
+    tipo TEXT,
+    intensidad TEXT NOT NULL,
+    actualizado TEXT NOT NULL,
+    UNIQUE (origen, uid)
+);
+CREATE INDEX IF NOT EXISTS planificado_fecha ON planificado (fecha);
+CREATE TABLE IF NOT EXISTS titulos_calendario (
+    titulo TEXT PRIMARY KEY,
+    deporte INTEGER NOT NULL,
+    tipo TEXT,
+    actualizado TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS semana_tipo (
+    id INTEGER PRIMARY KEY,
+    dia INTEGER NOT NULL,
+    inicio TEXT,
+    duracion_min INTEGER,
+    tipo TEXT NOT NULL,
+    intensidad TEXT NOT NULL,
+    actualizado TEXT NOT NULL
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -218,6 +251,38 @@ class TotalesDia(NamedTuple):
 
     por_momento: dict[str, Totales]
     total: Totales
+
+
+@dataclass(frozen=True)
+class Planificado:
+    """Una actividad deportiva planificada para un día."""
+
+    fecha: str
+    inicio: str | None
+    duracion_min: int | None
+    titulo: str
+    tipo: str | None
+    intensidad: str
+    origen: str  # "google" o "semana-tipo"
+    uid: str = ""
+
+
+@dataclass(frozen=True)
+class EntradaSemana:
+    """Una sesión habitual en la plantilla de semana tipo."""
+
+    dia: int
+    inicio: str | None
+    duracion_min: int | None
+    tipo: str
+    intensidad: str
+
+
+def normalizar_titulo(texto: str) -> str:
+    """Normaliza un texto: minúsculas, sin tildes y espacios colapsados."""
+    limpio = unicodedata.normalize("NFKD", texto)
+    sin_tildes = "".join(c for c in limpio if not unicodedata.combining(c))
+    return " ".join(sin_tildes.lower().split())
 
 
 def ahora() -> str:
@@ -757,3 +822,151 @@ def productos_recientes(con: sqlite3.Connection, limite: int = 8) -> list[sqlite
         """,
         (limite,),
     ).fetchall()
+
+
+# --- Calendario y planificación ----------------------------------------------
+
+
+def reemplazar_planificado(
+    con: sqlite3.Connection,
+    *,
+    origen: str,
+    desde: str,
+    hasta: str,
+    filas: Iterable[Planificado],
+) -> int:
+    """Reemplaza las entradas planificadas de un origen entre dos fechas (ambas incluidas)."""
+    with con:
+        con.execute(
+            "DELETE FROM planificado WHERE origen = ? AND fecha >= ? AND fecha <= ?",
+            (origen, desde, hasta),
+        )
+        n = 0
+        now = ahora()
+        for f in filas:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO planificado (
+                    origen, uid, fecha, inicio, duracion_min, titulo, tipo, intensidad, actualizado
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f.origen,
+                    f.uid,
+                    f.fecha,
+                    f.inicio,
+                    f.duracion_min,
+                    f.titulo,
+                    f.tipo,
+                    f.intensidad,
+                    now,
+                ),
+            )
+            n += 1
+        return n
+
+
+def planificado(con: sqlite3.Connection, desde: str, hasta: str) -> list[Planificado]:
+    """Entradas planificadas entre dos fechas, ordenadas por fecha e inicio (NULL primero)."""
+    filas = con.execute(
+        """
+        SELECT fecha, inicio, duracion_min, titulo, tipo, intensidad, origen, uid
+        FROM planificado
+        WHERE fecha >= ? AND fecha <= ?
+        ORDER BY fecha ASC, CASE WHEN inicio IS NULL THEN 0 ELSE 1 END, inicio ASC, id ASC
+        """,
+        (desde, hasta),
+    ).fetchall()
+    return [
+        Planificado(
+            fecha=f["fecha"],
+            inicio=f["inicio"],
+            duracion_min=f["duracion_min"],
+            titulo=f["titulo"],
+            tipo=f["tipo"],
+            intensidad=f["intensidad"],
+            origen=f["origen"],
+            uid=f["uid"],
+        )
+        for f in filas
+    ]
+
+
+def borrar_planificado_titulo(con: sqlite3.Connection, titulo: str) -> int:
+    """Borra entradas de origen 'google' cuyo título normalizado coincida con el dado."""
+    objetivo = normalizar_titulo(titulo)
+    filas = con.execute("SELECT id, titulo FROM planificado WHERE origen = 'google'").fetchall()
+    ids_a_borrar = [f["id"] for f in filas if normalizar_titulo(f["titulo"]) == objetivo]
+    if not ids_a_borrar:
+        return 0
+    with con:
+        con.executemany("DELETE FROM planificado WHERE id = ?", [(i,) for i in ids_a_borrar])
+    return len(ids_a_borrar)
+
+
+def titulos_calendario(con: sqlite3.Connection) -> dict[str, tuple[bool, str | None]]:
+    """Diccionario de títulos del calendario clasificados (deporte, tipo de Garmin)."""
+    filas = con.execute("SELECT titulo, deporte, tipo FROM titulos_calendario").fetchall()
+    return {f["titulo"]: (bool(f["deporte"]), f["tipo"]) for f in filas}
+
+
+def marcar_titulo(
+    con: sqlite3.Connection,
+    *,
+    titulo: str,
+    deporte: bool,
+    tipo: str | None,
+) -> None:
+    """Registra o actualiza la clasificación de un título de calendario (normalizado)."""
+    t_norm = normalizar_titulo(titulo)
+    with con:
+        con.execute(
+            """
+            INSERT INTO titulos_calendario (titulo, deporte, tipo, actualizado)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(titulo) DO UPDATE SET
+                deporte = excluded.deporte,
+                tipo = excluded.tipo,
+                actualizado = excluded.actualizado
+            """,
+            (t_norm, int(deporte), tipo, ahora()),
+        )
+
+
+def semana_tipo(con: sqlite3.Connection) -> list[EntradaSemana]:
+    """Entradas de la semana tipo, ordenadas por día e inicio (NULL primero)."""
+    filas = con.execute(
+        """
+        SELECT dia, inicio, duracion_min, tipo, intensidad
+        FROM semana_tipo
+        ORDER BY dia ASC, CASE WHEN inicio IS NULL THEN 0 ELSE 1 END, inicio ASC, id ASC
+        """
+    ).fetchall()
+    return [
+        EntradaSemana(
+            dia=f["dia"],
+            inicio=f["inicio"],
+            duracion_min=f["duracion_min"],
+            tipo=f["tipo"],
+            intensidad=f["intensidad"],
+        )
+        for f in filas
+    ]
+
+
+def guardar_semana_tipo(con: sqlite3.Connection, entradas: Iterable[EntradaSemana]) -> int:
+    """Reemplaza toda la tabla de la semana tipo en una sola transacción."""
+    with con:
+        con.execute("DELETE FROM semana_tipo")
+        now = ahora()
+        n = 0
+        for e in entradas:
+            con.execute(
+                """
+                INSERT INTO semana_tipo (dia, inicio, duracion_min, tipo, intensidad, actualizado)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (e.dia, e.inicio, e.duracion_min, e.tipo, e.intensidad, now),
+            )
+            n += 1
+        return n
