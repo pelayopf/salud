@@ -3,6 +3,9 @@
   {% if id_propio %}<input type="hidden" name="id" value="{{ id_propio }}">{% endif %}
   {% if momento_defecto %}<input type="hidden" name="momento" value="{{ momento_defecto }}">{% endif %}
   <input type="hidden" name="ia" value="">
+  {% if origen or (p and p.origen == 'ciqual') %}
+  <input type="hidden" name="origen" value="ciqual">
+  {% endif %}
   <div class="acciones">
     <button type="button" class="boton secundario" data-leer-etiqueta>Leer la etiqueta</button>
     <input type="file" accept="image/*" data-foto-etiqueta hidden>
@@ -39,6 +42,12 @@
 
   <label for="fp-grasas">Grasas (g)</label>
   <input id="fp-grasas" name="grasas" type="number" step="any" min="0" value="{{ p.grasas if p and p.grasas is not none else '' }}">
+
+  <label for="fp-racion-g">Peso de una ración (g o ml)</label>
+  <input id="fp-racion-g" name="racion_g" type="number" step="any" min="1" max="2000" value="{{ p.racion_g if p and p.racion_g is not none else '' }}">
+
+  <label for="fp-racion-nombre">Nombre de la ración (p. ej. plátano, rebanada)</label>
+  <input id="fp-racion-nombre" name="racion_nombre" maxlength="40" value="{{ p.racion_nombre if p and p.racion_nombre else '' }}">
 
   <p class="suave">Valores por 100 g o 100 ml.</p>
   <div class="acciones"><button type="submit" class="boton">Guardar producto</button></div>

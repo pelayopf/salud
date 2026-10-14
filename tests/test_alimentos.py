@@ -547,3 +547,23 @@ def test_producto_desde_fila_datos_vacios_o_invalidos(con):
     assert p2.nombre == "Producto clásico"
     assert (p2.kcal, p2.proteinas, p2.hidratos, p2.grasas) == (120.0, 3.0, 20.0, 1.0)
     assert p2.preparado is False
+
+
+def test_producto_desde_json_serving_quantity():
+    p_json = {
+        "product_name": "Cereales",
+        "product_quantity_unit": "g",
+        "serving_quantity": 30,
+        "nutriments": {"energy-kcal_100g": 380.0},
+    }
+    prod = alimentos.producto_desde_json("12345678", p_json)
+    assert prod.racion_g == 30.0
+    assert prod.racion_nombre == "ración"
+
+
+def test_nombre_con_raciones():
+    assert alimentos.nombre_con_raciones("Plátano", 240, 120, "plátano") == "Plátano (2 plátanos)"
+    assert alimentos.nombre_con_raciones("Plátano", 120, 120, "plátano") == "Plátano (1 plátano)"
+    assert alimentos.nombre_con_raciones("Plátano", 130, 120, "plátano") == "Plátano"
+    assert alimentos.nombre_con_raciones("Plátano", 100, None, None) == "Plátano"
+    assert alimentos.nombre_con_raciones("Pan", 60, 30, "rebanadas") == "Pan (2 rebanadas)"

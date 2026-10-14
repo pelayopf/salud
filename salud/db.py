@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS productos_propios (
     proteinas REAL,
     hidratos REAL,
     grasas REAL,
+    racion_g REAL,
+    racion_nombre TEXT,
     origen TEXT NOT NULL,
     creado TEXT NOT NULL,
     actualizado TEXT NOT NULL
@@ -346,6 +348,15 @@ def hora_local(momento_utc: str | None) -> str:
         return ""
 
 
+def _añadir_columnas(con: sqlite3.Connection, tabla: str, columnas: dict[str, str]) -> None:
+    """Añade columnas a una tabla si no existen (migración idempotente)."""
+    filas = con.execute(f"PRAGMA table_info({tabla})").fetchall()
+    existentes = {f["name"] for f in filas}
+    for col, tipo in columnas.items():
+        if col not in existentes:
+            con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col} {tipo}")
+
+
 def conectar(ruta: Path | str) -> sqlite3.Connection:
     """Abre (creando si hace falta) la base de datos y aplica el esquema."""
     if str(ruta) != ":memory:":
@@ -354,6 +365,7 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
+    _añadir_columnas(con, "productos_propios", {"racion_g": "REAL", "racion_nombre": "TEXT"})
     return con
 
 
@@ -487,7 +499,7 @@ def guardar_producto(
         )
 
 
-ORIGENES_PROPIOS = ("manual", "etiqueta-ia")
+ORIGENES_PROPIOS = ("manual", "etiqueta-ia", "ciqual")
 
 
 def guardar_producto_propio(
@@ -503,6 +515,8 @@ def guardar_producto_propio(
     hidratos: float | None,
     grasas: float | None,
     origen: str,
+    racion_g: float | None = None,
+    racion_nombre: str | None = None,
 ) -> int:
     """Guarda o actualiza un producto propio o corregido."""
     if origen not in ORIGENES_PROPIOS:
@@ -515,6 +529,7 @@ def guardar_producto_propio(
                 "UPDATE productos_propios SET"
                 " codigo = ?, nombre = ?, marca = ?, unidad = ?,"
                 " kcal = ?, proteinas = ?, hidratos = ?, grasas = ?,"
+                " racion_g = ?, racion_nombre = ?,"
                 " origen = ?, actualizado = ?"
                 " WHERE id = ?",
                 (
@@ -526,6 +541,8 @@ def guardar_producto_propio(
                     proteinas,
                     hidratos,
                     grasas,
+                    racion_g,
+                    racion_nombre,
                     origen,
                     momento,
                     id_,
@@ -545,6 +562,7 @@ def guardar_producto_propio(
                     "UPDATE productos_propios SET"
                     " nombre = ?, marca = ?, unidad = ?,"
                     " kcal = ?, proteinas = ?, hidratos = ?, grasas = ?,"
+                    " racion_g = ?, racion_nombre = ?,"
                     " origen = ?, actualizado = ?"
                     " WHERE id = ?",
                     (
@@ -555,6 +573,8 @@ def guardar_producto_propio(
                         proteinas,
                         hidratos,
                         grasas,
+                        racion_g,
+                        racion_nombre,
                         origen,
                         momento,
                         existente_id,
@@ -565,8 +585,8 @@ def guardar_producto_propio(
         cur = con.execute(
             "INSERT INTO productos_propios"
             " (codigo, nombre, marca, unidad, kcal, proteinas, hidratos,"
-            " grasas, origen, creado, actualizado)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " grasas, racion_g, racion_nombre, origen, creado, actualizado)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 codigo,
                 nombre,
@@ -576,6 +596,8 @@ def guardar_producto_propio(
                 proteinas,
                 hidratos,
                 grasas,
+                racion_g,
+                racion_nombre,
                 origen,
                 momento,
                 momento,

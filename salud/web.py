@@ -39,6 +39,7 @@ from starlette.staticfiles import StaticFiles
 from . import (
     alimentos,
     calendario,
+    ciqual,
     consejo,
     db,
     garmin,
@@ -451,6 +452,8 @@ class DatosProducto:
     hidratos: float | None
     grasas: float | None
     origen: str
+    racion_g: float | None = None
+    racion_nombre: str | None = None
 
 
 def datos_producto(datos: dict[str, str]) -> DatosProducto:
@@ -500,7 +503,34 @@ def datos_producto(datos: dict[str, str]) -> DatosProducto:
     hidratos = _parsear_nutriente("hidratos", 100.0)
     grasas = _parsear_nutriente("grasas", 100.0)
 
-    origen = "etiqueta-ia" if datos.get("ia") == "1" else "manual"
+    racion_g_raw = datos.get("racion_g", "").strip()
+    racion_nombre_raw = datos.get("racion_nombre", "").strip()
+    if racion_nombre_raw and not racion_g_raw:
+        raise ValueError("Falta el peso de la ración")
+
+    if racion_g_raw:
+        v_rac = racion_g_raw.replace(",", ".")
+        try:
+            val_rac = float(v_rac)
+            if not math.isfinite(val_rac):
+                raise ValueError("El peso de la ración no es un número")
+        except ValueError:
+            raise ValueError("El peso de la ración no es un número") from None
+
+        if not (1 <= val_rac <= 2000):
+            raise ValueError("El peso de la ración debe estar entre 1 y 2000")
+        racion_g = val_rac
+        racion_nombre = racion_nombre_raw[:40] if racion_nombre_raw else "ración"
+    else:
+        racion_g = None
+        racion_nombre = None
+
+    if datos.get("ia") == "1":
+        origen = "etiqueta-ia"
+    elif datos.get("origen") == "ciqual":
+        origen = "ciqual"
+    else:
+        origen = "manual"
 
     return DatosProducto(
         codigo=codigo,
@@ -512,6 +542,8 @@ def datos_producto(datos: dict[str, str]) -> DatosProducto:
         hidratos=hidratos,
         grasas=grasas,
         origen=origen,
+        racion_g=racion_g,
+        racion_nombre=racion_nombre,
     )
 
 
@@ -1288,17 +1320,29 @@ def crear_app(
     def ver_comida_nuevo(request: Request) -> Response:
         fecha = _fecha(request)
         codigo = request.query_params.get("codigo", "").strip()
+        generico_codigo = request.query_params.get("generico", "").strip()
         momento_defecto = momento_valido(request.query_params.get("momento")) or momento_por_hora(
             datetime.now(ZONA).hour
         )
         aviso = request.query_params.get("aviso")
         mensaje = request.query_params.get("mensaje")
         error = request.query_params.get("error")
+
+        p = None
+        origen = None
+        if generico_codigo:
+            g = ciqual.por_codigo(generico_codigo)
+            if g is not None:
+                p = alimentos.producto_desde_generico(g)
+                origen = "ciqual"
+
         return _render(
             "comida_nuevo.html",
             seccion="comida",
             fecha=fecha.isoformat(),
             codigo=codigo,
+            p=p,
+            origen=origen,
             aviso=aviso,
             mensaje=mensaje,
             error=error,
@@ -1406,6 +1450,8 @@ def crear_app(
                     hidratos=dp.hidratos,
                     grasas=dp.grasas,
                     origen=dp.origen,
+                    racion_g=dp.racion_g,
+                    racion_nombre=dp.racion_nombre,
                 )
             finally:
                 con.close()
@@ -1450,6 +1496,29 @@ def crear_app(
             mensaje=request.query_params.get("mensaje"),
         )
 
+    def ver_generico(request: Request) -> Response:
+        codigo = request.path_params["codigo"]
+        g = ciqual.por_codigo(codigo)
+        if g is None:
+            return Response("No encontrado", 404)
+        fecha = _fecha(request)
+        momento_defecto = momento_valido(request.query_params.get("momento")) or momento_por_hora(
+            datetime.now(ZONA).hour
+        )
+        prod = alimentos.producto_desde_generico(g)
+        return _render(
+            "comida_producto.html",
+            seccion="comida",
+            producto=prod,
+            generico=codigo,
+            ciqual=ciqual,
+            desde_cache=False,
+            fecha=fecha.isoformat(),
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_defecto,
+            mensaje=request.query_params.get("mensaje"),
+        )
+
     async def leer_etiqueta_foto(request: Request) -> Response:
         cl_hdr = request.headers.get("content-length")
         if cl_hdr:
@@ -1485,6 +1554,7 @@ def crear_app(
     def _guardar_comida(datos: dict[str, str], fecha: str, cantidad: float) -> str:
         propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()
+        generico_raw = datos.get("generico", "").strip()
         momento = momento_valido(datos.get("momento"))
         if momento is None:
             raise ValueError("Momento no válido")
@@ -1500,7 +1570,10 @@ def crear_app(
                     raise ValueError("Producto no encontrado")
                 prod = alimentos.producto_desde_propio(fila)
                 nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
-                nombre = prod.nombre or f"Producto {prod.codigo or id_propio}"
+                nombre_base = prod.nombre or f"Producto {prod.codigo or id_propio}"
+                nombre = alimentos.nombre_con_raciones(
+                    nombre_base, cantidad, prod.racion_g, prod.racion_nombre
+                )
                 db.anadir_comida(
                     con,
                     fecha=fecha,
@@ -1519,7 +1592,10 @@ def crear_app(
                 res = alimentos.obtener_producto(con, codigo, cliente_off)
                 prod = res.producto
                 nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
-                nombre = prod.nombre or f"Producto {codigo}"
+                nombre_base = prod.nombre or f"Producto {codigo}"
+                nombre = alimentos.nombre_con_raciones(
+                    nombre_base, cantidad, prod.racion_g, prod.racion_nombre
+                )
                 db.anadir_comida(
                     con,
                     fecha=fecha,
@@ -1532,6 +1608,30 @@ def crear_app(
                     hidratos=nutrientes.hidratos,
                     grasas=nutrientes.grasas,
                     codigo=codigo,
+                )
+                return nombre
+            elif generico_raw:
+                g = ciqual.por_codigo(generico_raw)
+                if g is None:
+                    raise ValueError("Alimento no encontrado")
+                prod = alimentos.producto_desde_generico(g)
+                nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
+                nombre_base = prod.nombre or f"Alimento {generico_raw}"
+                nombre = alimentos.nombre_con_raciones(
+                    nombre_base, cantidad, prod.racion_g, prod.racion_nombre
+                )
+                db.anadir_comida(
+                    con,
+                    fecha=fecha,
+                    momento=momento,
+                    nombre=nombre,
+                    cantidad=cantidad,
+                    unidad=prod.unidad,
+                    kcal=nutrientes.kcal,
+                    proteinas=nutrientes.proteinas,
+                    hidratos=nutrientes.hidratos,
+                    grasas=nutrientes.grasas,
+                    codigo=None,
                 )
                 return nombre
             else:
@@ -1584,9 +1684,10 @@ def crear_app(
 
         propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()
+        generico_raw = datos.get("generico", "").strip()
         try:
             cantidad_str = (
-                datos.get("cantidad", "100" if (codigo or propio_raw) else "")
+                datos.get("cantidad", "100" if (codigo or propio_raw or generico_raw) else "")
                 .strip()
                 .replace(",", ".")
             )
@@ -1665,6 +1766,7 @@ def crear_app(
             Route("/comida/productos", guardar_productos, methods=["POST"]),
             Route("/comida/producto", ver_producto),
             Route("/comida/propio/{id:int}", ver_comida_propio),
+            Route("/comida/generico/{codigo}", ver_generico),
             Route("/comida/etiqueta", leer_etiqueta_foto, methods=["POST"]),
             Route("/comida/anadir", anadir, methods=["POST"]),
             Route("/comida/{id:int}/borrar", borrar, methods=["POST"]),

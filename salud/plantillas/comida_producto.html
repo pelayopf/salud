@@ -53,6 +53,11 @@
   <p class="suave">Valores del producto preparado, según Open Food Facts</p>
   {% endif %}
 
+  {% if producto.origen == "ciqual" %}
+  <p>
+    <a class="boton secundario" href="/comida/nuevo?generico={{ generico }}&fecha={{ fecha }}{% if momento_defecto %}&momento={{ momento_defecto | urlencode }}{% endif %}">Guardar en Mis productos</a>
+  </p>
+  {% else %}
   <details class="panel-interno"{% if producto.incompleto %} open{% endif %}>
     <summary>Corregir valores</summary>
     {% set p = producto %}
@@ -61,15 +66,27 @@
     {% set codigo_editable = False %}
     {% include "_formulario_producto.html" %}
   </details>
+  {% endif %}
 
   <h2>Añadir al día</h2>
   <form class="formulario" method="post" action="/comida/anadir">
-    {% if producto.id_propio and not producto.codigo %}
+    {% if generico %}
+    <input type="hidden" name="generico" value="{{ generico }}">
+    {% elif producto.id_propio and not producto.codigo %}
     <input type="hidden" name="propio" value="{{ producto.id_propio }}">
     {% else %}
     <input type="hidden" name="codigo" value="{{ producto.codigo }}">
     {% endif %}
     <input type="hidden" name="fecha" value="{{ fecha }}">
+
+    {% if producto.racion_g and producto.racion_nombre %}
+    <div class="acciones botones-rapidos">
+      {% for n in (1, 2, 3) %}
+      {% set peso = (producto.racion_g * n) | round | int %}
+      <button type="button" class="boton secundario" data-cantidad="{{ peso }}">{{ n }} {{ producto.racion_nombre if n == 1 else (producto.racion_nombre if producto.racion_nombre.endswith('s') else producto.racion_nombre ~ 's') }} ({{ peso }} {{ producto.unidad }})</button>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     <label for="cantidad">Cantidad ({{ producto.unidad }})</label>
     <input id="cantidad" name="cantidad" type="number" min="1" value="100" required>
@@ -91,5 +108,8 @@
       <button type="submit" class="boton">Añadir</button>
     </div>
   </form>
+  {% if ciqual %}
+  <p class="suave">Valores de {{ ciqual.FUENTE }}</p>
+  {% endif %}
 </section>
 {% endblock %}

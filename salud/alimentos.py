@@ -18,7 +18,7 @@ from typing import Any, Literal, NamedTuple
 
 import httpx
 
-from . import db
+from . import ciqual, db
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
 CAMPOS = (
@@ -30,6 +30,8 @@ CAMPOS = (
     "quantity",
     "product_quantity_unit",
     "nutriments",
+    "serving_quantity",
+    "serving_size",
 )
 TIMEOUT = 10.0
 KJ_POR_KCAL = 4.184
@@ -74,6 +76,8 @@ class Producto:
     preparado: bool = False
     origen: str = "off"
     id_propio: int | None = None
+    racion_g: float | None = None
+    racion_nombre: str | None = None
 
     @property
     def incompleto(self) -> bool:
@@ -224,6 +228,10 @@ def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
             grasas = grasas_prep
             preparado = True
 
+    sq = _numero(p.get("serving_quantity"))
+    racion_g = sq if sq is not None and sq > 0 else None
+    racion_nombre = "ración" if racion_g is not None else None
+
     return Producto(
         codigo=codigo,
         nombre=_texto(p.get("product_name_es")) or _texto(p.get("product_name")),
@@ -235,6 +243,8 @@ def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
         hidratos=hidratos,
         grasas=grasas,
         preparado=preparado,
+        racion_g=racion_g,
+        racion_nombre=racion_nombre,
     )
 
 
@@ -268,6 +278,13 @@ def producto_desde_fila(fila: sqlite3.Row) -> Producto:
 
 def producto_desde_propio(fila: sqlite3.Row, nutriscore: str | None = None) -> Producto:
     """Construye un Producto a partir de una fila de la tabla productos_propios."""
+    try:
+        racion_g = fila["racion_g"]
+        racion_nombre = fila["racion_nombre"]
+    except (IndexError, KeyError):
+        racion_g = None
+        racion_nombre = None
+
     return Producto(
         codigo=fila["codigo"] or "",
         nombre=fila["nombre"],
@@ -281,7 +298,48 @@ def producto_desde_propio(fila: sqlite3.Row, nutriscore: str | None = None) -> P
         preparado=False,
         origen=fila["origen"],
         id_propio=fila["id"],
+        racion_g=racion_g,
+        racion_nombre=racion_nombre,
     )
+
+
+def producto_desde_generico(g: ciqual.Generico) -> Producto:
+    """Construye un Producto a partir de un alimento genérico de CIQUAL."""
+    return Producto(
+        codigo="",
+        nombre=g.nombre,
+        marca=None,
+        nutriscore=None,
+        unidad="g",
+        kcal=g.kcal,
+        proteinas=g.proteinas,
+        hidratos=g.hidratos,
+        grasas=g.grasas,
+        preparado=False,
+        origen="ciqual",
+    )
+
+
+def nombre_con_raciones(
+    nombre: str,
+    cantidad: float,
+    racion_g: float | None,
+    racion_nombre: str | None,
+) -> str:
+    """Añade la ración al nombre si la cantidad es un múltiplo exacto de la ración."""
+    if not racion_g or racion_g <= 0 or not racion_nombre:
+        return nombre
+
+    ratio = cantidad / racion_g
+    n = round(ratio)
+    if n >= 1 and abs(cantidad - n * racion_g) < 1e-6:
+        if n == 1:
+            texto_racion = f"1 {racion_nombre}"
+        else:
+            plural = racion_nombre if racion_nombre.endswith("s") else f"{racion_nombre}s"
+            texto_racion = f"{n} {plural}"
+        return f"{nombre} ({texto_racion})"
+    return nombre
 
 
 def obtener_producto(

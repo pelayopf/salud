@@ -991,3 +991,143 @@ def test_web_comida_objetivos_post_guardar_y_error(settings, con):
     ajustes_despues = db.ajustes_comida(con)
     # El déficit sigue siendo 350, no 400
     assert ajustes_despues.deficit_kcal == 350
+
+
+def test_datos_producto_raciones():
+    # Válida con peso y nombre
+    dp = datos_producto(
+        {
+            "nombre": "Plátano",
+            "unidad": "g",
+            "racion_g": "120",
+            "racion_nombre": "plátano",
+        }
+    )
+    assert dp.racion_g == 120.0
+    assert dp.racion_nombre == "plátano"
+
+    # Válida con peso sin nombre -> defecto "ración"
+    dp_sin_nombre = datos_producto(
+        {
+            "nombre": "Plátano",
+            "unidad": "g",
+            "racion_g": "120",
+        }
+    )
+    assert dp_sin_nombre.racion_g == 120.0
+    assert dp_sin_nombre.racion_nombre == "ración"
+
+    # Nombre sin peso -> error
+    with pytest.raises(ValueError, match="Falta el peso de la ración"):
+        datos_producto(
+            {
+                "nombre": "Plátano",
+                "unidad": "g",
+                "racion_nombre": "plátano",
+            }
+        )
+
+    # Peso 0 -> error
+    with pytest.raises(ValueError, match="entre 1 y 2000"):
+        datos_producto(
+            {
+                "nombre": "Plátano",
+                "unidad": "g",
+                "racion_g": "0",
+            }
+        )
+
+    # Peso 5000 -> error
+    with pytest.raises(ValueError, match="entre 1 y 2000"):
+        datos_producto(
+            {
+                "nombre": "Plátano",
+                "unidad": "g",
+                "racion_g": "5000",
+            }
+        )
+
+
+def test_web_comida_propio_con_racion(settings, con):
+    id_ = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Plátano de Canarias",
+        marca=None,
+        unidad="g",
+        kcal=89.0,
+        proteinas=1.1,
+        hidratos=22.8,
+        grasas=0.3,
+        origen="manual",
+        racion_g=120.0,
+        racion_nombre="plátano",
+    )
+    c = cliente_web(settings)
+    r = c.get(f"/comida/propio/{id_}")
+    assert r.status_code == 200
+    assert "1 plátano (120 g)" in r.text
+
+
+def test_web_comida_generico_ciqual(settings, con, monkeypatch):
+    from salud import ciqual
+
+    generico_test = ciqual.Generico(
+        codigo="99999",
+        nombre="Manzana reineta",
+        nombre_original="Reinette apple",
+        grupo="frutas",
+        kcal=52.0,
+        proteinas=0.3,
+        hidratos=12.0,
+        grasas=0.2,
+        fibra=2.4,
+        azucares=10.0,
+        sal=0.01,
+    )
+
+    monkeypatch.setattr(
+        ciqual,
+        "por_codigo",
+        lambda cod: generico_test if cod == "99999" else None,
+    )
+
+    c = cliente_web(settings)
+
+    # 1. GET /comida/generico/99999 -> 200 con "CIQUAL" y nombre
+    r = c.get("/comida/generico/99999")
+    assert r.status_code == 200
+    assert "CIQUAL" in r.text
+    assert "Manzana reineta" in r.text
+    assert "Guardar en Mis productos" in r.text
+
+    # 2. GET con código inexistente -> 404
+    r_404 = c.get("/comida/generico/00000")
+    assert r_404.status_code == 404
+
+    # 3. POST /comida/anadir con generico -> comida guardada con nutrientes calculados
+    r_anadir = c.post(
+        "/comida/anadir",
+        data={
+            "generico": "99999",
+            "cantidad": "200",
+            "momento": "comida",
+            "fecha": "2026-01-10",
+        },
+    )
+    assert r_anadir.status_code == 303
+    comidas = db.comidas(con, "2026-01-10")
+    assert len(comidas) == 1
+    assert comidas[0].nombre == "Manzana reineta"
+    assert comidas[0].cantidad == 200.0
+    assert comidas[0].kcal == 104.0
+    assert comidas[0].proteinas == 0.6
+    assert comidas[0].codigo is None
+
+    # 4. /comida/nuevo?generico=99999 -> formulario prerrellenado
+    r_nuevo = c.get("/comida/nuevo?generico=99999")
+    assert r_nuevo.status_code == 200
+    assert "Manzana reineta" in r_nuevo.text
+    assert 'value="52.0"' in r_nuevo.text or 'value="52"' in r_nuevo.text
+    assert 'name="origen" value="ciqual"' in r_nuevo.text

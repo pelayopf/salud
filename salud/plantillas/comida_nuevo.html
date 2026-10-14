@@ -9,7 +9,7 @@
 
 <section class="panel">
   <h1>Nuevo producto</h1>
-  {% set p = None %}
+  {% set p = p | default(None) %}
   {% set codigo_editable = True %}
   {% set id_propio = None %}
   {% include "_formulario_producto.html" %}

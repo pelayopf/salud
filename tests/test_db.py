@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import sqlite3
+
 from conftest import hay
 
 from salud import db, metricas
@@ -685,3 +689,60 @@ def test_consejos_comida(con):
     assert "creado" in c
 
     assert db.ultimo_consejo(con, "2026-01-11") is None
+
+
+def test_añadir_columnas_migracion(tmp_path):
+    db_file = tmp_path / "antigua.db"
+    con_raw = sqlite3.connect(db_file)
+    con_raw.execute("""
+    CREATE TABLE productos_propios (
+        id INTEGER PRIMARY KEY,
+        codigo TEXT UNIQUE,
+        nombre TEXT NOT NULL,
+        marca TEXT,
+        unidad TEXT NOT NULL,
+        kcal REAL,
+        proteinas REAL,
+        hidratos REAL,
+        grasas REAL,
+        origen TEXT NOT NULL,
+        creado TEXT NOT NULL,
+        actualizado TEXT NOT NULL
+    );
+    """)
+    con_raw.close()
+
+    con = db.conectar(db_file)
+    columnas = {f["name"] for f in con.execute("PRAGMA table_info(productos_propios)").fetchall()}
+    assert "racion_g" in columnas
+    assert "racion_nombre" in columnas
+    con.close()
+
+    con2 = db.conectar(db_file)
+    columnas2 = {f["name"] for f in con2.execute("PRAGMA table_info(productos_propios)").fetchall()}
+    assert "racion_g" in columnas2
+    assert "racion_nombre" in columnas2
+    con2.close()
+
+
+def test_guardar_producto_propio_con_raciones(con):
+    id_ = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Plátano",
+        marca=None,
+        unidad="g",
+        kcal=89.0,
+        proteinas=1.1,
+        hidratos=22.8,
+        grasas=0.3,
+        origen="ciqual",
+        racion_g=120.0,
+        racion_nombre="plátano",
+    )
+    fila = db.leer_producto_propio(con, id_)
+    assert fila is not None
+    assert fila["racion_g"] == 120.0
+    assert fila["racion_nombre"] == "plátano"
+    assert fila["origen"] == "ciqual"
