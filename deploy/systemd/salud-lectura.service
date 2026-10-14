@@ -1,0 +1,14 @@
+[Unit]
+Description=Salud: traer Garmin y preparar la lectura del día con Claude Code
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pelayo
+WorkingDirectory=/home/pelayo/salud
+# claude y uv viven en ~/.local/bin; la sesión de Claude es la de pelayo (~/.claude).
+Environment=PATH=/home/pelayo/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pelayo/.local/bin/uv run salud lectura --sincronizar
+TimeoutStartSec=20min

@@ -1,0 +1,28 @@
+# Secrets / entorno local
+.env
+
+# Datos de salud (nunca al repo)
+data/
+*.db
+*.db-*
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Editor / SO
+.vscode/
+.idea/
+
+# Índice local de CodeGraph
+.codegraph/

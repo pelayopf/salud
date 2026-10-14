@@ -1,0 +1,10 @@
+[Unit]
+Description=Salud: copia cifrada diaria
+
+[Timer]
+# Después de las de Vaultwarden (03:00) y finanzas (03:20); antes de los reinicios de las 04:30.
+OnCalendar=*-*-* 03:40 Europe/Madrid
+Persistent=true
+
+[Install]
+WantedBy=timers.target

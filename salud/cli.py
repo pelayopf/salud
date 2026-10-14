@@ -1,0 +1,171 @@
+"""Línea de órdenes: `salud serve | sync | lectura | garmin-entrar | estado`."""
+
+from __future__ import annotations
+
+import argparse
+import getpass
+import sys
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from . import db, garmin, lectura, sync
+from .config import ConfigError, Settings, load_settings
+from .garmin import GarminNoConectado
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8791
+# Los últimos días se vuelven a pedir: Garmin completa el día cuando el reloj sincroniza.
+DIAS_SYNC = 3
+DIAS_SYNC_LECTURA = 2
+
+
+def _hoy() -> date:
+    return datetime.now(ZoneInfo("Europe/Madrid")).date()
+
+
+def _fecha(valor: str) -> date:
+    try:
+        return date.fromisoformat(valor)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"fecha no válida (AAAA-MM-DD): {valor}") from exc
+
+
+def _sincronizar(settings: Settings, desde: date, hasta: date) -> int:
+    try:
+        cliente = garmin.conectar(settings.garmin_tokens)
+    except GarminNoConectado as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    con = db.conectar(settings.db_path)
+    try:
+        r = sync.sincronizar(con, cliente, desde, hasta, avisar=lambda m: print(m, flush=True))
+    finally:
+        con.close()
+    print(f"{r.estado}: {r.metricas} datos y {r.actividades} actividades")
+    for e in r.errores:
+        print(f"  fallo: {e}", file=sys.stderr)
+    return 0 if r.estado != "error" else 1
+
+
+def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
+    """Arranca la web."""
+    import uvicorn
+
+    from .web import crear_app
+
+    app = crear_app(
+        settings,
+        abrir_db=lambda: db.conectar(settings.db_path),
+        conectar_garmin=lambda: garmin.conectar(settings.garmin_tokens),
+    )
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
+    return 0
+
+
+def cmd_sync(settings: Settings, args: argparse.Namespace) -> int:
+    """Trae de Garmin los últimos días (o desde una fecha)."""
+    hasta = _hoy()
+    desde = args.desde or hasta - timedelta(days=args.dias - 1)
+    return _sincronizar(settings, desde, hasta)
+
+
+def cmd_lectura(settings: Settings, args: argparse.Namespace) -> int:
+    """Prepara la lectura del día con Claude Code."""
+    fecha = args.fecha or _hoy()
+    con = db.conectar(settings.db_path)
+    try:
+        previa = db.lectura(con, fecha.isoformat())
+        if previa and previa["estado"] == "ok" and not args.rehacer:
+            print(f"Ya hay lectura del {fecha} (usa --rehacer para repetirla)")
+            return 0
+    finally:
+        con.close()
+    if args.sincronizar:
+        # Si Garmin falla, la lectura se hace igual con lo que haya.
+        _sincronizar(settings, fecha - timedelta(days=DIAS_SYNC_LECTURA - 1), fecha)
+    con = db.conectar(settings.db_path)
+    try:
+        contenido = lectura.generar(con, settings, fecha)
+    except lectura.LecturaError as exc:
+        print(f"La lectura falló: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        con.close()
+    print(f"[{contenido['estado']}] {contenido['titular']}")
+    print(contenido["analisis"])
+    print(f"Entreno: {contenido['entreno']['titulo']}. {contenido['entreno']['detalle']}")
+    print(f"Comida: {contenido['comida']}")
+    for a in contenido["alertas"]:
+        print(f"Ojo: {a}")
+    return 0
+
+
+def cmd_garmin_entrar(settings: Settings, _args: argparse.Namespace) -> int:
+    """Entra en Garmin y guarda la sesión (solo los tokens)."""
+    correo = input("Correo de Garmin: ").strip()
+    contrasena = getpass.getpass("Contraseña (no se guarda): ")
+    try:
+        nombre = garmin.entrar(
+            settings.garmin_tokens,
+            correo,
+            contrasena,
+            lambda: input("Código de verificación que te ha mandado Garmin: ").strip(),
+        )
+    except Exception as exc:  # la librería lanza varios tipos según el fallo
+        print(f"No se pudo entrar: {exc}", file=sys.stderr)
+        return 1
+    print(f"Sesión de Garmin guardada en {settings.garmin_tokens} ({nombre})")
+    return 0
+
+
+def cmd_estado(settings: Settings, _args: argparse.Namespace) -> int:
+    """Resume qué hay en la base de datos."""
+    con = db.conectar(settings.db_path)
+    try:
+        s = db.ultima_sincronizacion(con, "garmin")
+        n = con.execute("SELECT COUNT(*), MIN(fecha), MAX(fecha) FROM metricas").fetchone()
+        a = con.execute("SELECT COUNT(*) FROM actividades").fetchone()[0]
+        lecturas = db.lecturas(con, limite=1)
+    finally:
+        con.close()
+    print(f"Base de datos: {settings.db_path}")
+    print(f"Métricas: {n[0]} ({n[1]} a {n[2]}) · actividades: {a}")
+    print(f"Última sincronización: {s['hecha']} ({s['estado']})" if s else "Sin sincronizar")
+    if lecturas:
+        ultima = lecturas[0]
+        print(f"Última lectura: {ultima['fecha']} ({ultima['estado']})")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Punto de entrada."""
+    parser = argparse.ArgumentParser(prog="salud")
+    sub = parser.add_subparsers(dest="comando", required=True)
+    serve = sub.add_parser("serve", help="arranca la web")
+    serve.add_argument("--host", default=DEFAULT_HOST)
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve.set_defaults(func=cmd_serve)
+    s = sub.add_parser("sync", help="trae los datos de Garmin")
+    s.add_argument("--dias", type=int, default=DIAS_SYNC, help="últimos N días (3)")
+    s.add_argument("--desde", type=_fecha, help="desde esta fecha hasta hoy (AAAA-MM-DD)")
+    s.set_defaults(func=cmd_sync)
+    lec = sub.add_parser("lectura", help="prepara la lectura del día con Claude")
+    lec.add_argument("--fecha", type=_fecha, help="otro día (AAAA-MM-DD)")
+    lec.add_argument("--rehacer", action="store_true", help="aunque ya haya una")
+    lec.add_argument("--sincronizar", action="store_true", help="trae antes los datos de Garmin")
+    lec.set_defaults(func=cmd_lectura)
+    sub.add_parser("garmin-entrar", help="entra en Garmin y guarda la sesión").set_defaults(
+        func=cmd_garmin_entrar
+    )
+    sub.add_parser("estado", help="qué hay en la base de datos").set_defaults(func=cmd_estado)
+    args = parser.parse_args(argv)
+    try:
+        settings = load_settings()
+    except ConfigError as exc:
+        print(f"Configuración: {exc}", file=sys.stderr)
+        return 2
+    return args.func(settings, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

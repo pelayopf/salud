@@ -1,0 +1,20 @@
+[Unit]
+Description=Salud: web (solo tailnet, Tailscale Serve :8446)
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pelayo
+WorkingDirectory=/home/pelayo/salud
+# La web puede pedir la lectura a Claude Code (botón de Hoy): necesita ~/.local/bin.
+Environment=PATH=/home/pelayo/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pelayo/.local/bin/uv run salud serve
+# uv sale con 143 al recibir SIGTERM: es una parada normal, no un fallo.
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

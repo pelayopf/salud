@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Actividades · Salud{% endblock %}
+{% block contenido %}
+<h1>Actividades</h1>
+<nav class="filtros" aria-label="Periodo">
+  {% for p in periodos %}
+  <a href="/actividades?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{% if p == 365 %}1 año{% else %}{{ p }} días{% endif %}</a>
+  {% endfor %}
+</nav>
+{% if actividades %}
+<div class="panel lista">
+  {% for a in actividades %}
+  {% include "_actividad.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<p class="panel suave">No hay actividades en este periodo.</p>
+{% endif %}
+{% endblock %}

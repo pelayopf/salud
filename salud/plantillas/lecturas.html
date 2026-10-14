@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Lecturas · Salud{% endblock %}
+{% block contenido %}
+<h1>Lecturas</h1>
+{% set estados = {'verde': 'Adelante', 'ambar': 'Con cabeza', 'rojo': 'Toca recuperar'} %}
+{% if lecturas %}
+<div class="panel lista">
+  {% for l in lecturas %}
+  <a class="fila enlace" href="/?fecha={{ l.fecha }}">
+    <div>
+      <div class="suave">{{ l.fecha | fecha_larga }}</div>
+      {% if l.contenido %}
+      <strong>{{ l.contenido.titular }}</strong>
+      <div class="suave">{{ l.contenido.entreno.titulo }}</div>
+      {% else %}
+      <span class="suave">Falló: {{ l.error }}</span>
+      {% endif %}
+    </div>
+    {% if l.contenido %}<span class="etiqueta estado-{{ l.contenido.estado }}">{{ estados[l.contenido.estado] }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="panel suave">Todavía no hay lecturas. La primera se prepara cada mañana, o a mano desde Hoy.</p>
+{% endif %}
+{% endblock %}

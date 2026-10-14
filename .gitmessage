@@ -1,0 +1,18 @@
+tipo(scope): resumen en imperativo, minúsculas, sin punto final
+
+# Cuerpo opcional (por qué, no qué): envuelto a ~72 columnas.
+#
+# Footer opcional: BREAKING CHANGE: ... / Refs: #123
+#
+# Tipos: feat, fix, refactor, docs, test, chore, perf, style
+#
+# Scopes usados en este repo:
+#   garmin   - cliente y extracción de datos de Garmin (garmin.py, metricas.py)
+#   sync     - sincronización de las fuentes con la base de datos (sync.py)
+#   lectura  - lectura diaria con Claude Code (lectura.py)
+#   web      - web, plantillas y gráficas (web.py, plantillas/, estaticos/, graficas.py)
+#   db       - esquema y acceso a SQLite (db.py)
+#   deploy   - systemd, backup y despliegue en calamar (deploy/)
+#   repo     - scaffolding del repositorio (gitignore, readme, config de herramientas)
+#
+# Si ninguno encaja, propón uno nuevo explícitamente y añádelo aquí.

@@ -1,0 +1,12 @@
+<div class="fila actividad">
+  <div>
+    <strong>{{ a.nombre_tipo }}</strong>{% if a.nombre %} <span class="suave">· {{ a.nombre }}</span>{% endif %}
+    <div class="suave">{{ a.fecha | fecha_larga }}, {{ a.hora }}{% if a.duracion %} · {{ a.duracion }}{% endif %}{% if a.km %} · {{ a.km }} km{% endif %}</div>
+  </div>
+  <div class="datos-actividad suave">
+    {% if a.fc_media %}<span>FC {{ a.fc_media | cifra }}{% if a.fc_max %}/{{ a.fc_max | cifra }}{% endif %}</span>{% endif %}
+    {% if a.potencia_normalizada %}<span>NP {{ a.potencia_normalizada | cifra }} W</span>{% elif a.potencia_media %}<span>{{ a.potencia_media | cifra }} W</span>{% endif %}
+    {% if a.carga %}<span>Carga {{ a.carga | cifra }}</span>{% endif %}
+    {% if a.efecto_aerobico %}<span>Efecto {{ a.efecto_aerobico | cifra(1) }}/{{ (a.efecto_anaerobico or 0) | cifra(1) }}</span>{% endif %}
+  </div>
+</div>

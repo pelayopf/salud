@@ -1,0 +1,10 @@
+[Unit]
+Description=Salud: lectura del día cada mañana
+
+[Timer]
+# Después de despertar, para que el reloj haya mandado el sueño y la VFC.
+OnCalendar=*-*-* 08:15 Europe/Madrid
+Persistent=true
+
+[Install]
+WantedBy=timers.target

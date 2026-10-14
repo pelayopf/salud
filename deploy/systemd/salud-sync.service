@@ -1,0 +1,12 @@
+[Unit]
+Description=Salud: traer los últimos días de Garmin
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pelayo
+WorkingDirectory=/home/pelayo/salud
+ExecStart=/home/pelayo/.local/bin/uv run salud sync
+TimeoutStartSec=10min

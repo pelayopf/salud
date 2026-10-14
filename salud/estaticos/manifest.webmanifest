@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Salud",
+  "short_name": "Salud",
+  "description": "Cómo estás: sueño, VFC, carga, peso y la lectura del día.",
+  "lang": "es",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f4ee",
+  "theme_color": "#0e4a5c",
+  "icons": [
+    { "src": "/estaticos/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/estaticos/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/estaticos/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

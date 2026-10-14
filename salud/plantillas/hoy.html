@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block titulo %}Hoy · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+
+<div class="cabecera-dia">
+  <a class="flecha" href="/?fecha={{ anterior }}" aria-label="Día anterior">‹</a>
+  <h1>{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</h1>
+  {% if siguiente %}<a class="flecha" href="/?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
+</div>
+
+{% set estados = {
+  'verde': ('Adelante', '<path d="M5 12.5 10 17l9-10"/>'),
+  'ambar': ('Con cabeza', '<path d="M12 6v8M12 18h.01"/>'),
+  'rojo': ('Toca recuperar', '<path d="M7 7l10 10M17 7 7 17"/>'),
+} %}
+{% set intensidades = {'descanso': 'Descanso', 'suave': 'Suave', 'moderada': 'Moderada', 'alta': 'Alta'} %}
+<section class="panel lectura{% if lectura and lectura.contenido %} estado-{{ lectura.contenido.estado }}{% endif %}" aria-labelledby="titulo-lectura">
+  {% if lectura and lectura.contenido %}
+  {% set c = lectura.contenido %}
+  <p class="estado">
+    <svg viewBox="0 0 24 24" aria-hidden="true">{{ estados[c.estado][1] | safe }}</svg>
+    {{ estados[c.estado][0] }}
+  </p>
+  <h2 id="titulo-lectura" class="titular">{{ c.titular }}</h2>
+  <p>{{ c.analisis }}</p>
+  <div class="bloque">
+    <h3>Entreno · {{ intensidades.get(c.entreno.intensidad, c.entreno.intensidad) }}{% if c.entreno.duracion_min %} · {{ c.entreno.duracion_min }} min{% endif %}</h3>
+    <p><strong>{{ c.entreno.titulo }}</strong>. {{ c.entreno.detalle }}</p>
+  </div>
+  <div class="bloque">
+    <h3>Comida</h3>
+    <p>{{ c.comida }}</p>
+  </div>
+  {% if c.alertas %}
+  <div class="bloque alertas">
+    <h3>Ojo</h3>
+    <ul>{% for a in c.alertas %}<li>{{ a }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <p class="suave pie-lectura">Lectura hecha con Claude {{ lectura.generada | hace }}. No sustituye a un médico.</p>
+  {% elif generando %}
+  <h2 id="titulo-lectura" class="titular">Preparando la lectura…</h2>
+  <p class="suave">Tarda un minuto o dos. Recarga la página.</p>
+  {% else %}
+  <h2 id="titulo-lectura" class="titular">{% if es_hoy %}Aún no hay lectura de hoy{% else %}No hubo lectura este día{% endif %}</h2>
+  {% if lectura and lectura.error %}<p class="suave">La última vez falló: {{ lectura.error }}</p>{% endif %}
+  {% endif %}
+  {% if es_hoy and not generando %}
+  <form method="post" action="/lectura">
+    <button class="boton{% if lectura and lectura.contenido %} secundario{% endif %}">{% if lectura and lectura.contenido %}Rehacer la lectura{% else %}Preparar la lectura{% endif %}</button>
+  </form>
+  {% endif %}
+</section>
+
+<h2>Cómo estás</h2>
+<div class="tarjetas">
+  {% for t in tarjetas %}
+  <article class="panel tarjeta">
+    <h3>{{ t.titulo }}</h3>
+    <div class="cifra-linea">
+      <p class="cifra">{{ t.valor }}{% if t.unidad and t.valor != '—' %}<span class="unidad"> {{ t.unidad }}</span>{% endif %}</p>
+      {{ t.spark }}
+    </div>
+    {% if t.comparacion %}<p class="comparacion {{ t.clase }}">{{ t.comparacion }}</p>{% endif %}
+    {% if t.detalle %}<p class="suave">{{ t.detalle }}</p>{% endif %}
+    {% if t.fecha %}<p class="suave">Último dato: {{ t.fecha | fecha_larga }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+
+{% if rendimiento %}
+<h2>Rendimiento</h2>
+<div class="panel lista">
+  {% for r in rendimiento %}
+  <div class="fila">
+    <span>{{ r.titulo }}</span>
+    <span class="derecha"><strong>{{ r.valor }}</strong> <span class="suave">· {{ r.fecha | fecha_corta }}</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="cabecera"><h2>Últimos 7 días</h2><a href="/actividades">Todas</a></div>
+{% if actividades %}
+<div class="panel lista">
+  {% for a in actividades %}
+  {% include "_actividad.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<p class="panel suave">Sin actividades esta semana.</p>
+{% endif %}
+
+<div class="pie">
+  <p class="suave">
+    Garmin: {% if sync %}sincronizado {{ sync.hecha | hace }}{% if sync.estado != 'ok' %} ({{ sync.estado }}){% endif %}{% else %}sin sincronizar todavía{% endif %}
+  </p>
+  <form method="post" action="/sincronizar"><button class="boton secundario">Sincronizar ahora</button></form>
+</div>
+{% endblock %}

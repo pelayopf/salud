@@ -1,0 +1,30 @@
+# Perfil para la lectura diaria. Copiar a ~/.config/salud/perfil.toml (fuera
+# del repo: son datos personales). Claude lo lee tal cual: se puede escribir
+# en texto libre lo que haga falta.
+
+nombre = "Nombre"
+
+[objetivos]
+peso_kg = 85
+grasa_pct = 18
+ciclismo = "Subir el FTP y la base aeróbica"
+otros = "Rendir los 60 minutos del partido sin bajar el ritmo"
+
+[semana_tipo]
+lunes = "Fútbol (alta intensidad, 60 min)"
+martes = "Descanso o rodillo suave"
+miercoles = "Fútbol"
+jueves = "Pádel"
+viernes = "Rodillo"
+sabado = "Descanso"
+domingo = "Partido"
+
+[equipo]
+dispositivos = "Forerunner 570, Edge 540, báscula Garmin Index"
+rodillo = "Wahoo Kickr Core 2"
+
+[notas]
+texto = """
+Cualquier cosa que deba tener en cuenta: lesiones, horarios, cómo le gusta
+que le hablen...
+"""

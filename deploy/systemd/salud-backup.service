@@ -1,0 +1,11 @@
+[Unit]
+Description=Salud: copia cifrada a Google Drive
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pelayo
+ExecStart=/home/pelayo/salud/deploy/backup.sh
+TimeoutStartSec=15min

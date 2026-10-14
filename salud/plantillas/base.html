@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e4a5c">
+<title>{% block titulo %}Salud{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/estaticos/icono.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/estaticos/icono-192.png">
+<link rel="stylesheet" href="/estaticos/estilos.css?v={{ version }}">
+</head>
+<body>
+{# Cada página marca su sección con {% set seccion = '...' %} o en el contexto. #}
+{% set seccion = seccion | default('') %}
+{% set secciones = [
+  ('hoy', '/', 'Hoy', '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>'),
+  ('tendencias', '/tendencias', 'Tendencias', '<path d="M4 19h16M5 15l4.5-4.5 3.5 3 6-6.5"/>'),
+  ('actividades', '/actividades', 'Actividades', '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>'),
+  ('lecturas', '/lecturas', 'Lecturas', '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>'),
+] %}
+<header class="barra">
+  <div class="barra-interior">
+    <a class="marca" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="15" fill="#f4f1e8" fill-opacity=".12"/>
+        <path d="M10 34h11l5-12 8 22 5-10h15" stroke="#f4f1e8" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="54" cy="34" r="4" fill="#f0a27a"/>
+      </svg>
+      Salud
+    </a>
+    <nav class="nav-escritorio" aria-label="Secciones">
+      {% for clave, url, nombre, _ in secciones %}
+      <a href="{{ url }}"{% if seccion == clave %} aria-current="page"{% endif %}>{{ nombre }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+</header>
+<main>
+{% block contenido %}{% endblock %}
+</main>
+<nav class="nav-inferior" aria-label="Secciones">
+  {% for clave, url, nombre, icono in secciones %}
+  <a href="{{ url }}"{% if seccion == clave %} aria-current="page"{% endif %}>
+    <span class="icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icono | safe }}</svg></span>
+    {{ nombre }}
+  </a>
+  {% endfor %}
+</nav>
+<div class="tooltip" role="tooltip" hidden></div>
+<script src="/estaticos/app.js?v={{ version }}" defer></script>
+</body>
+</html>
