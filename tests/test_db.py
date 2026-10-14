@@ -746,3 +746,176 @@ def test_guardar_producto_propio_con_raciones(con):
     assert fila["racion_g"] == 120.0
     assert fila["racion_nombre"] == "plátano"
     assert fila["origen"] == "ciqual"
+
+
+def test_buscar_productos(con):
+    # Propio con código
+    id_propio = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="8410000000001",
+        nombre="Pan de centeno",
+        marca="Hacendado",
+        unidad="g",
+        kcal=250.0,
+        proteinas=9.0,
+        hidratos=48.0,
+        grasas=1.5,
+        origen="manual",
+    )
+    # OFF en caché con código distinto
+    db.guardar_producto(
+        con,
+        codigo="8410000000002",
+        nombre="Pan de centeno integral",
+        marca="Bimbo",
+        nutriscore="a",
+        unidad="g",
+        kcal=230.0,
+        proteinas=8.5,
+        hidratos=45.0,
+        grasas=1.2,
+        datos={},
+    )
+    # OFF en caché con el MISMO código que el propio (debe descartarse por ser duplicado)
+    db.guardar_producto(
+        con,
+        codigo="8410000000001",
+        nombre="Pan de centeno de OFF",
+        marca="Hacendado",
+        nutriscore="b",
+        unidad="g",
+        kcal=255.0,
+        proteinas=9.0,
+        hidratos=48.0,
+        grasas=1.5,
+        datos={},
+    )
+    # Propio sin código
+    id_propio_sin_codigo = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Bizcocho casero",
+        marca="Casero",
+        unidad="g",
+        kcal=350.0,
+        proteinas=6.0,
+        hidratos=50.0,
+        grasas=14.0,
+        origen="manual",
+    )
+
+    # Búsqueda prefijo de palabras "pan cent": encuentra el propio y el de OFF
+    res = db.buscar_productos(con, "pan cent")
+    assert len(res) == 2
+    # Propios primero
+    assert res[0]["tipo"] == "propio"
+    assert res[0]["id"] == id_propio
+    assert res[0]["codigo"] == "8410000000001"
+    assert res[0]["nombre"] == "Pan de centeno"
+    assert res[0]["marca"] == "Hacendado"
+    assert res[0]["kcal"] == 250.0
+
+    assert res[1]["tipo"] == "off"
+    assert res[1]["id"] is None
+    assert res[1]["codigo"] == "8410000000002"
+    assert res[1]["nombre"] == "Pan de centeno integral"
+    assert res[1]["marca"] == "Bimbo"
+
+    # Búsqueda por marca
+    res_marca = db.buscar_productos(con, "bimbo")
+    assert len(res_marca) == 1
+    assert res_marca[0]["codigo"] == "8410000000002"
+
+    # Propio sin código
+    res_bizcocho = db.buscar_productos(con, "bizcocho")
+    assert len(res_bizcocho) == 1
+    assert res_bizcocho[0]["tipo"] == "propio"
+    assert res_bizcocho[0]["id"] == id_propio_sin_codigo
+    assert res_bizcocho[0]["codigo"] is None
+
+
+def test_comidas_anteriores(con):
+    # Comida reciente sin código (2026-01-10)
+    db.anadir_comida(
+        con,
+        fecha="2026-01-10",
+        momento="comida",
+        nombre="Tortilla de patatas",
+        cantidad=150.0,
+        unidad="g",
+        kcal=200.0,
+        codigo=None,
+    )
+    # Misma comida más antigua (2026-01-05): debe ignorarse (una por nombre, la más reciente)
+    db.anadir_comida(
+        con,
+        fecha="2026-01-05",
+        momento="cena",
+        nombre="tortilla de patatas",
+        cantidad=100.0,
+        unidad="g",
+        kcal=140.0,
+        codigo=None,
+    )
+    # Otra comida distinta que encaja (2026-01-08)
+    db.anadir_comida(
+        con,
+        fecha="2026-01-08",
+        momento="cena",
+        nombre="Tortilla francesa",
+        cantidad=80.0,
+        unidad="g",
+        kcal=120.0,
+        codigo=None,
+    )
+    # Comida con código: NO debe salir
+    db.anadir_comida(
+        con,
+        fecha="2026-01-09",
+        momento="comida",
+        nombre="Tortilla envasada",
+        cantidad=200.0,
+        unidad="g",
+        kcal=260.0,
+        codigo="8410000000009",
+    )
+    # Comida de hace más de 120 días (2025-08-01): NO debe salir
+    db.anadir_comida(
+        con,
+        fecha="2025-08-01",
+        momento="comida",
+        nombre="Tortilla campera",
+        cantidad=150.0,
+        unidad="g",
+        kcal=210.0,
+        codigo=None,
+    )
+
+    res = db.comidas_anteriores(con, "tort", hasta="2026-01-10")
+    nombres = [c.nombre for c in res]
+    assert nombres == ["Tortilla de patatas", "Tortilla francesa"]
+    assert res[0].fecha == "2026-01-10"
+    assert res[0].cantidad == 150.0
+
+
+def test_leer_comida(con):
+    id_ = db.anadir_comida(
+        con,
+        fecha="2026-01-10",
+        momento="desayuno",
+        nombre="Café con leche",
+        cantidad=200.0,
+        unidad="ml",
+        kcal=80.0,
+    )
+    c = db.leer_comida(con, id_)
+    assert c is not None
+    assert c.id == id_
+    assert c.nombre == "Café con leche"
+    assert c.momento == "desayuno"
+    assert c.cantidad == 200.0
+    assert c.unidad == "ml"
+    assert c.kcal == 80.0
+    assert db.leer_comida(con, 99999) is None

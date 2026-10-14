@@ -19,11 +19,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
@@ -869,6 +870,12 @@ def comidas(con: sqlite3.Connection, fecha: str) -> list[Comida]:
     return [_fila_a_comida(f) for f in filas]
 
 
+def leer_comida(con: sqlite3.Connection, id_: int) -> Comida | None:
+    """Lee una entrada del diario de comidas por su identificador, o None si no existe."""
+    fila = con.execute("SELECT * FROM comidas WHERE id = ?", (id_,)).fetchone()
+    return _fila_a_comida(fila) if fila is not None else None
+
+
 def calcular_totales(items: Iterable[Comida]) -> Totales:
     """Calcula la suma de nutrientes y las ausencias para un conjunto de comidas."""
     kcal = 0.0
@@ -952,6 +959,112 @@ def productos_recientes(con: sqlite3.Connection, limite: int = 8) -> list[sqlite
         """,
         (limite,),
     ).fetchall()
+
+
+def _encaja_palabras(palabras_busqueda: list[str], *textos: str | None) -> bool:
+    texto_completo = " ".join(t for t in textos if t)
+    tokens = [p for p in re.split(r"[^\w]+", normalizar_titulo(texto_completo)) if p]
+    return all(any(token.startswith(pb) for token in tokens) for pb in palabras_busqueda)
+
+
+def buscar_productos(con: sqlite3.Connection, texto: str, limite: int = 10) -> list[dict[str, Any]]:
+    """Busca productos propios y de la caché de Open Food Facts por nombre o marca."""
+    if limite <= 0:
+        return []
+    busqueda_norm = normalizar_titulo(texto)
+    palabras_busqueda = [p for p in re.split(r"[^\w]+", busqueda_norm) if len(p) >= 2]
+    if not palabras_busqueda:
+        return []
+
+    resultados: list[dict[str, Any]] = []
+    codigos_vistos: set[str] = set()
+
+    filas_propios = con.execute(
+        "SELECT id, codigo, nombre, marca, kcal FROM productos_propios ORDER BY actualizado DESC"
+    ).fetchall()
+    for f in filas_propios:
+        if _encaja_palabras(palabras_busqueda, f["nombre"], f["marca"]):
+            codigo = f["codigo"]
+            if codigo:
+                codigos_vistos.add(codigo)
+            resultados.append(
+                {
+                    "tipo": "propio",
+                    "id": f["id"],
+                    "codigo": codigo,
+                    "nombre": f["nombre"],
+                    "marca": f["marca"],
+                    "kcal": f["kcal"],
+                }
+            )
+            if len(resultados) >= limite:
+                return resultados
+
+    filas_off = con.execute(
+        "SELECT codigo, nombre, marca, kcal FROM productos ORDER BY consultado DESC"
+    ).fetchall()
+    for f in filas_off:
+        codigo = f["codigo"]
+        if codigo in codigos_vistos:
+            continue
+        if _encaja_palabras(palabras_busqueda, f["nombre"], f["marca"]):
+            codigos_vistos.add(codigo)
+            resultados.append(
+                {
+                    "tipo": "off",
+                    "id": None,
+                    "codigo": codigo,
+                    "nombre": f["nombre"],
+                    "marca": f["marca"],
+                    "kcal": f["kcal"],
+                }
+            )
+            if len(resultados) >= limite:
+                return resultados
+
+    return resultados
+
+
+def comidas_anteriores(
+    con: sqlite3.Connection, texto: str, hasta: str, limite: int = 8
+) -> list[Comida]:
+    """Comidas sin código de los últimos 120 días hasta 'hasta' que encajen por nombre."""
+    if limite <= 0:
+        return []
+    busqueda_norm = normalizar_titulo(texto)
+    palabras_busqueda = [p for p in re.split(r"[^\w]+", busqueda_norm) if len(p) >= 2]
+    if not palabras_busqueda:
+        return []
+
+    try:
+        hasta_dt = date.fromisoformat(hasta)
+    except ValueError:
+        return []
+
+    desde_str = (hasta_dt - timedelta(days=120)).isoformat()
+    filas = con.execute(
+        """
+        SELECT * FROM comidas
+        WHERE (codigo IS NULL OR codigo = '') AND fecha >= ? AND fecha <= ?
+        ORDER BY fecha DESC, id DESC
+        """,
+        (desde_str, hasta),
+    ).fetchall()
+
+    vistos_nombres: set[str] = set()
+    resultados: list[Comida] = []
+    for f in filas:
+        c = _fila_a_comida(f)
+        norm = normalizar_titulo(c.nombre)
+        if norm in vistos_nombres:
+            continue
+        if _encaja_palabras(palabras_busqueda, c.nombre):
+            vistos_nombres.add(norm)
+            resultados.append(c)
+            if len(resultados) >= limite:
+                break
+
+    return resultados
 
 
 def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
