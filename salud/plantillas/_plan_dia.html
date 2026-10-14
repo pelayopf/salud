@@ -8,6 +8,7 @@
       <span class="plan-datos">
         {% if p.hora %}<strong>{{ p.hora }}</strong>{% endif %}
         <span>{{ p.nombre }}</span>
+        {% if p.origen == "google" and p.titulo != p.nombre %}<span class="suave">· {{ p.titulo }}</span>{% endif %}
         {% if p.duracion %}<span class="suave">· {{ p.duracion }}</span>{% endif %}
         {% if p.intensidad %}<span class="suave">· {{ p.intensidad }}</span>{% endif %}
       </span>
