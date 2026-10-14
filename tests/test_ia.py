@@ -12,10 +12,12 @@ from salud.ia import (
     MOTORES,
     Adjunto,
     ErrorIA,
+    Estimacion,
     Etiqueta,
     IAOcupada,
     Tarea,
     ejecutar,
+    estimar_alimento,
     etiqueta_desde_respuesta,
     interpretar_agy,
     interpretar_claude,
@@ -594,3 +596,106 @@ def test_motor_agy_sin_datos_dos_veces_falla(tmp_path, monkeypatch):
     with pytest.raises(ErrorIA, match="no devolvió los datos"):
         motor_agy(tarea, settings)
     assert len(llamadas) == 2
+
+
+def test_estimar_alimento_valido(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        assert tarea.nombre == "estimar"
+        assert "Plátano" in tarea.instrucciones
+        return {
+            "conocido": True,
+            "nombre": "Plátano",
+            "unidad": "g",
+            "kcal_100": 89.0,
+            "proteinas_100": 1.1,
+            "hidratos_100": 22.8,
+            "grasas_100": 0.3,
+            "racion_g": 120.0,
+            "racion_nombre": "plátano mediano",
+            "aviso": "Valores medios de una pieza madura",
+        }
+
+    est = estimar_alimento(settings, "Plátano", motor=motor_falso)
+    assert isinstance(est, Estimacion)
+    assert est.nombre == "Plátano"
+    assert est.unidad == "g"
+    assert est.kcal == 89.0
+    assert est.proteinas == 1.1
+    assert est.hidratos == 22.8
+    assert est.grasas == 0.3
+    assert est.racion_g == 120.0
+    assert est.racion_nombre == "plátano mediano"
+    assert est.avisos[0] == "Valores estimados por IA: revísalos"
+    assert est.avisos[1] == "Valores medios de una pieza madura"
+
+
+def test_estimar_alimento_desconocido(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {"conocido": False}
+
+    with pytest.raises(ErrorIA, match="La IA no reconoce ese alimento"):
+        estimar_alimento(settings, "tornillo de acero", motor=motor_falso)
+
+
+def test_estimar_alimento_macros_fuera_de_rango(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "conocido": True,
+            "nombre": "Alimento raro",
+            "unidad": "g",
+            "kcal_100": 1500.0,  # fuera de rango (>950) -> None
+            "proteinas_100": 120.0,  # fuera de rango (>100) -> None
+            "hidratos_100": 50.0,
+            "grasas_100": 10.0,
+            "racion_g": 3000.0,  # fuera de rango (>2000) -> None
+            "racion_nombre": "ración enorme",
+            "aviso": None,
+        }
+
+    est = estimar_alimento(settings, "Alimento raro", motor=motor_falso)
+    assert est.kcal is None
+    assert est.proteinas is None
+    assert est.hidratos == 50.0
+    assert est.grasas == 10.0
+    assert est.racion_g is None
+    assert est.racion_nombre is None
+
+    # Si todos los macros son None o quedan descartados -> ErrorIA
+    def motor_todos_mal(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "conocido": True,
+            "nombre": "Nada",
+            "unidad": "g",
+            "kcal_100": None,
+            "proteinas_100": None,
+            "hidratos_100": None,
+            "grasas_100": None,
+            "racion_g": None,
+            "racion_nombre": None,
+            "aviso": None,
+        }
+
+    with pytest.raises(ErrorIA, match="La IA no ha podido estimar ese alimento"):
+        estimar_alimento(settings, "Nada", motor=motor_todos_mal)
+
+
+def test_estimar_alimento_texto_invalido(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_no_llamar(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        pytest.fail("El motor no debería haberse llamado")
+
+    with pytest.raises(ErrorIA, match="Escribe el alimento a estimar"):
+        estimar_alimento(settings, "a", motor=motor_no_llamar)
+
+    with pytest.raises(ErrorIA, match="Escribe el alimento a estimar"):
+        estimar_alimento(settings, "   ", motor=motor_no_llamar)
+
+    with pytest.raises(ErrorIA, match="Escribe el alimento a estimar"):
+        estimar_alimento(settings, "x" * 81, motor=motor_no_llamar)

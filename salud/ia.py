@@ -108,6 +108,21 @@ class Etiqueta:
     avisos: tuple[str, ...]  # notas para enseñar junto al formulario
 
 
+@dataclass(frozen=True)
+class Estimacion:
+    """Valores nutricionales y ración estimados por IA para un alimento."""
+
+    nombre: str
+    unidad: Unidad
+    kcal: float | None
+    proteinas: float | None
+    hidratos: float | None
+    grasas: float | None
+    racion_g: float | None
+    racion_nombre: str | None
+    avisos: tuple[str, ...]
+
+
 def tipo_imagen(datos: bytes) -> str | None:
     """Tipo MIME según los primeros bytes (JPEG, PNG o WebP); None si no es ninguno."""
     if datos.startswith(b"\xff\xd8\xff"):
@@ -558,3 +573,109 @@ def leer_etiqueta(
     )
     datos = ejecutar(tarea, settings, motor=motor)
     return etiqueta_desde_respuesta(datos)
+
+
+INSTRUCCIONES_ESTIMAR = """\
+Estima los valores nutricionales típicos por 100 g (o 100 ml si es una bebida) de este \
+alimento tal como se come habitualmente en España, y el peso de una ración o unidad \
+típica (por ejemplo, un plátano mediano pelado, una rebanada de pan, una lata).
+- Si no dice cómo está preparado, el alimento crudo o tal como se compra; si es un plato, \
+valores medios de una receta casera normal.
+- Valores de tablas de composición de referencia (BEDCA, CIQUAL, USDA), no inventes.
+- nombre: el alimento en castellano, corto ("Plátano", "Pan de centeno").
+- aviso: una frase solo si hay algo que el usuario debería revisar (p. ej. mucha \
+variación entre recetas); si no, null.
+- Si el texto no es un alimento, conocido: false.
+Alimento: """
+
+ESQUEMA_ESTIMAR: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "conocido": {"type": "boolean"},
+        "nombre": {"type": ["string", "null"]},
+        "unidad": {"type": ["string", "null"]},
+        "kcal_100": _NUMERO,
+        "proteinas_100": _NUMERO,
+        "hidratos_100": _NUMERO,
+        "grasas_100": _NUMERO,
+        "racion_g": _NUMERO,
+        "racion_nombre": {"type": ["string", "null"]},
+        "aviso": {"type": ["string", "null"]},
+    },
+    "required": [
+        "conocido",
+        "nombre",
+        "unidad",
+        "kcal_100",
+        "proteinas_100",
+        "hidratos_100",
+        "grasas_100",
+        "racion_g",
+        "racion_nombre",
+        "aviso",
+    ],
+    "additionalProperties": False,
+}
+
+
+def estimar_alimento(settings: Settings, texto: str, motor: Motor | None = None) -> Estimacion:
+    """Estima los valores nutricionales y ración de un alimento con IA."""
+    t = texto.strip()
+    if not (2 <= len(t) <= 80):
+        raise ErrorIA("Escribe el alimento a estimar")
+
+    tarea = Tarea(
+        nombre="estimar",
+        instrucciones=INSTRUCCIONES_ESTIMAR + t,
+        esquema=ESQUEMA_ESTIMAR,
+    )
+    datos = ejecutar(tarea, settings, motor=motor)
+
+    if datos.get("conocido") is not True:
+        raise ErrorIA("La IA no reconoce ese alimento")
+
+    nombre = _texto(datos.get("nombre"), MAX_TEXTO) or t
+    u = datos.get("unidad")
+    unidad: Unidad = u if u in ("g", "ml") else "g"
+
+    kcal = _numero(datos.get("kcal_100"))
+    proteinas = _numero(datos.get("proteinas_100"))
+    hidratos = _numero(datos.get("hidratos_100"))
+    grasas = _numero(datos.get("grasas_100"))
+
+    if kcal is not None and not (0 <= kcal <= MAX_KCAL_100):
+        kcal = None
+    if proteinas is not None and not (0 <= proteinas <= MAX_GRAMOS_100):
+        proteinas = None
+    if hidratos is not None and not (0 <= hidratos <= MAX_GRAMOS_100):
+        hidratos = None
+    if grasas is not None and not (0 <= grasas <= MAX_GRAMOS_100):
+        grasas = None
+
+    if kcal is None and proteinas is None and hidratos is None and grasas is None:
+        raise ErrorIA("La IA no ha podido estimar ese alimento")
+
+    rg = _numero(datos.get("racion_g"))
+    if rg is not None and 1 <= rg <= 2000:
+        racion_g = rg
+        racion_nombre = _texto(datos.get("racion_nombre"), 40)
+    else:
+        racion_g = None
+        racion_nombre = None
+
+    avisos = ["Valores estimados por IA: revísalos"]
+    aviso_modelo = _texto(datos.get("aviso"), MAX_AVISO)
+    if aviso_modelo is not None:
+        avisos.append(aviso_modelo)
+
+    return Estimacion(
+        nombre=nombre,
+        unidad=unidad,
+        kcal=kcal,
+        proteinas=proteinas,
+        hidratos=hidratos,
+        grasas=grasas,
+        racion_g=racion_g,
+        racion_nombre=racion_nombre,
+        avisos=tuple(avisos),
+    )
