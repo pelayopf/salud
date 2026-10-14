@@ -428,3 +428,15 @@ for (const form of document.querySelectorAll("form[data-producto]")) {
   }
 }
 
+const formConsejo = document.querySelector("form[data-consejo]");
+if (formConsejo) {
+  formConsejo.addEventListener("submit", () => {
+    const boton = formConsejo.querySelector("button");
+    if (boton) {
+      boton.disabled = true;
+      boton.textContent = "Pensando… (unos 30 s)";
+    }
+  });
+}
+
+

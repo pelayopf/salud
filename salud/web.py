@@ -36,7 +36,19 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import alimentos, calendario, db, garmin, graficas, ia, lectura, metricas, nutricion, sync
+from . import (
+    alimentos,
+    calendario,
+    consejo,
+    db,
+    garmin,
+    graficas,
+    ia,
+    lectura,
+    metricas,
+    nutricion,
+    sync,
+)
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -124,10 +136,24 @@ def hace(momento_utc: str | None) -> str:
     return f"el {m.day}/{m.month} a las {m:%H:%M}"
 
 
+def hora_local(momento_utc: str | None) -> str:
+    """Convierte una marca de tiempo UTC a hora local de Madrid HH:MM."""
+    if not momento_utc:
+        return ""
+    try:
+        dt = datetime.fromisoformat(momento_utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(ZONA).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
 PLANTILLAS.filters["horas"] = horas_y_minutos
 PLANTILLAS.filters["fecha_larga"] = fecha_larga
 PLANTILLAS.filters["fecha_corta"] = lambda f: graficas.fecha_corta(f)
 PLANTILLAS.filters["hace"] = hace
+PLANTILLAS.filters["hora_local"] = hora_local
 
 
 def _render(nombre: str, **contexto: Any) -> HTMLResponse:
@@ -135,8 +161,12 @@ def _render(nombre: str, **contexto: Any) -> HTMLResponse:
 
 
 def _volver(mensaje: str, destino: str = "/") -> RedirectResponse:
-    separador = "&" if "?" in destino else "?"
-    return RedirectResponse(f"{destino}{separador}{urlencode({'mensaje': mensaje})}", 303)
+    base, _, fragmento = destino.partition("#")
+    separador = "&" if "?" in base else "?"
+    url = f"{base}{separador}{urlencode({'mensaje': mensaje})}"
+    if fragmento:
+        url = f"{url}#{fragmento}"
+    return RedirectResponse(url, 303)
 
 
 async def _formulario(request: Request) -> dict[str, str]:
@@ -664,6 +694,7 @@ def crear_app(
     cliente_off: httpx.Client | None = None,
     lector_etiqueta: Callable[[bytes], ia.Etiqueta] | None = None,
     cliente_calendario: httpx.Client | None = None,
+    pedir_consejo: Callable[[sqlite3.Connection, str], dict[str, Any]] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
@@ -1151,6 +1182,36 @@ def crear_app(
             recientes = db.productos_recientes(con)
             propios = db.productos_propios(con)
             objetivo = nutricion.objetivo_dia(con, fecha, hoy())
+            consejo_hoy: dict[str, Any] | None = None
+            proximo: str | None = None
+            if fecha == hoy():
+                consejo_hoy = db.ultimo_consejo(con, fecha.isoformat())
+                manana = fecha + timedelta(days=1)
+                items_plan = calendario.plan(con, fecha, manana, fecha)
+                acts = db.actividades(con, fecha.isoformat(), manana.isoformat())
+                ahora_hora = datetime.now(ZONA).strftime("%H:%M")
+                for p in items_plan:
+                    acts_dia = [a for a in acts if a["fecha"] == p.fecha]
+                    hecho = (
+                        any(a["tipo"] == p.tipo for a in acts_dia)
+                        if p.tipo is not None
+                        else len(acts_dia) > 0
+                    )
+                    if hecho:
+                        continue
+                    if p.fecha == fecha.isoformat():
+                        if p.inicio and len(p.inicio) >= 5 and p.inicio[:5] <= ahora_hora:
+                            continue
+                    deporte = metricas.nombre_tipo(p.tipo) if p.tipo else p.titulo
+                    dia_str = "hoy" if p.fecha == fecha.isoformat() else "mañana"
+                    hora_str = f" {p.inicio[:5]}" if p.inicio else ""
+                    partes = [f"{deporte} {dia_str}{hora_str}"]
+                    if p.duracion_min:
+                        partes.append(f"{p.duracion_min} min")
+                    if p.intensidad:
+                        partes.append(p.intensidad)
+                    proximo = " · ".join(partes)
+                    break
         finally:
             con.close()
         comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
@@ -1193,6 +1254,8 @@ def crear_app(
             prog_momento=prog_momento,
             recientes=recientes,
             productos_propios=propios,
+            consejo=consejo_hoy,
+            proximo=proximo,
             momentos=db.MOMENTOS,
             momento_defecto=momento_defecto,
             momento_elegido=momento_elegido,
@@ -1585,6 +1648,26 @@ def crear_app(
         await run_in_threadpool(_hacer_borrar)
         return _volver("Entrada borrada", f"/comida?fecha={fecha}")
 
+    async def pedir_consejo_web(request: Request) -> Response:
+        datos = await _formulario(request)
+        nota = datos.get("nota", "")
+
+        def _trabajo() -> None:
+            con = abrir_db()
+            try:
+                if pedir_consejo is not None:
+                    pedir_consejo(con, nota)
+                else:
+                    consejo.pedir_consejo(con, settings, datetime.now(ZONA), nota)
+            finally:
+                con.close()
+
+        try:
+            await run_in_threadpool(_trabajo)
+            return _volver("Consejo listo", "/comida#consejo")
+        except (ia.IAOcupada, ia.ErrorIA) as exc:
+            return _volver(str(exc), "/comida")
+
     return Starlette(
         routes=[
             Route("/", ver_hoy),
@@ -1596,6 +1679,7 @@ def crear_app(
             Route("/calendario/titulo", calendario_titulo_web, methods=["POST"]),
             Route("/lecturas", ver_lecturas),
             Route("/comida", ver_comida),
+            Route("/comida/consejo", pedir_consejo_web, methods=["POST"]),
             Route("/comida/objetivos", ver_comida_objetivos),
             Route("/comida/objetivos", guardar_comida_objetivos, methods=["POST"]),
             Route("/comida/nuevo", ver_comida_nuevo),

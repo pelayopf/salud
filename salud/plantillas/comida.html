@@ -10,6 +10,54 @@
   {% if siguiente %}<a class="flecha" href="/comida?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
 </div>
 
+{% if es_hoy %}
+<section class="panel" id="consejo">
+  <div class="cabecera">
+    <h2>¿Qué como?</h2>
+    <span class="derecha suave">
+      {% if proximo %}Próximo ejercicio: {{ proximo }}{% else %}Nada planificado hoy ni mañana{% endif %}
+    </span>
+  </div>
+  <form class="formulario" method="post" action="/comida/consejo" data-consejo>
+    <textarea name="nota" maxlength="300" placeholder="Opcional: ceno fuera, tengo poco tiempo…"></textarea>
+    <div class="acciones">
+      <button type="submit" class="boton">¿Qué como?</button>
+    </div>
+  </form>
+  {% if consejo %}
+  <div class="consejo-detalle">
+    <p class="suave">Consejo de las {{ consejo.creado | hora_local }}</p>
+    <p><strong>{{ consejo.resumen }}</strong></p>
+    <div class="bloque">
+      <h3>Ahora</h3>
+      <p>{{ consejo.ahora }}</p>
+    </div>
+    <div class="bloque">
+      <h3>Antes</h3>
+      <p>{{ consejo.antes }}</p>
+    </div>
+    {% if consejo.durante %}
+    <div class="bloque">
+      <h3>Durante</h3>
+      <p>{{ consejo.durante }}</p>
+    </div>
+    {% endif %}
+    <div class="bloque">
+      <h3>Después</h3>
+      <p>{{ consejo.despues }}</p>
+    </div>
+    {% if consejo.avisos %}
+    <ul class="avisos-lista">
+      {% for aviso in consejo.avisos %}
+      <li>{{ aviso }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="panel" id="buscar">
   {% if momento_elegido %}
   <p class="suave">Añadiendo a: {{ momento_elegido | capitalize }}</p>

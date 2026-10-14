@@ -8,10 +8,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from conftest import GarminFalso
+from starlette.testclient import TestClient
 
 from salud import consejo, db, ia
 from salud.config import Settings
 from salud.metricas import Actividad, Metrica
+from salud.web import crear_app
 
 ZONA = ZoneInfo("Europe/Madrid")
 
@@ -232,3 +235,96 @@ def test_pedir_consejo(con, settings: Settings):
         )
     assert db.ultimo_consejo(con, "2026-01-11") is None
 
+
+def test_web_consejo(con, settings: Settings):
+    hoy = date(2026, 1, 10)
+
+    def pedir_falso(conexion: Any, nota: str) -> dict[str, Any]:
+        db.guardar_consejo(
+            conexion,
+            fecha="2026-01-10",
+            nota=nota,
+            contenido={
+                "resumen": "Comer algo rico",
+                "ahora": "Una manzana",
+                "antes": "Agua fresca",
+                "durante": "Nada",
+                "despues": "Cena nutritiva",
+                "avisos": ["Descansa"],
+            },
+            modelo="gemini-test",
+            segundos=1.5,
+        )
+        return db.ultimo_consejo(conexion, "2026-01-10") or {}
+
+    app = crear_app(
+        settings,
+        abrir_db=lambda: db.conectar(settings.db_path),
+        conectar_garmin=GarminFalso,
+        hoy=lambda: hoy,
+        pedir_consejo=pedir_falso,
+    )
+    client = TestClient(app, follow_redirects=False)
+
+    # POST con éxito -> 303 a /comida...#consejo
+    r_post = client.post("/comida/consejo", data={"nota": "ceno fuera"})
+    assert r_post.status_code == 303
+    loc = r_post.headers["location"]
+    assert loc.startswith("/comida")
+    assert loc.endswith("#consejo")
+
+    # GET /comida muestra "Consejo de las" y los apartados
+    r_get = client.get("/comida")
+    assert r_get.status_code == 200
+    assert "Consejo de las" in r_get.text
+    assert "Comer algo rico" in r_get.text
+    assert "Ahora" in r_get.text
+    assert "Antes" in r_get.text
+    assert "Durante" in r_get.text
+    assert "Después" in r_get.text
+    assert "Descansa" in r_get.text
+
+    # Con un falso que lanza ErrorIA -> mensaje "x"
+    def pedir_error(_conexion: Any, _nota: str) -> dict[str, Any]:
+        raise ia.ErrorIA("Error simulado de IA")
+
+    app_err = crear_app(
+        settings,
+        abrir_db=lambda: db.conectar(settings.db_path),
+        conectar_garmin=GarminFalso,
+        hoy=lambda: hoy,
+        pedir_consejo=pedir_error,
+    )
+    client_err = TestClient(app_err, follow_redirects=True)
+    r_err = client_err.post("/comida/consejo", data={"nota": ""})
+    assert r_err.status_code == 200
+    assert "Error simulado de IA" in r_err.text
+
+    # GET /comida de otro día -> no aparece el panel
+    r_otro = client.get("/comida?fecha=2026-01-09")
+    assert r_otro.status_code == 200
+    assert 'id="consejo"' not in r_otro.text
+
+    # Con planificado de hoy futuro -> "Próximo ejercicio"
+    db.reemplazar_planificado(
+        con,
+        origen="google",
+        desde="2026-01-10",
+        hasta="2026-01-10",
+        filas=[
+            db.Planificado(
+                fecha="2026-01-10",
+                inicio="23:59",
+                duracion_min=90,
+                titulo="Pádel",
+                tipo="paddelball",
+                intensidad="alta",
+                origen="google",
+                uid="p_futuro",
+            )
+        ],
+    )
+    r_prox = client.get("/comida")
+    assert r_prox.status_code == 200
+    assert "Próximo ejercicio" in r_prox.text
+    assert "Pádel hoy 23:59 · 90 min · alta" in r_prox.text
