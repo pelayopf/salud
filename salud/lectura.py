@@ -26,7 +26,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from . import db
+from . import db, tratamiento
 from .config import Settings
 from .metricas import CATALOGO, nombre_tipo, texto
 
@@ -251,6 +251,7 @@ def contexto(con: sqlite3.Connection, fecha: date) -> dict[str, Any]:
             if anterior and anterior["contenido"]
             else None
         ),
+        "tratamiento": tratamiento.resumen(con, fecha),
     }
 
 

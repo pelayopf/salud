@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import calendario, db, ia, lectura, metricas, nutricion
+from . import calendario, db, ia, lectura, metricas, nutricion, tratamiento
 from .config import Settings
 
 INSTRUCCIONES = """\
@@ -160,6 +160,7 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
         "actividades_hoy": actividades_hoy,
         "peso_kg": peso_kg,
         "perfil": perfil_txt,
+        "tratamiento": tratamiento.resumen(con, hoy),
     }
 
 
