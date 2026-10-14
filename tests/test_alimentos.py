@@ -561,12 +561,35 @@ def test_producto_desde_json_serving_quantity():
     assert prod.racion_nombre == "ración"
 
 
+def test_limpiar_racion_nombre():
+    assert alimentos.limpiar_racion_nombre("1 plátano mediano (sin piel)") == "plátano mediano"
+    assert (
+        alimentos.limpiar_racion_nombre("Taza media (aprox. 150 ml de leche semi") == "taza media"
+    )
+    assert alimentos.limpiar_racion_nombre("Una taza") == "taza"
+    assert alimentos.limpiar_racion_nombre("2,5 rebanadas") == "rebanadas"
+    assert alimentos.limpiar_racion_nombre("  Lata. ") == "lata"
+    assert alimentos.limpiar_racion_nombre("(algo)") is None
+    assert alimentos.limpiar_racion_nombre(None) is None
+    largo = "a" * 60
+    limpio_largo = alimentos.limpiar_racion_nombre(largo)
+    assert limpio_largo is not None
+    assert len(limpio_largo) <= 30
+    assert limpio_largo == "a" * 30
+
+
 def test_nombre_con_raciones():
     assert alimentos.nombre_con_raciones("Plátano", 240, 120, "plátano") == "Plátano (2 plátanos)"
     assert alimentos.nombre_con_raciones("Plátano", 120, 120, "plátano") == "Plátano (1 plátano)"
     assert alimentos.nombre_con_raciones("Plátano", 130, 120, "plátano") == "Plátano"
     assert alimentos.nombre_con_raciones("Plátano", 100, None, None) == "Plátano"
     assert alimentos.nombre_con_raciones("Pan", 60, 30, "rebanadas") == "Pan (2 rebanadas)"
+    assert (
+        alimentos.nombre_con_raciones("Plátano", 120, 120, "1 plátano mediano (sin piel)")
+        == "Plátano (1 plátano mediano)"
+    )
+    assert alimentos.nombre_con_raciones("Café", 300, 150, "Taza media") == "Café (2 × taza media)"
+    assert alimentos.nombre_con_raciones("Bacalao", 560, 280, "ración") == "Bacalao (2 raciones)"
 
 
 def test_buscar_off_exito():

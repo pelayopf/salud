@@ -19,6 +19,7 @@ from typing import Any, Literal, NamedTuple
 import httpx
 
 from . import ciqual, db
+from .raciones import limpiar_racion_nombre
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
 # Buscador nuevo de Open Food Facts (search-a-licious): el antiguo cgi/search.pl da 503 a menudo.
@@ -411,17 +412,27 @@ def nombre_con_raciones(
     racion_nombre: str | None,
 ) -> str:
     """Añade la ración al nombre si la cantidad es un múltiplo exacto de la ración."""
-    if not racion_g or racion_g <= 0 or not racion_nombre:
+    racion_limpia = limpiar_racion_nombre(racion_nombre)
+    if not racion_g or racion_g <= 0 or not racion_limpia:
         return nombre
 
     ratio = cantidad / racion_g
     n = round(ratio)
     if n >= 1 and abs(cantidad - n * racion_g) < 1e-6:
         if n == 1:
-            texto_racion = f"1 {racion_nombre}"
+            texto_racion = f"1 {racion_limpia}"
         else:
-            plural = racion_nombre if racion_nombre.endswith("s") else f"{racion_nombre}s"
-            texto_racion = f"{n} {plural}"
+            palabras = racion_limpia.split()
+            if len(palabras) == 1:
+                if racion_limpia.endswith("ón"):
+                    plural = racion_limpia[:-2] + "ones"
+                elif racion_limpia.endswith("s"):
+                    plural = racion_limpia
+                else:
+                    plural = f"{racion_limpia}s"
+                texto_racion = f"{n} {plural}"
+            else:
+                texto_racion = f"{n} × {racion_limpia}"
         return f"{nombre} ({texto_racion})"
     return nombre
 

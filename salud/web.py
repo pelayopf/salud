@@ -520,7 +520,7 @@ def datos_producto(datos: dict[str, str]) -> DatosProducto:
         if not (1 <= val_rac <= 2000):
             raise ValueError("El peso de la ración debe estar entre 1 y 2000")
         racion_g = val_rac
-        racion_nombre = racion_nombre_raw[:40] if racion_nombre_raw else "ración"
+        racion_nombre = alimentos.limpiar_racion_nombre(racion_nombre_raw) or "ración"
     else:
         racion_g = None
         racion_nombre = None

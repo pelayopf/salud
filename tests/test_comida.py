@@ -1026,6 +1026,17 @@ def test_datos_producto_raciones():
     assert dp_sin_nombre.racion_g == 120.0
     assert dp_sin_nombre.racion_nombre == "ración"
 
+    # Con descripción larga -> se limpia el nombre de la ración
+    dp_limpio = datos_producto(
+        {
+            "nombre": "Café",
+            "unidad": "ml",
+            "racion_g": "250",
+            "racion_nombre": "Una taza (250 ml)",
+        }
+    )
+    assert dp_limpio.racion_nombre == "taza"
+
     # Nombre sin peso -> error
     with pytest.raises(ValueError, match="Falta el peso de la ración"):
         datos_producto(
@@ -1077,6 +1088,26 @@ def test_web_comida_propio_con_racion(settings, con):
     r = c.get(f"/comida/propio/{id_}")
     assert r.status_code == 200
     assert "1 plátano (120 g)" in r.text
+
+
+def test_guardar_producto_racion_nombre_limpio_web(settings, con):
+    c = cliente_web(settings)
+    r = c.post(
+        "/comida/productos",
+        data={
+            "nombre": "Té matcha",
+            "unidad": "ml",
+            "racion_g": "250",
+            "racion_nombre": "Una taza (250 ml)",
+            "fecha": "2026-01-10",
+        },
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    id_propio = int(loc.split("/comida/propio/")[1].split("?")[0])
+    prod = db.leer_producto_propio(con, id_propio)
+    assert prod is not None
+    assert prod["racion_nombre"] == "taza"
 
 
 def test_web_comida_generico_ciqual(settings, con, monkeypatch):

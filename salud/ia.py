@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from . import raciones
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -580,6 +581,8 @@ típica (por ejemplo, un plátano mediano pelado, una rebanada de pan, una lata)
 valores medios de una receta casera normal.
 - Valores de tablas de composición de referencia (BEDCA, CIQUAL, USDA), no inventes.
 - nombre: el alimento en castellano, corto ("Plátano", "Pan de centeno").
+- racion_nombre: el nombre de esa unidad en singular, sin número, peso ni paréntesis, una o dos \
+palabras ("plátano", "rebanada", "taza", "lata", "ración").
 - aviso: una frase solo si hay algo que el usuario debería revisar (p. ej. mucha \
 variación entre recetas); si no, null.
 - Si el texto no es un alimento, conocido: false.
@@ -651,7 +654,7 @@ def estimar_alimento(settings: Settings, texto: str, motor: Motor | None = None)
     rg = _numero(datos.get("racion_g"))
     if rg is not None and 1 <= rg <= 2000:
         racion_g = rg
-        racion_nombre = _texto(datos.get("racion_nombre"), 40)
+        racion_nombre = raciones.limpiar_racion_nombre(datos.get("racion_nombre"))
     else:
         racion_g = None
         racion_nombre = None

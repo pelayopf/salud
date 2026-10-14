@@ -631,6 +631,27 @@ def test_estimar_alimento_valido(tmp_path):
     assert est.avisos[1] == "Valores medios de una pieza madura"
 
 
+def test_estimar_alimento_limpiar_racion_nombre(tmp_path):
+    settings = Settings(db_path=tmp_path / "s.db")
+
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        return {
+            "conocido": True,
+            "nombre": "Pan de molde",
+            "unidad": "g",
+            "kcal_100": 260.0,
+            "proteinas_100": 8.0,
+            "hidratos_100": 49.0,
+            "grasas_100": 3.0,
+            "racion_g": 30.0,
+            "racion_nombre": "1 rebanada (30 g)",
+            "aviso": None,
+        }
+
+    est = estimar_alimento(settings, "Pan de molde", motor=motor_falso)
+    assert est.racion_nombre == "rebanada"
+
+
 def test_estimar_alimento_desconocido(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
