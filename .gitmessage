@@ -14,6 +14,7 @@ tipo(scope): resumen en imperativo, minúsculas, sin punto final
 #   db       - esquema y acceso a SQLite (db.py)
 #   deploy   - systemd, backup y despliegue en calamar (deploy/)
 #   alimentos - productos y nutrición: Open Food Facts (alimentos.py)
+#   ia       - funciones de IA bajo petición: motores y tareas (ia.py)
 #   repo     - scaffolding del repositorio (gitignore, readme, config de herramientas)
 #
 # Si ninguno encaja, propón uno nuevo explícitamente y añádelo aquí.
