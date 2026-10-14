@@ -6,8 +6,12 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from conftest import GarminFalso
+from starlette.testclient import TestClient
 
 from salud import consejo, db, lectura, tratamiento
+from salud.metricas import Metrica
+from salud.web import crear_app
 
 
 def test_pauta_defecto_y_guardar(con):
@@ -243,3 +247,87 @@ def test_resumen_tratamiento_y_contexto(con, settings):
     assert "tratamiento" in ctx_l
     assert ctx_l["tratamiento"] is not None
     assert ctx_l["tratamiento"]["dias_desde_ultima"] == 4
+
+
+def test_web_tratamiento_flujo_completo(settings, con):
+    hoy = date(2026, 10, 14)
+
+    app = crear_app(
+        settings,
+        abrir_db=lambda: db.conectar(settings.db_path),
+        conectar_garmin=GarminFalso,
+        hoy=lambda: hoy,
+    )
+    c = TestClient(app, follow_redirects=False)
+
+    # 1. Hoy sin nada -> enlace "Apuntar tratamiento"
+    r_hoy = c.get("/")
+    assert r_hoy.status_code == 200
+    assert "Apuntar tratamiento" in r_hoy.text
+    assert '<a href="/tratamiento">Apuntar tratamiento</a>' in r_hoy.text
+
+    # 2. /tratamiento sin datos
+    r_trat = c.get("/tratamiento")
+    assert r_trat.status_code == 200
+    assert "Apuntar dosis" in r_trat.text
+    assert "No hay dosis registradas" in r_trat.text
+
+    # 3. Fecha futura -> error con _volver
+    r_futura = c.post(
+        "/tratamiento/dosis",
+        data={"fecha": "2026-10-20", "dosis_mg": "5", "zona": "muslo izquierdo"},
+    )
+    assert r_futura.status_code == 303
+    assert "/tratamiento?" in r_futura.headers["location"]
+    assert "posterior" in r_futura.headers["location"]
+
+    # 4. Apuntar dosis válida (zona muslo izquierdo)
+    # También guardar una métrica de peso para comprobar historial
+    db.guardar_metricas(
+        con, [Metrica(fecha="2026-10-14", clave="peso", fuente="garmin", valor=82.5)]
+    )
+    r_apuntar = c.post(
+        "/tratamiento/dosis",
+        data={
+            "fecha": "2026-10-14",
+            "dosis_mg": "5",
+            "zona": "muslo izquierdo",
+            "nota": "dosis normal",
+        },
+    )
+    assert r_apuntar.status_code == 303
+    assert "/tratamiento" in r_apuntar.headers["location"]
+
+    # 5. Aparece en el historial de /tratamiento y en Hoy con "Zona sugerida: muslo derecho"
+    r_trat_post = c.get("/tratamiento")
+    assert r_trat_post.status_code == 200
+    assert "Zona sugerida: muslo derecho" in r_trat_post.text
+    assert "muslo izquierdo" in r_trat_post.text
+    assert "82,5 kg" in r_trat_post.text
+
+    r_hoy_post = c.get("/")
+    assert r_hoy_post.status_code == 200
+    assert "Zona sugerida: muslo derecho" in r_hoy_post.text
+    assert "Apuntar dosis" in r_hoy_post.text
+
+    # 6. Guardar pauta
+    r_pauta = c.post(
+        "/tratamiento/pauta",
+        data={
+            "farmaco": "Mounjaro",
+            "dosis_mg": "7,5",
+            "intervalo_dias": "7",
+            "margen_olvido_dias": "4",
+            "separacion_min_dias": "3",
+        },
+    )
+    assert r_pauta.status_code == 303
+    p_actual = db.pauta(con)
+    assert p_actual.dosis_mg == 7.5
+
+    # 7. Borrar dosis
+    dosis_creadas = db.dosis(con)
+    assert len(dosis_creadas) == 1
+    r_borrar = c.post(f"/tratamiento/dosis/{dosis_creadas[0].id}/borrar")
+    assert r_borrar.status_code == 303
+    assert len(db.dosis(con)) == 0

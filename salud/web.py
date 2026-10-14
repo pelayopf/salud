@@ -50,6 +50,7 @@ from . import (
     nutricion,
     raciones,
     sync,
+    tratamiento,
 )
 from .acceso import AccesoMiddleware
 from .config import Settings
@@ -141,9 +142,16 @@ def hace(momento_utc: str | None) -> str:
 hora_local = db.hora_local
 
 
+def dia_corto(fecha: str | date) -> str:
+    """ "2026-10-16" -> "viernes 16 oct"."""
+    d = date.fromisoformat(fecha) if isinstance(fecha, str) else fecha
+    return f"{lectura.DIAS_SEMANA[d.weekday()]} {d.day} {graficas.MESES_CORTOS[d.month - 1]}"
+
+
 PLANTILLAS.filters["horas"] = horas_y_minutos
 PLANTILLAS.filters["fecha_larga"] = fecha_larga
 PLANTILLAS.filters["fecha_corta"] = lambda f: graficas.fecha_corta(f)
+PLANTILLAS.filters["dia_corto"] = dia_corto
 PLANTILLAS.filters["hace"] = hace
 PLANTILLAS.filters["hora_local"] = hora_local
 
@@ -741,6 +749,15 @@ def crear_app(
         con = abrir_db()
         try:
             semana = (fecha - timedelta(days=6)).isoformat()
+            fila_pauta = con.execute("SELECT 1 FROM pauta WHERE id = 1").fetchone()
+            dosis_lista = db.dosis(con, limite=1)
+            tiene_tratamiento = fila_pauta is not None or len(dosis_lista) > 0
+            pauta_obj = db.pauta(con) if tiene_tratamiento else None
+            u_dosis = dosis_lista[0] if dosis_lista else None
+            prox_dosis = (
+                tratamiento.proxima(pauta_obj, u_dosis, fecha) if (pauta_obj and u_dosis) else None
+            )
+            zona_sug = tratamiento.zona_sugerida(u_dosis.zona if u_dosis else None)
             return _render(
                 "hoy.html",
                 seccion="hoy",
@@ -754,6 +771,11 @@ def crear_app(
                 rendimiento=_rendimiento(con, fecha),
                 actividades=_actividades(db.actividades(con, semana, fecha.isoformat())),
                 sync=db.ultima_sincronizacion(con, GARMIN),
+                tiene_tratamiento=tiene_tratamiento,
+                pauta=pauta_obj,
+                prox_tratamiento=prox_dosis,
+                ultima_dosis=u_dosis,
+                zona_sugerida=zona_sug,
                 mensaje=request.query_params.get("mensaje"),
             )
         finally:
@@ -1957,6 +1979,113 @@ def crear_app(
     def estado_consejo(_request: Request) -> Response:
         return JSONResponse({"preparando": aconsejando.locked()})
 
+    # --- Tratamiento ---------------------------------------------------------
+
+    def ver_tratamiento(request: Request) -> Response:
+        con = abrir_db()
+        try:
+            p = db.pauta(con)
+            lista_dosis = db.dosis(con)
+            u = lista_dosis[0] if lista_dosis else None
+            prox = tratamiento.proxima(p, u, hoy()) if u else None
+            zona_sug = tratamiento.zona_sugerida(u.zona if u else None)
+
+            historial: list[dict[str, Any]] = []
+            for i, d in enumerate(lista_dosis):
+                dias_ant: int | None = None
+                if i + 1 < len(lista_dosis):
+                    d_ant = lista_dosis[i + 1]
+                    dias_ant = (date.fromisoformat(d.fecha) - date.fromisoformat(d_ant.fecha)).days
+
+                v_peso = db.ultimo(con, "peso", d.fecha)
+                peso_info: str | None = None
+                if v_peso is not None and v_peso.valor is not None:
+                    p_txt = f"{cifra(v_peso.valor, 1)} kg"
+                    if v_peso.fecha != d.fecha:
+                        p_txt = f"{p_txt} ({graficas.fecha_corta(v_peso.fecha)})"
+                    peso_info = p_txt
+
+                historial.append(
+                    {
+                        "dosis": d,
+                        "dias_desde_anterior": dias_ant,
+                        "peso": peso_info,
+                    }
+                )
+        finally:
+            con.close()
+
+        return _render(
+            "tratamiento.html",
+            seccion="hoy",
+            pauta=p,
+            prox=prox,
+            ultima_dosis=u,
+            zona_sug=zona_sug,
+            zonas=tratamiento.ZONAS,
+            historial=historial,
+            hoy_str=hoy().isoformat(),
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    async def guardar_tratamiento_dosis(request: Request) -> Response:
+        datos = await _formulario(request)
+        con = abrir_db()
+        try:
+            p = db.pauta(con)
+        finally:
+            con.close()
+
+        try:
+            args = tratamiento.dosis_desde_formulario(datos, p, hoy())
+        except ValueError as exc:
+            return _volver(str(exc), "/tratamiento")
+
+        def _guardar() -> None:
+            c = abrir_db()
+            try:
+                db.anadir_dosis(c, **args)
+            finally:
+                c.close()
+
+        await run_in_threadpool(_guardar)
+        return _volver("Dosis registrada", "/tratamiento")
+
+    async def borrar_tratamiento_dosis(request: Request) -> Response:
+        id_str = request.path_params.get("id", "")
+        try:
+            id_ = int(id_str)
+        except ValueError:
+            return _volver("Dosis no válida", "/tratamiento")
+
+        def _borrar() -> None:
+            c = abrir_db()
+            try:
+                db.borrar_dosis(c, id_)
+            finally:
+                c.close()
+
+        await run_in_threadpool(_borrar)
+        return _volver("Dosis borrada", "/tratamiento")
+
+    async def guardar_tratamiento_pauta(request: Request) -> Response:
+        datos = await _formulario(request)
+        try:
+            p = tratamiento.pauta_desde_formulario(datos)
+        except ValueError as exc:
+            return _volver(str(exc), "/tratamiento")
+
+        def _guardar() -> None:
+            c = abrir_db()
+            try:
+                db.guardar_pauta(c, p)
+            finally:
+                c.close()
+
+        await run_in_threadpool(_guardar)
+        return _volver("Pauta guardada", "/tratamiento")
+
     return Starlette(
         routes=[
             Route("/", ver_hoy),
@@ -1967,6 +2096,10 @@ def crear_app(
             Route("/calendario/sincronizar", sincronizar_calendario_web, methods=["POST"]),
             Route("/calendario/titulo", calendario_titulo_web, methods=["POST"]),
             Route("/lecturas", ver_lecturas),
+            Route("/tratamiento", ver_tratamiento),
+            Route("/tratamiento/dosis", guardar_tratamiento_dosis, methods=["POST"]),
+            Route("/tratamiento/dosis/{id:int}/borrar", borrar_tratamiento_dosis, methods=["POST"]),
+            Route("/tratamiento/pauta", guardar_tratamiento_pauta, methods=["POST"]),
             Route("/comida", ver_comida),
             Route("/comida/buscar", buscar_comida),
             Route("/comida/repetir", repetir_comida, methods=["POST"]),

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block titulo %}Tratamiento · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+<div class="cabecera-dia">
+  <a class="flecha" href="/" aria-label="Volver a Hoy">‹</a>
+  <h1>Tratamiento</h1>
+  <span class="flecha vacia"></span>
+</div>
+
+<section class="panel tarjeta-tratamiento{% if prox and prox.estado in ('hoy', 'retrasada', 'saltar') %} resaltada{% endif %}">
+  <div class="cabecera">
+    <h2>{{ pauta.farmaco }} {{ pauta.dosis_mg | gramos }} mg</h2>
+    <span class="derecha suave">Próxima dosis</span>
+  </div>
+  {% if prox %}
+    {% if prox.estado == 'esperar' %}
+    <p>Toca el {{ prox.prevista | dia_corto }}. Puedes adelantarla desde el {{ prox.adelantar_desde | dia_corto }}.</p>
+    {% elif prox.estado == 'puede_adelantar' %}
+    <p>Toca el {{ prox.prevista | dia_corto }}. Si quieres adelantarla, ya puedes.</p>
+    {% elif prox.estado == 'hoy' %}
+    <p class="resaltada"><strong>Toca hoy.</strong></p>
+    {% elif prox.estado == 'retrasada' %}
+    <p class="resaltada"><strong>Tocaba el {{ prox.prevista | dia_corto }}. Aún puedes ponértela hasta el {{ prox.limite | dia_corto }}.</strong></p>
+    {% elif prox.estado == 'saltar' %}
+    <p class="resaltada"><strong>Han pasado más de {{ pauta.margen_olvido_dias }} días desde el {{ prox.prevista | dia_corto }}: según el prospecto, sáltala y sigue el {{ prox.siguiente_habitual | dia_corto }}. Si dudas, consúltalo.</strong></p>
+    {% endif %}
+    {% if ultima_dosis %}
+    <p class="suave">Zona sugerida: {{ prox.zona_sugerida }}. Última: {{ ultima_dosis.fecha | dia_corto }} · {{ ultima_dosis.zona }} · hace {{ prox.dias_desde_ultima }} día{% if prox.dias_desde_ultima != 1 %}s{% endif %}.</p>
+    {% else %}
+    <p class="suave">Zona sugerida: {{ prox.zona_sugerida }}.</p>
+    {% endif %}
+  {% else %}
+    <p class="suave">Aún no hay dosis registradas.</p>
+    <p class="suave">Zona sugerida: {{ zona_sug }}.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Apuntar dosis</h2>
+  <form class="formulario" method="post" action="/tratamiento/dosis">
+    <label for="fecha">Fecha</label>
+    <input id="fecha" name="fecha" type="date" value="{{ hoy_str }}" max="{{ hoy_str }}" required>
+
+    <label for="dosis_mg">Dosis (mg)</label>
+    <input id="dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg | gramos }}">
+
+    <label for="zona">Zona de inyección</label>
+    <select id="zona" name="zona" required>
+      {% for z in zonas %}
+      <option value="{{ z }}"{% if z == zona_sug %} selected{% endif %}>{{ z | capitalize }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="nota">Nota (opcional)</label>
+    <input id="nota" name="nota" maxlength="200" placeholder="Opcional: molestias, viaje…">
+
+    <div class="acciones">
+      <button type="submit" class="boton">Apuntar dosis</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Historial</h2>
+  {% if historial %}
+  <div class="lista">
+    {% for h in historial %}
+    {% set d = h.dosis %}
+    <div class="fila">
+      <div>
+        <strong>{{ d.fecha | fecha_larga }}</strong>
+        <p class="suave" style="margin: 2px 0 0;">
+          {{ d.dosis_mg | gramos }} mg · {{ d.zona }}
+          {% if h.dias_desde_anterior is not none %} · {{ h.dias_desde_anterior }} días desde la anterior{% endif %}
+          {% if h.peso %} · {{ h.peso }}{% endif %}
+          {% if d.nota %} · {{ d.nota }}{% endif %}
+        </p>
+      </div>
+      <form method="post" action="/tratamiento/dosis/{{ d.id }}/borrar" style="margin: 0;">
+        <button type="submit" class="boton secundario" onclick="return confirm('¿Borrar esta dosis?')">Borrar</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="suave">No hay dosis registradas.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Pauta de tratamiento</h2>
+  <form class="formulario" method="post" action="/tratamiento/pauta">
+    <label for="farmaco">Fármaco</label>
+    <input id="farmaco" name="farmaco" value="{{ pauta.farmaco }}" maxlength="40" required>
+
+    <label for="pauta_dosis_mg">Dosis habitual (mg)</label>
+    <input id="pauta_dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg | gramos }}" required>
+
+    <label for="intervalo_dias">Intervalo habitual (días)</label>
+    <input id="intervalo_dias" name="intervalo_dias" type="number" min="1" max="60" value="{{ pauta.intervalo_dias }}" required>
+
+    <label for="margen_olvido_dias">Margen de olvido (días)</label>
+    <input id="margen_olvido_dias" name="margen_olvido_dias" type="number" min="0" max="60" value="{{ pauta.margen_olvido_dias }}" required>
+
+    <label for="separacion_min_dias">Separación mínima entre dosis (días)</label>
+    <input id="separacion_min_dias" name="separacion_min_dias" type="number" min="1" max="60" value="{{ pauta.separacion_min_dias }}" required>
+
+    <p class="suave">Según la ficha técnica de Mounjaro: si se olvida una dosis, se puede poner hasta 4 días después; si han pasado más, se salta. Entre dos dosis, al menos 3 días. Confírmalo con tu médico, sobre todo si cambias el intervalo.</p>
+
+    <div class="acciones">
+      <button type="submit" class="boton">Guardar pauta</button>
+      <a href="/" class="boton secundario">Volver</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

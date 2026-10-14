@@ -456,3 +456,27 @@ th { color: var(--suave); font-weight: 500; }
   padding-top: 8px;
   margin-top: 4px;
 }
+
+/* --- Tratamiento -------------------------------------------------------- */
+
+.tarjeta-tratamiento {
+  margin: 16px 0;
+}
+.tarjeta-tratamiento.resaltada {
+  border-left: 5px solid var(--cuidado);
+}
+.tarjeta-tratamiento .resaltada {
+  color: var(--cuidado);
+}
+.enlace-discreto {
+  margin: 12px 0;
+}
+.enlace-discreto a {
+  color: var(--suave);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.enlace-discreto a:hover {
+  color: var(--marca);
+}
+

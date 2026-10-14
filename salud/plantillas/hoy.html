@@ -53,6 +53,37 @@
   {% endif %}
 </section>
 
+{% if tiene_tratamiento %}
+<section class="panel tarjeta-tratamiento{% if prox_tratamiento and prox_tratamiento.estado in ('hoy', 'retrasada', 'saltar') %} resaltada{% endif %}">
+  <div class="cabecera">
+    <h2>{{ pauta.farmaco }} {{ pauta.dosis_mg | gramos }} mg</h2>
+    <a href="/tratamiento">Apuntar dosis</a>
+  </div>
+  {% if prox_tratamiento %}
+    {% if prox_tratamiento.estado == 'esperar' %}
+    <p>Toca el {{ prox_tratamiento.prevista | dia_corto }}. Puedes adelantarla desde el {{ prox_tratamiento.adelantar_desde | dia_corto }}.</p>
+    {% elif prox_tratamiento.estado == 'puede_adelantar' %}
+    <p>Toca el {{ prox_tratamiento.prevista | dia_corto }}. Si quieres adelantarla, ya puedes.</p>
+    {% elif prox_tratamiento.estado == 'hoy' %}
+    <p class="resaltada"><strong>Toca hoy.</strong></p>
+    {% elif prox_tratamiento.estado == 'retrasada' %}
+    <p class="resaltada"><strong>Tocaba el {{ prox_tratamiento.prevista | dia_corto }}. Aún puedes ponértela hasta el {{ prox_tratamiento.limite | dia_corto }}.</strong></p>
+    {% elif prox_tratamiento.estado == 'saltar' %}
+    <p class="resaltada"><strong>Han pasado más de {{ pauta.margen_olvido_dias }} días desde el {{ prox_tratamiento.prevista | dia_corto }}: según el prospecto, sáltala y sigue el {{ prox_tratamiento.siguiente_habitual | dia_corto }}. Si dudas, consúltalo.</strong></p>
+    {% endif %}
+    {% if ultima_dosis %}
+    <p class="suave">Zona sugerida: {{ prox_tratamiento.zona_sugerida }}. Última: {{ ultima_dosis.fecha | dia_corto }} · {{ ultima_dosis.zona }} · hace {{ prox_tratamiento.dias_desde_ultima }} día{% if prox_tratamiento.dias_desde_ultima != 1 %}s{% endif %}.</p>
+    {% else %}
+    <p class="suave">Zona sugerida: {{ prox_tratamiento.zona_sugerida }}.</p>
+    {% endif %}
+  {% else %}
+    <p class="suave">Zona sugerida: {{ zona_sugerida }}.</p>
+  {% endif %}
+</section>
+{% else %}
+<p class="suave enlace-discreto"><a href="/tratamiento">Apuntar tratamiento</a></p>
+{% endif %}
+
 <h2>Cómo estás</h2>
 <div class="tarjetas">
   {% for t in tarjetas %}
