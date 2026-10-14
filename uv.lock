@@ -726,6 +726,7 @@ name = "salud"
 source = { editable = "." }
 dependencies = [
     { name = "garminconnect" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "python-dotenv" },
     { name = "starlette" },
@@ -734,7 +735,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -744,7 +744,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "garminconnect", specifier = ">=0.3.3" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
