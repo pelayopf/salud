@@ -1,0 +1,44 @@
+<form class="formulario" method="post" action="/comida/productos" data-producto>
+  <input type="hidden" name="fecha" value="{{ fecha }}">
+  {% if id_propio %}<input type="hidden" name="id" value="{{ id_propio }}">{% endif %}
+  <input type="hidden" name="ia" value="">
+  <div class="acciones">
+    <button type="button" class="boton secundario" data-leer-etiqueta>Leer la etiqueta</button>
+    <input type="file" accept="image/*" data-foto-etiqueta hidden>
+  </div>
+  <div data-avisos-ia></div>
+
+  {% if codigo_editable %}
+  <label for="fp-codigo">Código de barras (opcional)</label>
+  <input id="fp-codigo" name="codigo" inputmode="numeric" value="{{ codigo | default('') }}">
+  {% else %}
+  <input type="hidden" name="codigo" value="{{ codigo | default('') }}">
+  {% endif %}
+
+  <label for="fp-nombre">Nombre</label>
+  <input id="fp-nombre" name="nombre" value="{{ p.nombre if p and p.nombre else '' }}" required>
+
+  <label for="fp-marca">Marca</label>
+  <input id="fp-marca" name="marca" value="{{ p.marca if p and p.marca else '' }}">
+
+  <label for="fp-unidad">Unidad</label>
+  <select id="fp-unidad" name="unidad" required>
+    <option value="g"{% if not p or p.unidad == 'g' %} selected{% endif %}>g</option>
+    <option value="ml"{% if p and p.unidad == 'ml' %} selected{% endif %}>ml</option>
+  </select>
+
+  <label for="fp-kcal">Calorías (kcal)</label>
+  <input id="fp-kcal" name="kcal" type="number" step="any" min="0" value="{{ p.kcal if p and p.kcal is not none else '' }}">
+
+  <label for="fp-proteinas">Proteínas (g)</label>
+  <input id="fp-proteinas" name="proteinas" type="number" step="any" min="0" value="{{ p.proteinas if p and p.proteinas is not none else '' }}">
+
+  <label for="fp-hidratos">Hidratos (g)</label>
+  <input id="fp-hidratos" name="hidratos" type="number" step="any" min="0" value="{{ p.hidratos if p and p.hidratos is not none else '' }}">
+
+  <label for="fp-grasas">Grasas (g)</label>
+  <input id="fp-grasas" name="grasas" type="number" step="any" min="0" value="{{ p.grasas if p and p.grasas is not none else '' }}">
+
+  <p class="suave">Valores por 100 g o 100 ml.</p>
+  <div class="acciones"><button type="submit" class="boton">Guardar producto</button></div>
+</form>

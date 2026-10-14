@@ -272,3 +272,22 @@ th { color: var(--suave); font-weight: 500; }
 }
 .escaner-video { width: 100%; max-width: 360px; max-height: 240px; object-fit: cover; border-radius: 8px; }
 
+.de-ia { background: var(--cuidado-fondo); border-color: var(--cuidado); }
+.chip-ia {
+  display: inline-block;
+  background: var(--cuidado-fondo);
+  color: var(--cuidado);
+  font-size: .7rem;
+  font-weight: 600;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.panel-interno {
+  border-top: 1px solid var(--borde);
+  padding-top: 14px;
+  margin-top: 16px;
+}
+
+

@@ -108,8 +108,28 @@
   {% endif %}
 </details>
 
+<details class="panel"{% if productos_propios %} open{% endif %}>
+  <summary>Mis productos</summary>
+  {% if productos_propios %}
+  <div class="lista">
+    {% for p in productos_propios %}
+    <div class="fila">
+      <a class="enlace" href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% endif %}">
+        <strong>{{ p.nombre }}</strong>{% if p.marca %} <span class="suave">· {{ p.marca }}</span>{% endif %}
+      </a>
+      <span class="suave">{{ p.unidad }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="suave">Aún no hay productos propios.</p>
+  {% endif %}
+</details>
+
 <details class="panel">
   <summary>Añadir a mano</summary>
+  <p><a class="boton secundario" href="/comida/nuevo?fecha={{ fecha }}">Nuevo producto (con foto de la etiqueta)</a></p>
+  <p class="suave">Para comidas sueltas, el formulario de abajo con los totales.</p>
   <form class="formulario" method="post" action="/comida/anadir">
     <input type="hidden" name="fecha" value="{{ fecha }}">
     <label for="nombre">Nombre</label>

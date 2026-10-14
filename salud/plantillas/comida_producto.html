@@ -3,11 +3,18 @@
 {% block contenido %}
 <p><a class="suave" href="/comida?fecha={{ fecha }}">‹ Volver a Comida</a></p>
 
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+
 <section class="panel">
   <div class="cabecera">
     <h1>{{ producto.nombre or producto.codigo }}</h1>
     {% if desde_cache %}
     <span class="etiqueta neutro">de la caché</span>
+    {% endif %}
+    {% if producto.origen == "etiqueta-ia" %}
+    <span class="etiqueta neutro">leído de la etiqueta con IA y revisado</span>
+    {% elif producto.origen == "manual" %}
+    <span class="etiqueta neutro">corregido por ti</span>
     {% endif %}
   </div>
   {% if producto.marca %}
@@ -44,9 +51,22 @@
   <p class="suave">Valores del producto preparado, según Open Food Facts</p>
   {% endif %}
 
+  <details class="panel-interno"{% if producto.incompleto %} open{% endif %}>
+    <summary>Corregir valores</summary>
+    {% set p = producto %}
+    {% set codigo = producto.codigo %}
+    {% set id_propio = producto.id_propio %}
+    {% set codigo_editable = False %}
+    {% include "_formulario_producto.html" %}
+  </details>
+
   <h2>Añadir al día</h2>
   <form class="formulario" method="post" action="/comida/anadir">
+    {% if producto.id_propio and not producto.codigo %}
+    <input type="hidden" name="propio" value="{{ producto.id_propio }}">
+    {% else %}
     <input type="hidden" name="codigo" value="{{ producto.codigo }}">
+    {% endif %}
     <input type="hidden" name="fecha" value="{{ fecha }}">
 
     <label for="cantidad">Cantidad ({{ producto.unidad }})</label>

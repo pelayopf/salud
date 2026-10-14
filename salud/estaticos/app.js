@@ -205,3 +205,226 @@ function mostrarErrorEscaner(mensaje) {
     form.before(p);
   }
 }
+
+// Lectura de etiquetas con IA
+for (const form of document.querySelectorAll("form[data-producto]")) {
+  const botonLeer = form.querySelector("[data-leer-etiqueta]");
+  const inputFoto = form.querySelector("[data-foto-etiqueta]");
+  const avisosIa = form.querySelector("[data-avisos-ia]");
+
+  if (botonLeer && inputFoto) {
+    botonLeer.addEventListener("click", () => {
+      inputFoto.click();
+    });
+
+    inputFoto.addEventListener("change", async () => {
+      const fichero = inputFoto.files && inputFoto.files[0];
+      if (!fichero) return;
+
+      const textoOriginal = botonLeer.textContent;
+      botonLeer.disabled = true;
+      botonLeer.textContent = "Leyendo la etiqueta…";
+
+      try {
+        let bitmap;
+        try {
+          bitmap = await createImageBitmap(fichero, { imageOrientation: "from-image" });
+        } catch (_err) {
+          if (avisosIa) {
+            avisosIa.replaceChildren();
+            const p = document.createElement("p");
+            p.className = "aviso error";
+            p.textContent = "No se pudo abrir la foto";
+            avisosIa.append(p);
+          }
+          return;
+        }
+
+        let ancho = bitmap.width;
+        let alto = bitmap.height;
+        const maxLado = 1600;
+        if (ancho > maxLado || alto > maxLado) {
+          if (ancho >= alto) {
+            alto = Math.round((alto * maxLado) / ancho);
+            ancho = maxLado;
+          } else {
+            ancho = Math.round((ancho * maxLado) / alto);
+            alto = maxLado;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = ancho;
+        canvas.height = alto;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          if (avisosIa) {
+            avisosIa.replaceChildren();
+            const p = document.createElement("p");
+            p.className = "aviso error";
+            p.textContent = "No se pudo abrir la foto";
+            avisosIa.append(p);
+          }
+          return;
+        }
+        ctx.drawImage(bitmap, 0, 0, ancho, alto);
+        const blob = await new Promise((resolve) => {
+          canvas.toBlob(resolve, "image/jpeg", 0.85);
+        });
+        if (!blob) {
+          if (avisosIa) {
+            avisosIa.replaceChildren();
+            const p = document.createElement("p");
+            p.className = "aviso error";
+            p.textContent = "No se pudo abrir la foto";
+            avisosIa.append(p);
+          }
+          return;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+        try {
+          const resp = await fetch("/comida/etiqueta", {
+            method: "POST",
+            body: blob,
+            headers: { "Content-Type": "image/jpeg" },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (!resp.ok) {
+            let errorMsg = "No se pudo leer la etiqueta. Rellénala a mano o prueba con otra foto.";
+            try {
+              const data = await resp.json();
+              if (data && data.error) {
+                errorMsg = data.error;
+              }
+            } catch (_err) {
+              // Si no es JSON se mantiene el mensaje por defecto
+            }
+            if (avisosIa) {
+              avisosIa.replaceChildren();
+              const p = document.createElement("p");
+              p.className = "aviso error";
+              p.textContent = errorMsg;
+              avisosIa.append(p);
+            }
+            return;
+          }
+
+          const etiqueta = await resp.json();
+
+          const camposNutrientes = ["kcal", "proteinas", "hidratos", "grasas"];
+          let algunNutrienteNull = false;
+
+          for (const campo of camposNutrientes) {
+            const input = form.querySelector(`[name="${campo}"]`);
+            if (etiqueta[campo] !== null && etiqueta[campo] !== undefined) {
+              if (input) {
+                input.value = etiqueta[campo];
+                marcarIA(input);
+              }
+            } else {
+              algunNutrienteNull = true;
+            }
+          }
+
+          if (etiqueta.unidad !== null && etiqueta.unidad !== undefined) {
+            const inputUnidad = form.querySelector('[name="unidad"]');
+            if (inputUnidad) {
+              inputUnidad.value = etiqueta.unidad;
+              marcarIA(inputUnidad);
+            }
+          }
+
+          for (const campo of ["nombre", "marca"]) {
+            const input = form.querySelector(`[name="${campo}"]`);
+            if (input && !input.value.trim() && etiqueta[campo]) {
+              input.value = etiqueta[campo];
+              marcarIA(input);
+            }
+          }
+
+          const inputIa = form.querySelector('input[name="ia"]');
+          if (inputIa) {
+            inputIa.value = "1";
+          }
+
+          if (avisosIa) {
+            avisosIa.replaceChildren();
+            const pPrinc = document.createElement("p");
+            pPrinc.className = "aviso";
+            pPrinc.textContent = "Valores leídos por IA a partir de la foto: revísalos antes de guardar.";
+            avisosIa.append(pPrinc);
+
+            if (Array.isArray(etiqueta.avisos)) {
+              for (const aviso of etiqueta.avisos) {
+                const pAv = document.createElement("p");
+                pAv.className = "aviso";
+                pAv.textContent = aviso;
+                avisosIa.append(pAv);
+              }
+            }
+
+            if (algunNutrienteNull) {
+              const pFalta = document.createElement("p");
+              pFalta.className = "aviso";
+              pFalta.textContent = "Lo que falta no se ha podido leer: complétalo a mano.";
+              avisosIa.append(pFalta);
+            }
+          }
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          let errorMsg = "No se pudo leer la etiqueta. Rellénala a mano o prueba con otra foto.";
+          if (fetchErr.name === "AbortError") {
+            errorMsg = "La IA ha tardado demasiado. Rellénala a mano o prueba con otra foto.";
+          }
+          if (avisosIa) {
+            avisosIa.replaceChildren();
+            const p = document.createElement("p");
+            p.className = "aviso error";
+            p.textContent = errorMsg;
+            avisosIa.append(p);
+          }
+        }
+      } finally {
+        botonLeer.disabled = false;
+        botonLeer.textContent = textoOriginal;
+        inputFoto.value = "";
+      }
+    });
+  }
+
+  function marcarIA(input) {
+    if (!input) return;
+    input.classList.add("de-ia");
+    if (input.id) {
+      const label = form.querySelector(`label[for="${input.id}"]`);
+      if (label && !label.querySelector(".chip-ia")) {
+        const chip = document.createElement("span");
+        chip.className = "chip-ia";
+        chip.textContent = "IA";
+        label.append(chip);
+      }
+    }
+
+    const limpiar = () => {
+      input.classList.remove("de-ia");
+      if (input.id) {
+        const label = form.querySelector(`label[for="${input.id}"]`);
+        if (label) {
+          const chip = label.querySelector(".chip-ia");
+          if (chip) chip.remove();
+        }
+      }
+      input.removeEventListener("input", limpiar);
+      input.removeEventListener("change", limpiar);
+    };
+
+    input.addEventListener("input", limpiar, { once: true });
+    input.addEventListener("change", limpiar, { once: true });
+  }
+}
+

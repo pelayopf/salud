@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block titulo %}Nuevo producto · Salud{% endblock %}
+{% block contenido %}
+<p><a class="suave" href="/comida?fecha={{ fecha }}">‹ Volver a Comida</a></p>
+
+{% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+<section class="panel">
+  <h1>Nuevo producto</h1>
+  {% set p = None %}
+  {% set codigo_editable = True %}
+  {% set id_propio = None %}
+  {% include "_formulario_producto.html" %}
+</section>
+{% endblock %}

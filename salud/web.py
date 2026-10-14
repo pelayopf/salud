@@ -11,7 +11,7 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from statistics import mean
@@ -26,11 +26,17 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import alimentos, db, garmin, graficas, lectura, sync
+from . import alimentos, db, garmin, graficas, ia, lectura, sync
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -392,6 +398,83 @@ def momento_por_hora(hora: int) -> str:
     return "cena"
 
 
+@dataclass(frozen=True)
+class DatosProducto:
+    """Datos validados del formulario de un producto propio."""
+
+    codigo: str | None
+    nombre: str
+    marca: str | None
+    unidad: str
+    kcal: float | None
+    proteinas: float | None
+    hidratos: float | None
+    grasas: float | None
+    origen: str
+
+
+def datos_producto(datos: dict[str, str]) -> DatosProducto:
+    """Valida los datos de un producto desde el formulario web."""
+    codigo_raw = alimentos.normalizar_codigo(datos.get("codigo", ""))
+    if codigo_raw:
+        if not alimentos.codigo_valido(codigo_raw):
+            raise ValueError("Código de barras no válido")
+        codigo = codigo_raw
+    else:
+        codigo = None
+
+    nombre = datos.get("nombre", "").strip()
+    if not nombre:
+        raise ValueError("Falta el nombre")
+    if len(nombre) > 120:
+        nombre = nombre[:120]
+
+    marca_raw = datos.get("marca", "").strip()
+    if marca_raw:
+        marca = marca_raw[:120] if len(marca_raw) > 120 else marca_raw
+    else:
+        marca = None
+
+    unidad = datos.get("unidad", "").strip()
+    if unidad not in ("g", "ml"):
+        raise ValueError("Unidad no válida")
+
+    def _parsear_nutriente(campo: str, max_valor: float) -> float | None:
+        v = datos.get(campo, "").strip()
+        if not v:
+            return None
+        v = v.replace(",", ".")
+        try:
+            val = float(v)
+            if not math.isfinite(val):
+                raise ValueError(f"El valor de {campo} no es un número")
+        except ValueError:
+            raise ValueError(f"El valor de {campo} no es un número") from None
+
+        if not (0 <= val <= max_valor):
+            raise ValueError(f"El valor de {campo} está fuera de rango")
+        return val
+
+    kcal = _parsear_nutriente("kcal", 950.0)
+    proteinas = _parsear_nutriente("proteinas", 100.0)
+    hidratos = _parsear_nutriente("hidratos", 100.0)
+    grasas = _parsear_nutriente("grasas", 100.0)
+
+    origen = "etiqueta-ia" if datos.get("ia") == "1" else "manual"
+
+    return DatosProducto(
+        codigo=codigo,
+        nombre=nombre,
+        marca=marca,
+        unidad=unidad,
+        kcal=kcal,
+        proteinas=proteinas,
+        hidratos=hidratos,
+        grasas=grasas,
+        origen=origen,
+    )
+
+
 # --- Aplicación ----------------------------------------------------------------
 
 
@@ -405,8 +488,10 @@ def crear_app(
     crear_cliente_garmin: Callable[[str, str], Any] = garmin.cliente_nuevo,
     reloj: Callable[[], float] = time.monotonic,
     cliente_off: httpx.Client | None = None,
+    lector_etiqueta: Callable[[bytes], ia.Etiqueta] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
+    leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
     generando = threading.Lock()
     entrando = threading.Lock()
     entrada = _EntradaGarmin()
@@ -738,6 +823,7 @@ def crear_app(
             comidas_dia = db.comidas(con, fecha.isoformat())
             totales = db.totales_dia(con, fecha.isoformat())
             recientes = db.productos_recientes(con)
+            propios = db.productos_propios(con)
         finally:
             con.close()
         comidas_por_momento: dict[str, list[db.Comida]] = {m: [] for m in db.MOMENTOS}
@@ -753,6 +839,7 @@ def crear_app(
             comidas_por_momento=comidas_por_momento,
             totales=totales,
             recientes=recientes,
+            productos_propios=propios,
             momentos=db.MOMENTOS,
             momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
             mensaje=request.query_params.get("mensaje"),
@@ -762,6 +849,22 @@ def crear_app(
 
     def ver_comida(request: Request) -> Response:
         return _pagina_comida(request, _fecha(request))
+
+    def ver_comida_nuevo(request: Request) -> Response:
+        fecha = _fecha(request)
+        codigo = request.query_params.get("codigo", "").strip()
+        aviso = request.query_params.get("aviso")
+        mensaje = request.query_params.get("mensaje")
+        error = request.query_params.get("error")
+        return _render(
+            "comida_nuevo.html",
+            seccion="comida",
+            fecha=fecha.isoformat(),
+            codigo=codigo,
+            aviso=aviso,
+            mensaje=mensaje,
+            error=error,
+        )
 
     def ver_producto(request: Request) -> Response:
         fecha = _fecha(request)
@@ -776,7 +879,18 @@ def crear_app(
                 if isinstance(exc, alimentos.CodigoInvalido):
                     error_msg = f"Código no válido: {codigo}"
                 elif isinstance(exc, alimentos.ProductoNoEncontrado):
-                    error_msg = f"Producto no encontrado: {codigo}"
+                    return _render(
+                        "comida_nuevo.html",
+                        seccion="comida",
+                        fecha=fecha.isoformat(),
+                        codigo=codigo,
+                        aviso=(
+                            "Open Food Facts no tiene este producto:"
+                            " créalo con los datos de la etiqueta"
+                        ),
+                        mensaje=None,
+                        error=None,
+                    )
                 else:
                     error_msg = "Open Food Facts no responde en este momento"
                 return _pagina_comida(request, fecha, error=error_msg, codigo_buscado=codigo)
@@ -790,14 +904,155 @@ def crear_app(
             fecha=fecha.isoformat(),
             momentos=db.MOMENTOS,
             momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            mensaje=request.query_params.get("mensaje"),
         )
 
+    async def guardar_productos(request: Request) -> Response:
+        datos = await _formulario(request)
+        fecha_raw = datos.get("fecha", "").strip()
+        try:
+            fecha_dt = date.fromisoformat(fecha_raw) if fecha_raw else hoy()
+        except ValueError:
+            fecha_dt = hoy()
+        fecha_str = fecha_dt.isoformat()
+
+        id_raw = datos.get("id", "").strip()
+        id_ = int(id_raw) if id_raw.isdigit() else None
+        codigo_form = datos.get("codigo", "").strip()
+
+        destino_error = (
+            f"/comida/propio/{id_}?fecha={fecha_str}"
+            if id_ is not None
+            else (
+                f"/comida/producto?codigo={codigo_form}&fecha={fecha_str}"
+                if codigo_form
+                else f"/comida/nuevo?fecha={fecha_str}"
+            )
+        )
+
+        try:
+            dp = datos_producto(datos)
+        except ValueError as exc:
+            return _volver(str(exc), destino_error)
+
+        def _guardar() -> int:
+            con = abrir_db()
+            try:
+                return db.guardar_producto_propio(
+                    con,
+                    id_=id_,
+                    codigo=dp.codigo,
+                    nombre=dp.nombre,
+                    marca=dp.marca,
+                    unidad=dp.unidad,
+                    kcal=dp.kcal,
+                    proteinas=dp.proteinas,
+                    hidratos=dp.hidratos,
+                    grasas=dp.grasas,
+                    origen=dp.origen,
+                )
+            finally:
+                con.close()
+
+        try:
+            guardado_id = await run_in_threadpool(_guardar)
+        except ValueError as exc:
+            return _volver(str(exc), destino_error)
+
+        if dp.codigo:
+            return _volver(
+                "Producto guardado", f"/comida/producto?codigo={dp.codigo}&fecha={fecha_str}"
+            )
+        return _volver("Producto guardado", f"/comida/propio/{guardado_id}?fecha={fecha_str}")
+
+    def ver_comida_propio(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        fecha = _fecha(request)
+        con = abrir_db()
+        try:
+            fila = db.leer_producto_propio(con, id_)
+        finally:
+            con.close()
+
+        if fila is None:
+            return Response("No encontrado", 404)
+
+        prod = alimentos.producto_desde_propio(fila)
+        return _render(
+            "comida_producto.html",
+            seccion="comida",
+            producto=prod,
+            desde_cache=False,
+            fecha=fecha.isoformat(),
+            momentos=db.MOMENTOS,
+            momento_defecto=momento_por_hora(datetime.now(ZONA).hour),
+            mensaje=request.query_params.get("mensaje"),
+        )
+
+    async def leer_etiqueta_foto(request: Request) -> Response:
+        cl_hdr = request.headers.get("content-length")
+        if cl_hdr:
+            try:
+                if int(cl_hdr) > ia.MAX_BYTES_IMAGEN:
+                    return JSONResponse({"error": "La foto es demasiado grande"}, 413)
+            except ValueError:
+                pass
+
+        partes: list[bytes] = []
+        tam = 0
+        async for trozo in request.stream():
+            tam += len(trozo)
+            if tam > ia.MAX_BYTES_IMAGEN:
+                return JSONResponse({"error": "La foto es demasiado grande"}, 413)
+            partes.append(trozo)
+        cuerpo = b"".join(partes)
+
+        if ia.tipo_imagen(cuerpo) is None:
+            return JSONResponse({"error": "El fichero no es una imagen JPEG, PNG o WebP"}, 415)
+
+        try:
+            etiqueta = await run_in_threadpool(leer, cuerpo)
+        except ia.IAOcupada as exc:
+            return JSONResponse({"error": str(exc)}, 429)
+        except ia.ErrorIA as exc:
+            return JSONResponse({"error": str(exc)}, 502)
+
+        datos_resp = asdict(etiqueta)
+        datos_resp["avisos"] = list(etiqueta.avisos)
+        return JSONResponse(datos_resp, 200)
+
     def _guardar_comida(datos: dict[str, str], fecha: str, cantidad: float) -> str:
+        propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()
         momento = datos.get("momento", "").strip()
         con = abrir_db()
         try:
-            if codigo:
+            if propio_raw:
+                try:
+                    id_propio = int(propio_raw)
+                except ValueError:
+                    raise ValueError("Producto no encontrado") from None
+                fila = db.leer_producto_propio(con, id_propio)
+                if fila is None:
+                    raise ValueError("Producto no encontrado")
+                prod = alimentos.producto_desde_propio(fila)
+                nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
+                nombre = prod.nombre or f"Producto {prod.codigo or id_propio}"
+                db.anadir_comida(
+                    con,
+                    fecha=fecha,
+                    momento=momento,
+                    nombre=nombre,
+                    cantidad=cantidad,
+                    unidad=prod.unidad,
+                    kcal=nutrientes.kcal,
+                    proteinas=nutrientes.proteinas,
+                    hidratos=nutrientes.hidratos,
+                    grasas=nutrientes.grasas,
+                    codigo=prod.codigo or None,
+                )
+                return nombre
+            elif codigo:
                 res = alimentos.obtener_producto(con, codigo, cliente_off)
                 prod = res.producto
                 nutrientes = alimentos.calcular_nutrientes(prod, cantidad)
@@ -861,9 +1116,14 @@ def crear_app(
             return _volver("La fecha no puede ser posterior a hoy", "/comida")
         fecha_str = fecha_dt.isoformat()
 
+        propio_raw = datos.get("propio", "").strip()
         codigo = datos.get("codigo", "").strip()
         try:
-            cantidad_str = datos.get("cantidad", "100" if codigo else "").strip().replace(",", ".")
+            cantidad_str = (
+                datos.get("cantidad", "100" if (codigo or propio_raw) else "")
+                .strip()
+                .replace(",", ".")
+            )
             if not cantidad_str:
                 return _volver("La cantidad debe ser un número", f"/comida?fecha={fecha_str}")
             cantidad = float(cantidad_str)
@@ -908,7 +1168,11 @@ def crear_app(
             Route("/actividades", ver_actividades),
             Route("/lecturas", ver_lecturas),
             Route("/comida", ver_comida),
+            Route("/comida/nuevo", ver_comida_nuevo),
+            Route("/comida/productos", guardar_productos, methods=["POST"]),
             Route("/comida/producto", ver_producto),
+            Route("/comida/propio/{id:int}", ver_comida_propio),
+            Route("/comida/etiqueta", leer_etiqueta_foto, methods=["POST"]),
             Route("/comida/anadir", anadir, methods=["POST"]),
             Route("/comida/{id:int}/borrar", borrar, methods=["POST"]),
             Route("/sincronizar", sincronizar, methods=["POST"]),
