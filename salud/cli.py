@@ -1,6 +1,6 @@
 """Línea de órdenes de salud.
 
-Subcomandos: `serve | sync | lectura | garmin-entrar | estado | producto | calendario`.
+Subcomandos: `serve | sync | lectura | garmin-entrar | estado | producto | calendario | ciqual`.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import argparse
 import getpass
 import sys
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import alimentos, calendario, db, garmin, lectura, sync
@@ -203,6 +204,20 @@ def cmd_producto(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ciqual(settings: Settings, args: argparse.Namespace) -> int:
+    """Genera el CSV de alimentos genéricos de CIQUAL."""
+    from . import ciqual
+
+    origen = args.origen.expanduser()
+    cache = args.cache.expanduser() if args.cache else None
+    if not origen.is_dir():
+        print(f"El directorio no existe: {origen}", file=sys.stderr)
+        return 1
+    filas = ciqual.generar_csv(origen, settings, cache=cache)
+    print(f"CIQUAL: {filas} alimentos guardados en {ciqual.CSV}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Punto de entrada."""
     parser = argparse.ArgumentParser(prog="salud")
@@ -230,6 +245,20 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("calendario", help="sincroniza el calendario de Google").set_defaults(
         func=cmd_calendario
     )
+    ciq = sub.add_parser("ciqual", help="genera el CSV de alimentos genéricos de CIQUAL")
+    ciq.add_argument(
+        "--origen",
+        type=Path,
+        required=True,
+        help="directorio con los XML de CIQUAL",
+    )
+    ciq.add_argument(
+        "--cache",
+        type=Path,
+        default=None,
+        help="fichero JSON de caché de traducciones",
+    )
+    ciq.set_defaults(func=cmd_ciqual)
     args = parser.parse_args(argv)
     try:
         settings = load_settings()
