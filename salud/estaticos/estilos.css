@@ -575,3 +575,32 @@ th { color: var(--suave); font-weight: 500; }
   color: var(--marca);
 }
 
+/* --- Salud: peso y analíticas ------------------------------------------- */
+
+.peso-composicion {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--borde);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.peso-composicion div {
+  display: flex;
+  flex-direction: column;
+}
+.peso-composicion strong {
+  font-size: 17px;
+}
+
+.panel-discontinuo {
+  border: 1.5px dashed #c9d3d0;
+  border-radius: var(--radio-grande);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+}
+
+

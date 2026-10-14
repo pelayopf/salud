@@ -53,13 +53,6 @@
   {% endif %}
 </section>
 
-{% if tratamiento %}
-{% set t = tratamiento %}{% set con_enlace = true %}
-{% include "_tarjeta_tratamiento.html" %}
-{% elif es_hoy %}
-<p class="suave enlace-discreto"><a href="/tratamiento">Apuntar tratamiento</a></p>
-{% endif %}
-
 <h2>Cómo estás</h2>
 <div class="tarjetas">
   {% for t in tarjetas %}
@@ -105,4 +98,6 @@
   </p>
   <form method="post" action="/sincronizar"><button class="boton secundario">Sincronizar ahora</button></form>
 </div>
+
+<p class="suave" style="text-align: center; margin: 20px 0;"><a href="/lecturas">Lecturas anteriores</a></p>
 {% endblock %}

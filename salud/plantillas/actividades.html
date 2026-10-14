@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block titulo %}Actividades · Salud{% endblock %}
+{% block titulo %}Actividad · Salud{% endblock %}
 {% block contenido %}
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
-<h1>Actividades</h1>
+<h1>Actividad</h1>
 
 <section class="panel">
   <div class="cabecera">
@@ -43,5 +43,29 @@
 </div>
 {% else %}
 <p class="panel suave">No hay actividades en este periodo.</p>
+{% endif %}
+
+{% if graficas %}
+<h2>Rendimiento y carga</h2>
+<div class="graficas">
+  {% for g in graficas %}
+  <section class="panel grafica-panel">
+    <h3>{{ g.titulo }}{% if g.unidad %} <span class="suave">({{ g.unidad }})</span>{% endif %}</h3>
+    {% if g.grafica %}
+    <div class="lienzo">{{ g.grafica.svg }}</div>
+    {% if g.nota %}<p class="suave">{{ g.nota }}</p>{% endif %}
+    <details>
+      <summary>Ver tabla</summary>
+      <table>
+        <thead><tr><th scope="col">Fecha</th><th scope="col">Valor</th></tr></thead>
+        <tbody>{% for f, v in g.grafica.filas %}<tr><td>{{ f }}</td><td class="cifra-tabla">{{ v }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </details>
+    {% else %}
+    <p class="suave">Aún no hay datos suficientes en este periodo.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
 {% endif %}
 {% endblock %}

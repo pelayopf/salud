@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block titulo %}Salud{% endblock %}
+{% block contenido %}
+<h1>Salud</h1>
+
+{% if tratamiento %}
+{% set t = tratamiento %}{% set con_enlace = true %}
+{% include "_tarjeta_tratamiento.html" %}
+{% else %}
+<section class="panel" aria-label="Tratamiento">
+  <div class="cabecera">
+    <h2>Tratamiento</h2>
+  </div>
+  <p class="suave"><a href="/tratamiento">Apuntar tratamiento</a></p>
+</section>
+{% endif %}
+
+<section class="panel grafica-panel" aria-label="Peso">
+  <div class="cabecera">
+    <h2>Peso{% if peso and peso.unidad %} <span class="suave">({{ peso.unidad }})</span>{% endif %}</h2>
+  </div>
+  {% if peso and peso.grafica %}
+  <div class="lienzo">{{ peso.grafica.svg }}</div>
+  {% if peso.nota %}<p class="suave">{{ peso.nota }}</p>{% endif %}
+  <details>
+    <summary>Ver tabla</summary>
+    <table>
+      <thead><tr><th scope="col">Fecha</th><th scope="col">Valor</th></tr></thead>
+      <tbody>{% for f, v in peso.grafica.filas %}<tr><td>{{ f }}</td><td class="cifra-tabla">{{ v }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </details>
+  {% else %}
+  <p class="suave">Aún no hay datos suficientes de peso en este periodo.</p>
+  {% endif %}
+  {% if grasa or musculo %}
+  <div class="peso-composicion">
+    {% if grasa %}
+    <div><span class="suave">Grasa corporal</span><strong>{{ grasa }}</strong></div>
+    {% endif %}
+    {% if musculo %}
+    <div><span class="suave">Masa muscular</span><strong>{{ musculo }}</strong></div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<nav class="filtros" aria-label="Periodo">
+  {% for p in periodos %}
+  <a href="/salud?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{% if p == 365 %}1 año{% else %}{{ p }} días{% endif %}</a>
+  {% endfor %}
+</nav>
+
+<div class="graficas">
+  {% for g in graficas %}
+  <section class="panel grafica-panel">
+    <h3>{{ g.titulo }}{% if g.unidad %} <span class="suave">({{ g.unidad }})</span>{% endif %}</h3>
+    {% if g.grafica %}
+    <div class="lienzo">{{ g.grafica.svg }}</div>
+    {% if g.nota %}<p class="suave">{{ g.nota }}</p>{% endif %}
+    <details>
+      <summary>Ver tabla</summary>
+      <table>
+        <thead><tr><th scope="col">Fecha</th><th scope="col">Valor</th></tr></thead>
+        <tbody>{% for f, v in g.grafica.filas %}<tr><td>{{ f }}</td><td class="cifra-tabla">{{ v }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </details>
+    {% else %}
+    <p class="suave">Aún no hay datos suficientes en este periodo.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+<section class="panel-discontinuo" aria-label="Analíticas" style="margin-top: 14px;">
+  <span class="icono-cuadro rojo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+  </span>
+  <div>
+    <strong style="font-size: 16px;">Analíticas</strong>
+    <p class="suave" style="margin: 2px 0 0;">Sube el PDF y la IA saca los valores. Próximamente.</p>
+  </div>
+</section>
+{% endblock %}

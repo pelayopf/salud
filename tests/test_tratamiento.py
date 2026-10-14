@@ -260,11 +260,11 @@ def test_web_tratamiento_flujo_completo(settings, con):
     )
     c = TestClient(app, follow_redirects=False)
 
-    # 1. Hoy sin nada -> enlace "Apuntar tratamiento"
-    r_hoy = c.get("/")
-    assert r_hoy.status_code == 200
-    assert "Apuntar tratamiento" in r_hoy.text
-    assert '<a href="/tratamiento">Apuntar tratamiento</a>' in r_hoy.text
+    # 1. /salud sin nada -> enlace "Apuntar tratamiento"
+    r_salud = c.get("/salud")
+    assert r_salud.status_code == 200
+    assert "Apuntar tratamiento" in r_salud.text
+    assert '<a href="/tratamiento">Apuntar tratamiento</a>' in r_salud.text
 
     # 2. /tratamiento sin datos
     r_trat = c.get("/tratamiento")
@@ -298,17 +298,17 @@ def test_web_tratamiento_flujo_completo(settings, con):
     assert r_apuntar.status_code == 303
     assert "/tratamiento" in r_apuntar.headers["location"]
 
-    # 5. Aparece en el historial de /tratamiento y en Hoy con "Zona sugerida: muslo derecho"
+    # 5. Aparece en el historial de /tratamiento y en Salud con "Zona sugerida: muslo derecho"
     r_trat_post = c.get("/tratamiento")
     assert r_trat_post.status_code == 200
     assert "Zona sugerida: muslo derecho" in r_trat_post.text
     assert "muslo izquierdo" in r_trat_post.text
     assert "82,5 kg" in r_trat_post.text
 
-    r_hoy_post = c.get("/")
-    assert r_hoy_post.status_code == 200
-    assert "Zona sugerida: muslo derecho" in r_hoy_post.text
-    assert "Apuntar dosis" in r_hoy_post.text
+    r_salud_post = c.get("/salud")
+    assert r_salud_post.status_code == 200
+    assert "Zona sugerida: muslo derecho" in r_salud_post.text
+    assert "Apuntar dosis" in r_salud_post.text
 
     # 6. Guardar pauta
     r_pauta = c.post(

@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -425,6 +425,77 @@ def _carga_semanal(con: sqlite3.Connection, desde: date, hasta: date) -> list[tu
     return [(f"{s.day}/{s.month}", round(v)) for s, v in sorted(semanas.items())]
 
 
+def _graficas(
+    con: sqlite3.Connection,
+    claves: Sequence[str],
+    desde: date,
+    hasta: date,
+) -> list[dict[str, Any]]:
+    """Construye las gráficas de líneas para las métricas dadas en el periodo."""
+    dias = (hasta - desde).days + 1
+    fechas = [(desde + timedelta(days=i)).isoformat() for i in range(dias)]
+    claves_consulta = list(claves)
+    if "vfc_noche" in claves:
+        if "vfc_base_baja" not in claves_consulta:
+            claves_consulta.append("vfc_base_baja")
+        if "vfc_base_alta" not in claves_consulta:
+            claves_consulta.append("vfc_base_alta")
+
+    datos = db.series(con, tuple(claves_consulta), desde.isoformat(), hasta.isoformat())
+    por_fecha = {c: {v.fecha: v.valor for v in valores} for c, valores in datos.items()}
+
+    def puntos(clave: str) -> list[tuple[str, float | None]]:
+        valores_clave = por_fecha.get(clave, {})
+        return [(f, valores_clave.get(f)) for f in fechas]
+
+    franja_vfc = None
+    if "vfc_noche" in claves:
+        bajas = por_fecha.get("vfc_base_baja", {})
+        altas = por_fecha.get("vfc_base_alta", {})
+        franja_vfc = [(f, bajas.get(f), altas.get(f)) for f in fechas]
+
+    ajustes: dict[str, tuple[str, bool, float, str]] = {
+        "peso": ("Peso", True, 4, ""),
+        "fc_reposo": ("FC en reposo", False, 10, ""),
+        "vfc_noche": (
+            "VFC nocturna",
+            False,
+            20,
+            "La franja gris es tu VFC equilibrada según Garmin.",
+        ),
+        "sueno_h": ("Sueño", False, 4, ""),
+        "preparacion": ("Preparación para entrenar", False, 0, ""),
+        "bb_despertar": ("Body Battery al despertar", False, 0, ""),
+        "vo2max": ("VO2max", True, 4, ""),
+    }
+
+    resultado = []
+    for clave in claves:
+        if clave not in ajustes:
+            continue
+        titulo, unir, rango, nota = ajustes[clave]
+        d = CATALOGO[clave]
+        g = graficas.linea(
+            puntos(clave),
+            decimales=d.decimales,
+            unidad=d.unidad,
+            titulo=titulo,
+            unir_huecos=unir,
+            rango_minimo=rango,
+            banda=franja_vfc if clave == "vfc_noche" else None,
+        )
+        resultado.append(
+            {
+                "clave": clave,
+                "titulo": titulo,
+                "unidad": d.unidad,
+                "grafica": g,
+                "nota": nota,
+            }
+        )
+    return resultado
+
+
 def _actividades(filas: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [
         {
@@ -784,7 +855,7 @@ def crear_app(
         finally:
             con.close()
 
-    def ver_tendencias(request: Request) -> Response:
+    def ver_salud(request: Request) -> Response:
         try:
             dias = int(request.query_params.get("dias", "90"))
         except ValueError:
@@ -792,75 +863,50 @@ def crear_app(
         dias = dias if dias in PERIODOS else 90
         fin = hoy()
         inicio = fin - timedelta(days=dias - 1)
-        fechas = [(inicio + timedelta(days=i)).isoformat() for i in range(dias)]
-        claves = (
-            "peso",
-            "fc_reposo",
-            "vfc_noche",
-            "vfc_base_baja",
-            "vfc_base_alta",
-            "sueno_h",
-            "preparacion",
-            "bb_despertar",
-            "vo2max",
-        )
         con = abrir_db()
         try:
-            datos = db.series(con, claves, inicio.isoformat(), fin.isoformat())
-            carga = _carga_semanal(con, inicio, fin)
+            trat = _tratamiento(con, fin)
+            if trat is not None and trat["ultima"] is None and not db.hay_pauta(con):
+                trat = None
+            graficas_salud = _graficas(
+                con,
+                ("peso", "fc_reposo", "vfc_noche", "sueno_h", "bb_despertar"),
+                inicio,
+                fin,
+            )
+            ult_grasa = db.ultimo(con, "grasa", fin.isoformat())
+            ult_musculo = db.ultimo(con, "musculo", fin.isoformat())
         finally:
             con.close()
-        por_fecha = {c: {v.fecha: v.valor for v in valores} for c, valores in datos.items()}
 
-        def puntos(clave: str) -> list[tuple[str, float | None]]:
-            return [(f, por_fecha[clave].get(f)) for f in fechas]
+        peso_grafica = next((g for g in graficas_salud if g["clave"] == "peso"), None)
+        resto_graficas = [g for g in graficas_salud if g["clave"] != "peso"]
 
-        franja_vfc = [
-            (f, por_fecha["vfc_base_baja"].get(f), por_fecha["vfc_base_alta"].get(f))
-            for f in fechas
-        ]
-        graficas_ = []
-        # (métrica, título, unir huecos: el peso y el VO2max no son diarios,
-        #  rango mínimo del eje: que 0,3 de VO2max no parezca un salto)
-        for clave, titulo, unir, rango in (
-            ("peso", "Peso", True, 4),
-            ("fc_reposo", "FC en reposo", False, 10),
-            ("vfc_noche", "VFC nocturna", False, 20),
-            ("sueno_h", "Sueño", False, 4),
-            ("preparacion", "Preparación para entrenar", False, 0),
-            ("bb_despertar", "Body Battery al despertar", False, 0),
-            ("vo2max", "VO2max", True, 4),
-        ):
-            d = CATALOGO[clave]
-            g = graficas.linea(
-                puntos(clave),
-                decimales=d.decimales,
-                unidad=d.unidad,
-                titulo=titulo,
-                unir_huecos=unir,
-                rango_minimo=rango,
-                banda=franja_vfc if clave == "vfc_noche" else None,
-            )
-            nota = (
-                "La franja gris es tu VFC equilibrada según Garmin." if clave == "vfc_noche" else ""
-            )
-            graficas_.append({"titulo": titulo, "unidad": d.unidad, "grafica": g, "nota": nota})
-        g_carga = graficas.columnas(carga, titulo="Carga de entrenamiento por semana")
-        graficas_.append(
-            {
-                "titulo": "Carga de entrenamiento por semana",
-                "unidad": "",
-                "grafica": g_carga,
-                "nota": "Suma de la carga de Garmin de cada semana, de lunes a domingo.",
-            }
+        grasa_str = (
+            f"{cifra(ult_grasa.valor, 1)} %" if ult_grasa and ult_grasa.valor is not None else None
         )
+        musculo_str = (
+            f"{cifra(ult_musculo.valor, 1)} kg"
+            if ult_musculo and ult_musculo.valor is not None
+            else None
+        )
+
         return _render(
-            "tendencias.html",
-            seccion="tendencias",
+            "salud.html",
+            seccion="salud",
             dias=dias,
             periodos=PERIODOS,
-            graficas=graficas_,
+            tratamiento=trat,
+            peso=peso_grafica,
+            grasa=grasa_str,
+            musculo=musculo_str,
+            graficas=resto_graficas,
         )
+
+    def redirigir_tendencias(request: Request) -> Response:
+        qs = request.url.query
+        destino = f"/salud?{qs}" if qs else "/salud"
+        return RedirectResponse(destino, status_code=301)
 
     def ver_actividades(request: Request) -> Response:
         try:
@@ -869,28 +915,40 @@ def crear_app(
             dias = 30
         dias = dias if dias in PERIODOS else 30
         fin = hoy()
+        inicio = fin - timedelta(days=dias - 1)
         desde_plan = fin - timedelta(days=DIAS_PASADOS_PLAN)
         hasta_plan = fin + timedelta(days=DIAS_FUTUROS_PLAN)
         con = abrir_db()
         try:
-            filas = db.actividades(
-                con, (fin - timedelta(days=dias - 1)).isoformat(), fin.isoformat()
-            )
+            filas = db.actividades(con, inicio.isoformat(), fin.isoformat())
             plan_items = calendario.plan(con, desde_plan, hasta_plan, fin)
             acts_plan = db.actividades(con, desde_plan.isoformat(), hasta_plan.isoformat())
             sync_cal = db.ultima_sincronizacion(con, calendario.GOOGLE)
+            graficas_act = _graficas(con, ("preparacion", "vo2max"), inicio, fin)
+            carga = _carga_semanal(con, inicio, fin)
         finally:
             con.close()
+        g_carga = graficas.columnas(carga, titulo="Carga de entrenamiento por semana")
+        graficas_act.append(
+            {
+                "clave": "carga_semanal",
+                "titulo": "Carga de entrenamiento por semana",
+                "unidad": "",
+                "grafica": g_carga,
+                "nota": "Suma de la carga de Garmin de cada semana, de lunes a domingo.",
+            }
+        )
         dias_p = dias_plan(plan_items, acts_plan, desde_plan, hasta_plan, fin)
         return _render(
             "actividades.html",
-            seccion="actividades",
+            seccion="actividad",
             dias=dias,
             periodos=PERIODOS,
             actividades=_actividades(filas),
             dias_plan=dias_p,
             sync_calendario=sync_cal,
             tipos_actividad=metricas.TIPOS_ACTIVIDAD,
+            graficas=graficas_act,
             mensaje=request.query_params.get("mensaje"),
         )
 
@@ -1037,7 +1095,7 @@ def crear_app(
     def ver_lecturas(_request: Request) -> Response:
         con = abrir_db()
         try:
-            return _render("lecturas.html", seccion="lecturas", lecturas=db.lecturas(con))
+            return _render("lecturas.html", seccion="hoy", lecturas=db.lecturas(con))
         finally:
             con.close()
 
@@ -2018,7 +2076,7 @@ def crear_app(
 
         return _render(
             "tratamiento.html",
-            seccion="hoy",
+            seccion="salud",
             t=trat,
             con_enlace=False,
             pauta=trat["pauta"],
@@ -2083,7 +2141,8 @@ def crear_app(
     return Starlette(
         routes=[
             Route("/", ver_hoy),
-            Route("/tendencias", ver_tendencias),
+            Route("/salud", ver_salud),
+            Route("/tendencias", redirigir_tendencias),
             Route("/actividades", ver_actividades),
             Route("/actividades/semana-tipo", ver_semana_tipo),
             Route("/actividades/semana-tipo", guardar_semana_tipo_web, methods=["POST"]),

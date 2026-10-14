@@ -78,14 +78,58 @@ def test_hoy_vacio_y_otro_dia(settings):
     assert "sábado 10 de enero" in c.get("/?fecha=2030-01-01").text
 
 
-def test_tendencias_actividades_y_lecturas(cliente):
-    r = cliente.get("/tendencias?dias=30")
-    assert r.status_code == 200
-    assert r.text.count('class="grafica"') >= 5
-    assert "Ver tabla" in r.text
-    r = cliente.get("/actividades")
-    assert "Fútbol" in r.text and "Ciclismo" in r.text
+def test_salud_actividades_y_lecturas(cliente, settings):
+    # Redirección 301 de /tendencias a /salud
+    r_redir = cliente.get("/tendencias?dias=30", follow_redirects=False)
+    assert r_redir.status_code == 301
+    assert r_redir.headers["location"] == "/salud?dias=30"
+
+    # /salud responde 200 con "Peso" y "Analíticas"
+    r_salud = cliente.get("/salud?dias=30")
+    assert r_salud.status_code == 200
+    assert "Peso" in r_salud.text
+    assert "Analíticas" in r_salud.text
+    assert "Ver tabla" in r_salud.text
+
+    # Tarjeta de tratamiento en /salud cuando hay una dosis
+    con = db.conectar(settings.db_path)
+    db.anadir_dosis(
+        con, farmaco="Mounjaro", fecha=HOY.isoformat(), dosis_mg=5.0, zona="muslo derecho"
+    )
+    con.close()
+    r_salud_dosis = cliente.get("/salud")
+    assert r_salud_dosis.status_code == 200
+    assert "Apuntar dosis" in r_salud_dosis.text
+
+    # /actividades contiene "VO2max", "Fútbol" y "Ciclismo"
+    r_act = cliente.get("/actividades")
+    assert r_act.status_code == 200
+    assert "VO2max" in r_act.text
+    assert "Fútbol" in r_act.text and "Ciclismo" in r_act.text
+
+    # Lecturas
     assert "Todavía no hay lecturas" in cliente.get("/lecturas").text
+
+    # Nav con 4 enlaces y aria-current en la sección correcta
+    r_hoy = cliente.get("/")
+    assert 'href="/"' in r_hoy.text
+    assert 'href="/comida"' in r_hoy.text
+    assert 'href="/actividades"' in r_hoy.text
+    assert 'href="/salud"' in r_hoy.text
+
+    # Hoy en /lecturas
+    r_lec = cliente.get("/lecturas")
+    assert '<a href="/" aria-current="page">' in r_lec.text
+
+    # Salud en /tratamiento
+    r_trat = cliente.get("/tratamiento")
+    assert '<a href="/salud" aria-current="page">' in r_trat.text
+
+    # Actividad en /actividades
+    assert '<a href="/actividades" aria-current="page">' in r_act.text
+
+    # Salud en /salud
+    assert '<a href="/salud" aria-current="page">' in r_salud.text
 
 
 def test_solo_entran_los_usuarios_permitidos(settings):

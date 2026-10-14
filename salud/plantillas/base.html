@@ -14,11 +14,10 @@
 {# Cada página marca su sección con {% set seccion = '...' %} o en el contexto. #}
 {% set seccion = seccion | default('') %}
 {% set secciones = [
-  ('hoy', '/', 'Hoy', '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>'),
-  ('comida', '/comida', 'Comida', '<path d="M18 2v20M18 2a4 4 0 0 1 4 4v6h-4M6 2v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V2M8 11v11"/>'),
-  ('tendencias', '/tendencias', 'Tendencias', '<path d="M4 19h16M5 15l4.5-4.5 3.5 3 6-6.5"/>'),
-  ('actividades', '/actividades', 'Actividades', '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>'),
-  ('lecturas', '/lecturas', 'Lecturas', '<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>'),
+  ('hoy', '/', 'Hoy', '<path d="M3 12h4l2-5 4 10 2-5h6"/>'),
+  ('comida', '/comida', 'Comida', '<path d="M7 2v20"/><path d="M4 2v6a3 3 0 0 0 6 0V2"/><path d="M17 2c-1.7 0-3 2.2-3 5s1.3 5 3 5v10"/>'),
+  ('actividad', '/actividades', 'Actividad', '<circle cx="13" cy="4" r="2"/><path d="m7 21 3-6 3 2v5"/><path d="m6 12 3-4 4 1 3 3h3"/>'),
+  ('salud', '/salud', 'Salud', '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>'),
 ] %}
 {% block cabecera %}
 <header class="barra">
