@@ -455,6 +455,11 @@ def _texto(v: Any, max_len: int) -> str | None:
     return s[:max_len] if s else None
 
 
+def _en_rango(valor: float | None, maximo: float) -> float | None:
+    """El valor si está entre 0 y `maximo`; None si falta o se sale."""
+    return valor if valor is not None and 0 <= valor <= maximo else None
+
+
 def etiqueta_desde_respuesta(datos: dict[str, Any]) -> Etiqueta:
     """Construye y valida una Etiqueta a partir del JSON estructurado devuelto por la IA."""
     if datos.get("legible") is not True:
@@ -497,21 +502,13 @@ def etiqueta_desde_respuesta(datos: dict[str, Any]) -> Etiqueta:
                 por_racion = True
                 avisos.append("Calculado a partir de los valores por ración")
 
-    descartado = False
-    if kcal is not None and not (0 <= kcal <= MAX_KCAL_100):
-        kcal = None
-        descartado = True
-    if proteinas is not None and not (0 <= proteinas <= MAX_GRAMOS_100):
-        proteinas = None
-        descartado = True
-    if hidratos is not None and not (0 <= hidratos <= MAX_GRAMOS_100):
-        hidratos = None
-        descartado = True
-    if grasas is not None and not (0 <= grasas <= MAX_GRAMOS_100):
-        grasas = None
-        descartado = True
+    leidos = (kcal, proteinas, hidratos, grasas)
+    kcal = _en_rango(kcal, MAX_KCAL_100)
+    proteinas = _en_rango(proteinas, MAX_GRAMOS_100)
+    hidratos = _en_rango(hidratos, MAX_GRAMOS_100)
+    grasas = _en_rango(grasas, MAX_GRAMOS_100)
 
-    if descartado:
+    if (kcal, proteinas, hidratos, grasas) != leidos:
         avisos.append("Se ha descartado un valor fuera de rango")
 
     if kcal is None and proteinas is None and hidratos is None and grasas is None:
@@ -643,14 +640,10 @@ def estimar_alimento(settings: Settings, texto: str, motor: Motor | None = None)
     hidratos = _numero(datos.get("hidratos_100"))
     grasas = _numero(datos.get("grasas_100"))
 
-    if kcal is not None and not (0 <= kcal <= MAX_KCAL_100):
-        kcal = None
-    if proteinas is not None and not (0 <= proteinas <= MAX_GRAMOS_100):
-        proteinas = None
-    if hidratos is not None and not (0 <= hidratos <= MAX_GRAMOS_100):
-        hidratos = None
-    if grasas is not None and not (0 <= grasas <= MAX_GRAMOS_100):
-        grasas = None
+    kcal = _en_rango(kcal, MAX_KCAL_100)
+    proteinas = _en_rango(proteinas, MAX_GRAMOS_100)
+    hidratos = _en_rango(hidratos, MAX_GRAMOS_100)
+    grasas = _en_rango(grasas, MAX_GRAMOS_100)
 
     if kcal is None and proteinas is None and hidratos is None and grasas is None:
         raise ErrorIA("La IA no ha podido estimar ese alimento")

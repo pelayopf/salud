@@ -961,18 +961,27 @@ def productos_recientes(con: sqlite3.Connection, limite: int = 8) -> list[sqlite
     ).fetchall()
 
 
-def _encaja_palabras(palabras_busqueda: list[str], *textos: str | None) -> bool:
-    texto_completo = " ".join(t for t in textos if t)
-    tokens = [p for p in re.split(r"[^\w]+", normalizar_titulo(texto_completo)) if p]
-    return all(any(token.startswith(pb) for token in tokens) for pb in palabras_busqueda)
+def palabras(texto: str) -> list[str]:
+    """Palabras del texto normalizado con `normalizar_titulo` (sin tildes ni mayúsculas)."""
+    return [p for p in re.split(r"[^\w]+", normalizar_titulo(texto)) if p]
+
+
+def palabras_buscadas(texto: str) -> list[str]:
+    """Palabras de una búsqueda: las de 2 letras o más."""
+    return [p for p in palabras(texto) if len(p) >= 2]
+
+
+def encaja(buscadas: list[str], *textos: str | None) -> bool:
+    """Si cada palabra buscada es prefijo de alguna palabra de los textos."""
+    tokens = palabras(" ".join(t for t in textos if t))
+    return all(any(token.startswith(b) for token in tokens) for b in buscadas)
 
 
 def buscar_productos(con: sqlite3.Connection, texto: str, limite: int = 10) -> list[dict[str, Any]]:
     """Busca productos propios y de la caché de Open Food Facts por nombre o marca."""
     if limite <= 0:
         return []
-    busqueda_norm = normalizar_titulo(texto)
-    palabras_busqueda = [p for p in re.split(r"[^\w]+", busqueda_norm) if len(p) >= 2]
+    palabras_busqueda = palabras_buscadas(texto)
     if not palabras_busqueda:
         return []
 
@@ -983,7 +992,7 @@ def buscar_productos(con: sqlite3.Connection, texto: str, limite: int = 10) -> l
         "SELECT id, codigo, nombre, marca, kcal FROM productos_propios ORDER BY actualizado DESC"
     ).fetchall()
     for f in filas_propios:
-        if _encaja_palabras(palabras_busqueda, f["nombre"], f["marca"]):
+        if encaja(palabras_busqueda, f["nombre"], f["marca"]):
             codigo = f["codigo"]
             if codigo:
                 codigos_vistos.add(codigo)
@@ -1007,7 +1016,7 @@ def buscar_productos(con: sqlite3.Connection, texto: str, limite: int = 10) -> l
         codigo = f["codigo"]
         if codigo in codigos_vistos:
             continue
-        if _encaja_palabras(palabras_busqueda, f["nombre"], f["marca"]):
+        if encaja(palabras_busqueda, f["nombre"], f["marca"]):
             codigos_vistos.add(codigo)
             resultados.append(
                 {
@@ -1031,8 +1040,7 @@ def comidas_anteriores(
     """Comidas sin código de los últimos 120 días hasta 'hasta' que encajen por nombre."""
     if limite <= 0:
         return []
-    busqueda_norm = normalizar_titulo(texto)
-    palabras_busqueda = [p for p in re.split(r"[^\w]+", busqueda_norm) if len(p) >= 2]
+    palabras_busqueda = palabras_buscadas(texto)
     if not palabras_busqueda:
         return []
 
@@ -1058,7 +1066,7 @@ def comidas_anteriores(
         norm = normalizar_titulo(c.nombre)
         if norm in vistos_nombres:
             continue
-        if _encaja_palabras(palabras_busqueda, c.nombre):
+        if encaja(palabras_busqueda, c.nombre):
             vistos_nombres.add(norm)
             resultados.append(c)
             if len(resultados) >= limite:

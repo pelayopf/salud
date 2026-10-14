@@ -1308,7 +1308,7 @@ def crear_app(
                 con.close()
 
         productos_locales, anteriores = await run_in_threadpool(_buscar_local)
-        genericos = ciqual.buscar(q)
+        genericos = await run_in_threadpool(ciqual.buscar, q)
 
         off_error: str | None = None
         off_productos: list[alimentos.ResultadoBusqueda] = []

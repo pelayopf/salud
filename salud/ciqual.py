@@ -31,7 +31,7 @@ from typing import Any
 
 from . import ia
 from .config import Settings
-from .db import normalizar_titulo
+from .db import encaja, normalizar_titulo, palabras, palabras_buscadas
 
 FUENTE = "CIQUAL 2020 (ANSES), Licence Ouverte"
 CSV = Path(__file__).resolve().parent / "datos" / "ciqual_2020_es.csv"
@@ -429,8 +429,7 @@ def buscar(
     if not fuente:
         return []
 
-    busqueda_norm = normalizar_titulo(texto)
-    palabras_busqueda = [p for p in re.split(r"[^\w]+", busqueda_norm) if len(p) >= 2]
+    palabras_busqueda = palabras_buscadas(texto)
     if not palabras_busqueda:
         return []
 
@@ -438,16 +437,13 @@ def buscar(
     coincidencias: list[Generico] = []
 
     for a in fuente:
-        nom_norm = normalizar_titulo(a.nombre)
-        palabras_nombre = [p for p in re.split(r"[^\w]+", nom_norm) if p]
-        if all(any(pn.startswith(pb) for pn in palabras_nombre) for pb in palabras_busqueda):
+        if encaja(palabras_busqueda, a.nombre):
             coincidencias.append(a)
 
     def clave_orden(a: Generico) -> tuple[int, int, str]:
-        nom_norm = normalizar_titulo(a.nombre)
-        palabras = [p for p in re.split(r"[^\w]+", nom_norm) if p]
-        empieza = 0 if palabras and palabras[0].startswith(primera_palabra) else 1
-        return (empieza, len(palabras), nom_norm)
+        de_nombre = palabras(a.nombre)
+        empieza = 0 if de_nombre and de_nombre[0].startswith(primera_palabra) else 1
+        return (empieza, len(de_nombre), normalizar_titulo(a.nombre))
 
     coincidencias.sort(key=clave_orden)
     return coincidencias[:limite]
