@@ -30,6 +30,7 @@ from starlette.responses import (
     FileResponse,
     HTMLResponse,
     JSONResponse,
+    PlainTextResponse,
     RedirectResponse,
     Response,
 )
@@ -37,6 +38,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (
+    acceso,
     alimentos,
     calendario,
     ciqual,
@@ -92,6 +94,7 @@ PLANTILLAS = Environment(
     loader=FileSystemLoader(PLANTILLAS_DIR), autoescape=select_autoescape(["html"])
 )
 PLANTILLAS.globals["version"] = _version_estaticos()
+PLANTILLAS.globals["acceso"] = acceso.actual
 PLANTILLAS.filters["cifra"] = cifra
 
 
@@ -908,6 +911,8 @@ def crear_app(
     cliente_calendario: httpx.Client | None = None,
     pedir_consejo: Callable[[sqlite3.Connection, str], dict[str, Any]] | None = None,
     estimar: Callable[[str], ia.Estimacion] | None = None,
+    publica: bool = False,
+    crear_login: Callable[[str, str], acceso.Login] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
@@ -2376,6 +2381,93 @@ def crear_app(
         await run_in_threadpool(_guardar)
         return _volver("Pauta guardada", "/tratamiento")
 
+    # --- Entrar en la web pública (ver acceso.py) ---------------------------
+
+    redirect_login = f"{settings.url_publica}{acceso.RUTA_CALLBACK}"
+    crear_login_fn = crear_login or (lambda cid, sec: acceso.GoogleLogin(cid, sec))
+
+    def ver_entrar(request: Request) -> Response:
+        return _render("entrar.html", mensaje=request.query_params.get("mensaje"))
+
+    def entrar_google(_request: Request) -> Response:
+        if settings.google_oauth.is_file():
+            client_id, _ = acceso.leer_google_oauth(settings.google_oauth)
+        else:
+            client_id = "test-client-id"
+        state = secrets.token_urlsafe(24)
+        con = abrir_db()
+        try:
+            db.guardar_autorizacion(con, state)
+        finally:
+            con.close()
+        respuesta = RedirectResponse(
+            acceso.url_login(client_id, redirect_login, state), status_code=303
+        )
+        respuesta.set_cookie(
+            acceso.COOKIE_STATE,
+            state,
+            max_age=600,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+        return respuesta
+
+    def vuelta_google(request: Request) -> Response:
+        params = request.query_params
+        if "error" in params or not params.get("code") or not params.get("state"):
+            return _volver("Google no confirmó quién eres", "/entrar")
+        state_cookie = request.cookies.get(acceso.COOKIE_STATE)
+        if not state_cookie or state_cookie != params.get("state"):
+            return _volver("Esa entrada ya no vale: vuelve a intentarlo", "/entrar")
+        con = abrir_db()
+        try:
+            if not db.consumir_autorizacion(con, params["state"]):
+                return _volver("Esa entrada ya no vale: vuelve a intentarlo", "/entrar")
+            if settings.google_oauth.is_file():
+                client_id, client_secret = acceso.leer_google_oauth(settings.google_oauth)
+            else:
+                client_id, client_secret = "test-client-id", "test-client-secret"
+            login = crear_login_fn(client_id, client_secret)
+            try:
+                correo_login = login.correo(params["code"], redirect_login)
+            except acceso.LoginError as exc:
+                return PlainTextResponse(f"No se pudo entrar con Google: {exc}", status_code=400)
+            if correo_login not in settings.cuentas_google:
+                return _volver("Esa cuenta no tiene acceso", "/entrar")
+            token = db.crear_sesion_web(con, correo_login, db.DIAS_SESION)
+        finally:
+            con.close()
+        respuesta = RedirectResponse("/", status_code=303)
+        respuesta.set_cookie(
+            acceso.COOKIE_SESION,
+            token,
+            max_age=db.DIAS_SESION * 86400,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+        respuesta.delete_cookie(
+            acceso.COOKIE_STATE, path="/", secure=True, httponly=True, samesite="lax"
+        )
+        return respuesta
+
+    def salir(request: Request) -> Response:
+        token = request.cookies.get(acceso.COOKIE_SESION)
+        if token:
+            con = abrir_db()
+            try:
+                db.cerrar_sesion_web(con, token)
+            finally:
+                con.close()
+        respuesta = _volver("Has salido", "/entrar")
+        respuesta.delete_cookie(
+            acceso.COOKIE_SESION, path="/", secure=True, httponly=True, samesite="lax"
+        )
+        return respuesta
+
     return Starlette(
         routes=[
             Route("/", ver_hoy),
@@ -2416,6 +2508,24 @@ def crear_app(
             Route("/manifest.webmanifest", manifiesto),
             Route("/sw.js", service_worker),
             Mount("/estaticos", StaticFiles(directory=ESTATICOS), name="estaticos"),
+        ]
+        + (
+            [
+                Route("/entrar", ver_entrar),
+                Route("/entrar/google", entrar_google),
+                Route(acceso.RUTA_CALLBACK, vuelta_google),
+                Route("/salir", salir, methods=["POST"]),
+            ]
+            if publica
+            else []
+        ),
+        middleware=[
+            Middleware(
+                AccesoMiddleware,
+                publica=publica,
+                usuarios=settings.usuarios,
+                cuentas_google=settings.cuentas_google,
+                abrir_db=abrir_db,
+            )
         ],
-        middleware=[Middleware(AccesoMiddleware, usuarios=settings.usuarios)],
     )

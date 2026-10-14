@@ -2,7 +2,7 @@
 // Las páginas van primero a la red (los datos cambian) y solo tiran de la
 // copia guardada si no hay conexión. CSS, JS e iconos llevan su versión en
 // la URL, así que se sirven de caché. Subir VERSION al cambiar este fichero.
-const VERSION = "salud-v1";
+const VERSION = "salud-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -16,7 +16,7 @@ self.addEventListener("activate", (e) => {
 });
 
 function guardar(peticion, respuesta) {
-  if (respuesta.ok) {
+  if (respuesta.ok && !respuesta.redirected) {
     const copia = respuesta.clone();
     caches.open(VERSION).then((c) => c.put(peticion, copia));
   }
@@ -27,6 +27,8 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin) return;
+  // Ni la entrada con Google ni sus redirecciones se guardan.
+  if (url.pathname === "/entrar" || url.pathname.startsWith("/entrar/")) return;
 
   if (req.mode === "navigate") {
     e.respondWith(

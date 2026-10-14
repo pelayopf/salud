@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar · Salud{% endblock %}
+{% block cabecera %}
+<header class="barra">
+  <div class="barra-interior">
+    <span class="marca">
+      <span class="logo-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+      </span>
+      Salud
+    </span>
+  </div>
+</header>
+{% endblock %}
+{% block contenido %}
+<style>
+  .nav-inferior, .nav-escritorio, .ajustes { display: none !important; }
+  .panel-entrar {
+    max-width: 420px;
+    margin: 64px auto;
+    padding: 36px 24px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .panel-entrar h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+  }
+  .panel-entrar .boton-google {
+    width: 100%;
+    margin-top: 12px;
+    font-size: 1rem;
+    min-height: 52px;
+  }
+</style>
+<div class="panel panel-entrar">
+  <div class="logo-icono" style="width: 56px; height: 56px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 32px; height: 32px;"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+  </div>
+  <h1>Salud</h1>
+  {% if mensaje %}<div class="aviso error" role="alert" style="width: 100%;">{{ mensaje }}</div>{% endif %}
+  <p class="suave">Entra con tu cuenta de Google. Solo pueden entrar las cuentas autorizadas.</p>
+  <a class="boton boton-google" href="/entrar/google">Entrar con Google</a>
+</div>
+{% endblock %}

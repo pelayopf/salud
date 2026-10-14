@@ -52,17 +52,37 @@ def _sincronizar(settings: Settings, desde: date, hasta: date) -> int:
 
 
 def cmd_serve(settings: Settings, args: argparse.Namespace) -> int:
-    """Arranca la web."""
+    """Arranca la web: la de la tailnet o, con `--publica`, la de Internet."""
     import uvicorn
 
     from .web import crear_app
 
+    if getattr(args, "publica", False):
+        if (
+            not settings.url_publica
+            or not settings.cuentas_google
+            or not settings.google_oauth.is_file()
+        ):
+            raise ConfigError(
+                "--publica necesita SALUD_URL_PUBLICA, SALUD_CUENTAS_GOOGLE y "
+                "que exista SALUD_GOOGLE_OAUTH"
+            )
     app = crear_app(
         settings,
         abrir_db=lambda: db.conectar(settings.db_path),
         conectar_garmin=lambda: garmin.conectar(settings.garmin_tokens),
+        publica=getattr(args, "publica", False),
     )
-    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
+    if getattr(args, "publica", False):
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1",
+        )
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
     return 0
 
 
@@ -225,6 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser("serve", help="arranca la web")
     serve.add_argument("--host", default=DEFAULT_HOST)
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
+    serve.add_argument(
+        "--publica", action="store_true", help="web abierta a Internet: login con Google"
+    )
     serve.set_defaults(func=cmd_serve)
     s = sub.add_parser("sync", help="trae los datos de Garmin")
     s.add_argument("--dias", type=int, default=DIAS_SYNC, help="últimos N días (3)")

@@ -52,5 +52,17 @@
   {% endif %}
 </section>
 
+{% if acceso().publica %}
+<section class="panel conexion" aria-labelledby="titulo-sesion">
+  <div class="cabecera">
+    <h2 id="titulo-sesion">Sesión</h2>
+    <span class="etiqueta estado-verde">{{ acceso().correo }}</span>
+  </div>
+  <form method="post" action="/salir" class="acciones">
+    <button class="boton secundario">Salir</button>
+  </form>
+</section>
+{% endif %}
+
 <p class="suave nota-conexiones">FatSecret y Strava se podrán conectar aquí más adelante.</p>
 {% endblock %}

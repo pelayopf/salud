@@ -80,6 +80,25 @@ iniciada en calamar, no con la API:
 - Instalable (manifest + `sw.js`): las páginas van primero a la red y, sin
   conexión, se ve la última copia.
 
+## Acceso
+
+Dos entradas a la misma app, cada una en su proceso (`acceso.py`):
+
+- **Pública** (`salud serve --publica`, `salud-publica.service`):
+  `https://salud.calamar-lab.dev`, abierta a Internet por Cloudflare Tunnel
+  hacia `127.0.0.1:8792`. No se fía de la cabecera de Tailscale. Se entra con
+  Google (OpenID Connect, solo el correo) y solo las cuentas de
+  `SALUD_CUENTAS_GOOGLE`. La sesión es una cookie (`Secure`, `HttpOnly`,
+  `SameSite=Lax`, 90 días, con renovación si quedan menos de 30) con un token
+  aleatorio del que se guarda el hash (tabla `sesiones_web`).
+- **Tailnet** (`salud serve`, `salud.service`): detrás de Tailscale Serve
+  (`:8791`), que añade `Tailscale-User-Login`. Solo pasan las cuentas de
+  `SALUD_USUARIOS`. Queda de respaldo.
+- **Protecciones**: se rechaza cualquier formulario que llegue desde otra web
+  (`Sec-Fetch-Site` u `Origin`), ninguna página se deja meter en otra
+  (`X-Frame-Options: DENY`), la web pública añade `Strict-Transport-Security`,
+  y los intentos de entrar abandonados se borran a la hora.
+
 ## Configuración
 
 `.env` (formato en `.env.example`) y, fuera del repo,
