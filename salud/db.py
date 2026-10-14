@@ -13,6 +13,7 @@
 - `planificado`: actividades planificadas (Google Calendar o semana tipo).
 - `titulos_calendario`: clasificación de títulos del calendario (deporte y tipo).
 - `semana_tipo`: plantilla semanal propuesta a partir de los hábitos de Garmin.
+- `consejos_comida`: consejos de comida propuestos por la IA.
 """
 
 from __future__ import annotations
@@ -172,6 +173,16 @@ CREATE TABLE IF NOT EXISTS ajustes_comida (
     reparto TEXT NOT NULL,
     actualizado TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS consejos_comida (
+    id INTEGER PRIMARY KEY,
+    fecha TEXT NOT NULL,
+    creado TEXT NOT NULL,
+    nota TEXT NOT NULL DEFAULT '',
+    contenido TEXT NOT NULL,
+    modelo TEXT NOT NULL,
+    segundos REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS consejos_comida_fecha ON consejos_comida (fecha);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -643,6 +654,28 @@ def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> N
         )
 
 
+def guardar_consejo(
+    con: sqlite3.Connection,
+    *,
+    fecha: str,
+    nota: str,
+    contenido: dict[str, Any],
+    modelo: str,
+    segundos: float,
+) -> int:
+    """Guarda un consejo de comida generado por la IA."""
+    momento = ahora()
+    with con:
+        cur = con.execute(
+            """
+            INSERT INTO consejos_comida (fecha, creado, nota, contenido, modelo, segundos)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (fecha, momento, nota, json.dumps(contenido, ensure_ascii=False), modelo, segundos),
+        )
+        return int(cur.lastrowid or 0)
+
+
 # --- Lectura -----------------------------------------------------------------
 
 
@@ -902,6 +935,27 @@ def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
         peso_kg=float(fila["peso_kg"]) if fila["peso_kg"] is not None else None,
         reparto=reparto,
     )
+
+
+def ultimo_consejo(con: sqlite3.Connection, fecha: str) -> dict[str, Any] | None:
+    """El consejo más reciente de ese día.
+
+    Formato: {"creado": ..., "nota": ..., "modelo": ..., **contenido}.
+    """
+    fila = con.execute(
+        "SELECT creado, nota, contenido, modelo FROM consejos_comida WHERE fecha = ?"
+        " ORDER BY id DESC LIMIT 1",
+        (fecha,),
+    ).fetchone()
+    if fila is None:
+        return None
+    contenido = json.loads(fila["contenido"]) if fila["contenido"] else {}
+    return {
+        "creado": fila["creado"],
+        "nota": fila["nota"],
+        "modelo": fila["modelo"],
+        **contenido,
+    }
 
 
 # --- Calendario y planificación ----------------------------------------------

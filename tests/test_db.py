@@ -651,3 +651,37 @@ def test_guardar_semana_tipo_reemplaza_todo(con):
     db.guardar_semana_tipo(con, [e3])
 
     assert db.semana_tipo(con) == [e3]
+
+
+def test_consejos_comida(con):
+    assert db.ultimo_consejo(con, "2026-01-10") is None
+
+    id1 = db.guardar_consejo(
+        con,
+        fecha="2026-01-10",
+        nota="primera nota",
+        contenido={"resumen": "Primero", "ahora": "Manzana"},
+        modelo="gemini-flash",
+        segundos=1.2,
+    )
+    assert id1 > 0
+
+    id2 = db.guardar_consejo(
+        con,
+        fecha="2026-01-10",
+        nota="segunda nota",
+        contenido={"resumen": "Segundo", "ahora": "Plátano"},
+        modelo="gemini-flash",
+        segundos=1.5,
+    )
+    assert id2 > id1
+
+    c = db.ultimo_consejo(con, "2026-01-10")
+    assert c is not None
+    assert c["nota"] == "segunda nota"
+    assert c["resumen"] == "Segundo"
+    assert c["ahora"] == "Plátano"
+    assert c["modelo"] == "gemini-flash"
+    assert "creado" in c
+
+    assert db.ultimo_consejo(con, "2026-01-11") is None
