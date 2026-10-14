@@ -919,12 +919,14 @@ def crear_app(
     lector_etiqueta: Callable[[bytes], ia.Etiqueta] | None = None,
     cliente_calendario: httpx.Client | None = None,
     pedir_consejo: Callable[[sqlite3.Connection, str], dict[str, Any]] | None = None,
+    analizar: Callable[[str, bytes | None], list[ia.AlimentoIA]] | None = None,
     estimar: Callable[[str], ia.Estimacion] | None = None,
     publica: bool = False,
     crear_login: Callable[[str, str], acceso.Login] | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
+    analizar_fn = analizar or (lambda t, img: ia.analizar_comida(settings, t, img))
     estimar_fn = estimar or (lambda texto: ia.estimar_alimento(settings, texto))
     generando = threading.Lock()
     aconsejando = threading.Lock()
@@ -1873,6 +1875,362 @@ def crear_app(
         except ValueError as exc:
             return _volver(str(exc), f"/comida?fecha={fecha_str}")
 
+    def ver_comida_ia(request: Request) -> Response:
+        fecha = _fecha(request)
+        fecha_str = fecha.isoformat()
+        momento_param = request.query_params.get("momento")
+        momento_elegido = momento_valido(momento_param) or momento_por_hora(datetime.now(ZONA).hour)
+        texto = request.query_params.get("texto", "").strip()
+        return _render(
+            "comida_ia.html",
+            fecha=fecha_str,
+            momento_elegido=momento_elegido,
+            momentos_chips=db.MOMENTOS,
+            texto=texto,
+            pestana="anadir",
+            seccion="comida",
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    async def crear_comida_ia_web(request: Request) -> Response:
+        ct = request.headers.get("content-type", "").lower()
+        es_foto = ct.startswith("image/")
+
+        if es_foto:
+            fecha_raw = request.query_params.get("fecha", "").strip()
+            momento_raw = request.query_params.get("momento", "").strip()
+            texto = request.query_params.get("texto", "").strip()
+
+            cl_hdr = request.headers.get("content-length")
+            if cl_hdr:
+                try:
+                    if int(cl_hdr) > ia.MAX_BYTES_IMAGEN:
+                        return JSONResponse({"error": "La foto es demasiado grande"}, 413)
+                except ValueError:
+                    pass
+
+            partes: list[bytes] = []
+            tam = 0
+            async for trozo in request.stream():
+                tam += len(trozo)
+                if tam > ia.MAX_BYTES_IMAGEN:
+                    return JSONResponse({"error": "La foto es demasiado grande"}, 413)
+                partes.append(trozo)
+            cuerpo_foto = b"".join(partes)
+
+            if ia.tipo_imagen(cuerpo_foto) is None:
+                return JSONResponse({"error": "El fichero no es una imagen JPEG, PNG o WebP"}, 415)
+
+            if len(texto) > 500:
+                return JSONResponse({"error": "El texto es demasiado largo"}, 400)
+
+            if len(texto) < 2 and not cuerpo_foto:
+                return JSONResponse({"error": "Escribe qué has comido o añade una foto"}, 400)
+
+            try:
+                fecha_dt = min(date.fromisoformat(fecha_raw) if fecha_raw else hoy(), hoy())
+            except ValueError:
+                return JSONResponse({"error": "Fecha no válida"}, 400)
+
+            momento = momento_valido(momento_raw)
+            if not momento:
+                return JSONResponse({"error": "Momento no válido"}, 400)
+
+            con = abrir_db()
+            try:
+                id_ = db.crear_borrador_comida(
+                    con,
+                    fecha=fecha_dt.isoformat(),
+                    momento=momento,
+                    texto=texto,
+                    con_foto=True,
+                )
+            finally:
+                con.close()
+
+            def _trabajo(borrador_id: int, t: str, img: bytes) -> None:
+                con_hilo = abrir_db()
+                try:
+                    alimentos = analizar_fn(t, img)
+                    db.completar_borrador_comida(
+                        con_hilo,
+                        borrador_id,
+                        [asdict(a) for a in alimentos],
+                    )
+                except (ia.ErrorIA, ia.IAOcupada) as exc:
+                    db.fallar_borrador_comida(con_hilo, borrador_id, str(exc))
+                except Exception:
+                    log.exception("Error al analizar la comida con IA")
+                    db.fallar_borrador_comida(
+                        con_hilo, borrador_id, "No se pudo analizar la comida"
+                    )
+                finally:
+                    con_hilo.close()
+
+            threading.Thread(target=_trabajo, args=(id_, texto, cuerpo_foto), daemon=True).start()
+            return JSONResponse({"url": f"/comida/ia/{id_}"}, 200)
+
+        # Formulario estándar
+        datos = await _formulario(request)
+        fecha_raw = datos.get("fecha", "").strip()
+        momento_raw = datos.get("momento", "").strip()
+        texto = datos.get("texto", "").strip()
+
+        try:
+            fecha_dt = min(date.fromisoformat(fecha_raw) if fecha_raw else hoy(), hoy())
+        except ValueError:
+            return _volver("Fecha no válida", "/comida/ia")
+
+        momento = momento_valido(momento_raw) or momento_por_hora(datetime.now(ZONA).hour)
+        url_error = f"/comida/ia?fecha={fecha_dt.isoformat()}&momento={momento}&texto={texto}"
+
+        if len(texto) > 500:
+            return _volver("El texto es demasiado largo", url_error)
+        if len(texto) < 2:
+            return _volver("Escribe qué has comido o añade una foto", url_error)
+
+        con = abrir_db()
+        try:
+            id_ = db.crear_borrador_comida(
+                con,
+                fecha=fecha_dt.isoformat(),
+                momento=momento,
+                texto=texto,
+                con_foto=False,
+            )
+        finally:
+            con.close()
+
+        def _trabajo_txt(borrador_id: int, t: str) -> None:
+            con_hilo = abrir_db()
+            try:
+                alimentos = analizar_fn(t, None)
+                db.completar_borrador_comida(
+                    con_hilo,
+                    borrador_id,
+                    [asdict(a) for a in alimentos],
+                )
+            except (ia.ErrorIA, ia.IAOcupada) as exc:
+                db.fallar_borrador_comida(con_hilo, borrador_id, str(exc))
+            except Exception:
+                log.exception("Error al analizar la comida con IA")
+                db.fallar_borrador_comida(con_hilo, borrador_id, "No se pudo analizar la comida")
+            finally:
+                con_hilo.close()
+
+        threading.Thread(target=_trabajo_txt, args=(id_, texto), daemon=True).start()
+        return RedirectResponse(f"/comida/ia/{id_}", 303)
+
+    def estado_comida_ia(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        con = abrir_db()
+        try:
+            borrador = db.leer_borrador_comida(con, id_)
+        finally:
+            con.close()
+        if not borrador:
+            return JSONResponse({"error": "Borrador no encontrado"}, 404)
+        return JSONResponse({"estado": borrador.estado})
+
+    def ver_comida_ia_borrador(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        con = abrir_db()
+        try:
+            borrador = db.leer_borrador_comida(con, id_)
+        finally:
+            con.close()
+        if not borrador:
+            return HTMLResponse("Borrador no encontrado", 404)
+
+        total_kcal = 0.0
+        total_proteinas = 0.0
+        total_hidratos = 0.0
+        total_grasas = 0.0
+        for al in borrador.alimentos:
+            if al.get("kcal") is not None:
+                total_kcal += float(al["kcal"])
+            if al.get("proteinas") is not None:
+                total_proteinas += float(al["proteinas"])
+            if al.get("hidratos") is not None:
+                total_hidratos += float(al["hidratos"])
+            if al.get("grasas") is not None:
+                total_grasas += float(al["grasas"])
+
+        return _render(
+            "comida_ia_revisar.html",
+            borrador=borrador,
+            fecha=borrador.fecha,
+            momento_elegido=borrador.momento,
+            momentos=db.MOMENTOS,
+            momentos_chips=db.MOMENTOS,
+            total_kcal=total_kcal,
+            total_proteinas=total_proteinas,
+            total_hidratos=total_hidratos,
+            total_grasas=total_grasas,
+            pestana="anadir",
+            seccion="comida",
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    def descartar_comida_ia_web(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        con = abrir_db()
+        try:
+            borrador = db.leer_borrador_comida(con, id_)
+            fecha_str = borrador.fecha if borrador else hoy().isoformat()
+            db.borrar_borrador_comida(con, id_)
+        finally:
+            con.close()
+        return RedirectResponse(f"/comida/ia?fecha={fecha_str}", 303)
+
+    async def anadir_comida_ia_web(request: Request) -> Response:
+        id_ = int(request.path_params["id"])
+        datos = await _formulario(request)
+        con = abrir_db()
+        try:
+            borrador = db.leer_borrador_comida(con, id_)
+        finally:
+            con.close()
+
+        if not borrador:
+            return _volver("Borrador no encontrado", "/comida/ia")
+
+        url_retorno = f"/comida/ia/{id_}"
+
+        alimentos_a_guardar = []
+        algun_incluido = False
+        num_items = len(borrador.alimentos) + 20
+        for i in range(num_items):
+            clave_nombre = f"a-{i}-nombre"
+            if clave_nombre not in datos:
+                continue
+            if f"a-{i}-incluir" not in datos:
+                continue
+            algun_incluido = True
+
+            nombre = datos.get(clave_nombre, "").strip()
+            if not nombre or len(nombre) > 120:
+                return _volver(
+                    "El nombre del alimento es obligatorio (máximo 120 caracteres)", url_retorno
+                )
+
+            cant_str = datos.get(f"a-{i}-cantidad", "").strip()
+            try:
+                cantidad = float(cant_str)
+                if not (0 < cantidad <= 5000) or not math.isfinite(cantidad):
+                    raise ValueError()
+            except ValueError:
+                return _volver(f"Cantidad no válida para {nombre}", url_retorno)
+
+            unidad = datos.get(f"a-{i}-unidad", "").strip()
+            if unidad not in ("g", "ml"):
+                return _volver(f"Unidad no válida para {nombre}", url_retorno)
+
+            momento = datos.get(f"a-{i}-momento", "").strip()
+            if momento not in db.MOMENTOS:
+                return _volver(f"Momento no válido para {nombre}", url_retorno)
+
+            def _parse_num(val_str: str) -> float | None:
+                if not val_str:
+                    return None
+                try:
+                    vf = float(val_str)
+                    if not math.isfinite(vf) or vf < 0:
+                        raise ValueError()
+                    return vf
+                except ValueError:
+                    raise ValueError(f"Valor numérico no válido para {nombre}")
+
+            try:
+                kcal = _parse_num(datos.get(f"a-{i}-kcal", "").strip())
+                proteinas = _parse_num(datos.get(f"a-{i}-proteinas", "").strip())
+                hidratos = _parse_num(datos.get(f"a-{i}-hidratos", "").strip())
+                grasas = _parse_num(datos.get(f"a-{i}-grasas", "").strip())
+            except ValueError as exc:
+                return _volver(str(exc), url_retorno)
+
+            guardar_prod = f"a-{i}-producto" in datos
+
+            alimentos_a_guardar.append(
+                {
+                    "nombre": nombre,
+                    "cantidad": cantidad,
+                    "unidad": unidad,
+                    "momento": momento,
+                    "kcal": kcal,
+                    "proteinas": proteinas,
+                    "hidratos": hidratos,
+                    "grasas": grasas,
+                    "producto": guardar_prod,
+                }
+            )
+
+        if not algun_incluido:
+            return _volver("No has marcado ningún alimento", url_retorno)
+
+        con = abrir_db()
+        try:
+            with con:
+                for item in alimentos_a_guardar:
+                    db.anadir_comida(
+                        con,
+                        fecha=borrador.fecha,
+                        momento=item["momento"],
+                        nombre=item["nombre"],
+                        cantidad=item["cantidad"],
+                        unidad=item["unidad"],
+                        kcal=item["kcal"],
+                        proteinas=item["proteinas"],
+                        hidratos=item["hidratos"],
+                        grasas=item["grasas"],
+                    )
+                    if item["producto"]:
+                        cant = item["cantidad"]
+                        k_100 = (
+                            round(item["kcal"] * 100 / cant, 1)
+                            if item["kcal"] is not None
+                            else None
+                        )
+                        p_100 = (
+                            round(item["proteinas"] * 100 / cant, 1)
+                            if item["proteinas"] is not None
+                            else None
+                        )
+                        h_100 = (
+                            round(item["hidratos"] * 100 / cant, 1)
+                            if item["hidratos"] is not None
+                            else None
+                        )
+                        g_100 = (
+                            round(item["grasas"] * 100 / cant, 1)
+                            if item["grasas"] is not None
+                            else None
+                        )
+                        db.guardar_producto_propio(
+                            con,
+                            id_=None,
+                            codigo=None,
+                            nombre=item["nombre"],
+                            marca=None,
+                            unidad=item["unidad"],
+                            kcal=k_100,
+                            proteinas=p_100,
+                            hidratos=h_100,
+                            grasas=g_100,
+                            origen="etiqueta-ia",
+                            racion_g=cant,
+                            racion_nombre="ración",
+                        )
+                db.borrar_borrador_comida(con, id_)
+        finally:
+            con.close()
+
+        n = len(alimentos_a_guardar)
+        msg = f"Añadido {alimentos_a_guardar[0]['nombre']}" if n == 1 else f"Añadidos {n} alimentos"
+        return _volver(msg, f"/comida?fecha={borrador.fecha}")
+
     async def estimar_comida_web(request: Request) -> Response:
         datos = await _formulario(request)
         q = datos.get("q", "").strip()
@@ -2683,6 +3041,12 @@ def crear_app(
             Route("/tratamiento/dosis/{id:int}/borrar", borrar_tratamiento_dosis, methods=["POST"]),
             Route("/tratamiento/pauta", guardar_tratamiento_pauta, methods=["POST"]),
             Route("/comida", ver_comida),
+            Route("/comida/ia", ver_comida_ia),
+            Route("/comida/ia", crear_comida_ia_web, methods=["POST"]),
+            Route("/comida/ia/{id:int}", ver_comida_ia_borrador),
+            Route("/comida/ia/{id:int}/estado", estado_comida_ia),
+            Route("/comida/ia/{id:int}/descartar", descartar_comida_ia_web, methods=["POST"]),
+            Route("/comida/ia/{id:int}/anadir", anadir_comida_ia_web, methods=["POST"]),
             Route("/comida/buscar", buscar_comida),
             Route("/comida/repetir", repetir_comida, methods=["POST"]),
             Route("/comida/estimar", estimar_comida_web, methods=["POST"]),

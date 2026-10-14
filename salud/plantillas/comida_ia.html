@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Añadir con IA · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+{% include "_comida_cabecera.html" %}
+
+{% include "_comida_ia_formulario.html" %}
+{% endblock %}

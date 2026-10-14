@@ -206,6 +206,38 @@ function mostrarErrorEscaner(mensaje) {
   }
 }
 
+async function reducirFoto(file) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  let ancho = bitmap.width;
+  let alto = bitmap.height;
+  const maxLado = 1600;
+  if (ancho > maxLado || alto > maxLado) {
+    if (ancho >= alto) {
+      alto = Math.round((alto * maxLado) / ancho);
+      ancho = maxLado;
+    } else {
+      ancho = Math.round((ancho * maxLado) / alto);
+      alto = maxLado;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = ancho;
+  canvas.height = alto;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("No se pudo crear contexto 2d");
+  }
+  ctx.drawImage(bitmap, 0, 0, ancho, alto);
+  const blob = await new Promise((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", 0.85);
+  });
+  if (!blob) {
+    throw new Error("No se pudo generar blob de la foto");
+  }
+  return blob;
+}
+
 // Lectura de etiquetas con IA
 for (const form of document.querySelectorAll("form[data-producto]")) {
   const botonLeer = form.querySelector("[data-leer-etiqueta]");
@@ -226,52 +258,10 @@ for (const form of document.querySelectorAll("form[data-producto]")) {
       botonLeer.textContent = "Leyendo la etiqueta…";
 
       try {
-        let bitmap;
+        let blob;
         try {
-          bitmap = await createImageBitmap(fichero, { imageOrientation: "from-image" });
+          blob = await reducirFoto(fichero);
         } catch (_err) {
-          if (avisosIa) {
-            avisosIa.replaceChildren();
-            const p = document.createElement("p");
-            p.className = "aviso error";
-            p.textContent = "No se pudo abrir la foto";
-            avisosIa.append(p);
-          }
-          return;
-        }
-
-        let ancho = bitmap.width;
-        let alto = bitmap.height;
-        const maxLado = 1600;
-        if (ancho > maxLado || alto > maxLado) {
-          if (ancho >= alto) {
-            alto = Math.round((alto * maxLado) / ancho);
-            ancho = maxLado;
-          } else {
-            ancho = Math.round((ancho * maxLado) / alto);
-            alto = maxLado;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = ancho;
-        canvas.height = alto;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          if (avisosIa) {
-            avisosIa.replaceChildren();
-            const p = document.createElement("p");
-            p.className = "aviso error";
-            p.textContent = "No se pudo abrir la foto";
-            avisosIa.append(p);
-          }
-          return;
-        }
-        ctx.drawImage(bitmap, 0, 0, ancho, alto);
-        const blob = await new Promise((resolve) => {
-          canvas.toBlob(resolve, "image/jpeg", 0.85);
-        });
-        if (!blob) {
           if (avisosIa) {
             avisosIa.replaceChildren();
             const p = document.createElement("p");
@@ -466,6 +456,147 @@ if (esperandoConsejo) {
       }
     } catch {
       // Si el fetch falla, seguir intentando.
+    }
+  }, 4000);
+}
+
+// Añadir comida con IA
+for (const formIa of document.querySelectorAll("form[data-comida-ia]")) {
+  const inputFoto = formIa.querySelector("[data-input-foto-ia]");
+  const vistaPrevia = formIa.querySelector("[data-vista-previa-foto]");
+  const imgPrevia = vistaPrevia ? vistaPrevia.querySelector("img") : null;
+  const botonQuitar = formIa.querySelector("[data-quitar-foto]");
+  const avisos = formIa.querySelector("[data-avisos-ia]");
+  const botonEnviar = formIa.querySelector('button[type="submit"]');
+
+  let urlPrevia = null;
+
+  function limpiarFoto() {
+    if (inputFoto) inputFoto.value = "";
+    if (urlPrevia) {
+      URL.revokeObjectURL(urlPrevia);
+      urlPrevia = null;
+    }
+    if (imgPrevia) imgPrevia.src = "";
+    if (vistaPrevia) vistaPrevia.hidden = true;
+  }
+
+  if (inputFoto) {
+    inputFoto.addEventListener("change", () => {
+      const f = inputFoto.files && inputFoto.files[0];
+      if (!f) {
+        limpiarFoto();
+        return;
+      }
+      if (urlPrevia) URL.revokeObjectURL(urlPrevia);
+      urlPrevia = URL.createObjectURL(f);
+      if (imgPrevia) imgPrevia.src = urlPrevia;
+      if (vistaPrevia) vistaPrevia.hidden = false;
+    });
+  }
+
+  if (botonQuitar) {
+    botonQuitar.addEventListener("click", limpiarFoto);
+  }
+
+  formIa.addEventListener("submit", async (e) => {
+    const f = inputFoto && inputFoto.files && inputFoto.files[0];
+    if (!f) {
+      // Sin foto: envío normal de formulario HTML
+      return;
+    }
+
+    // Con foto: JS reduce y hace fetch con el blob JPEG
+    e.preventDefault();
+    if (!botonEnviar) return;
+
+    const textoOriginal = (botonEnviar.querySelector("[data-texto]") || botonEnviar).textContent;
+    botonEnviar.disabled = true;
+    (botonEnviar.querySelector("[data-texto]") || botonEnviar).textContent =
+      botonEnviar.dataset.enviando || "Enviando…";
+
+    if (avisos) avisos.replaceChildren();
+
+    try {
+      let blob;
+      try {
+        blob = await reducirFoto(f);
+      } catch (_err) {
+        if (avisos) {
+          const p = document.createElement("p");
+          p.className = "aviso error";
+          p.textContent = "No se pudo procesar la foto";
+          avisos.append(p);
+        }
+        botonEnviar.disabled = false;
+        (botonEnviar.querySelector("[data-texto]") || botonEnviar).textContent = textoOriginal;
+        return;
+      }
+
+      const params = new URLSearchParams();
+      const fechaVal = formIa.querySelector('input[name="fecha"]')?.value;
+      const momentoVal = formIa.querySelector('input[name="momento"]')?.value;
+      const textoVal = formIa.querySelector('textarea[name="texto"]')?.value || "";
+
+      if (fechaVal) params.set("fecha", fechaVal);
+      if (momentoVal) params.set("momento", momentoVal);
+      params.set("texto", textoVal);
+
+      const resp = await fetch(`/comida/ia?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+
+      if (!resp.ok) {
+        let msg = "No se pudo analizar la comida";
+        try {
+          const d = await resp.json();
+          if (d && d.error) msg = d.error;
+        } catch {}
+        if (avisos) {
+          const p = document.createElement("p");
+          p.className = "aviso error";
+          p.textContent = msg;
+          avisos.append(p);
+        }
+        botonEnviar.disabled = false;
+        (botonEnviar.querySelector("[data-texto]") || botonEnviar).textContent = textoOriginal;
+        return;
+      }
+
+      const res = await resp.json();
+      if (res && res.url) {
+        location.href = res.url;
+      }
+    } catch (_err) {
+      if (avisos) {
+        const p = document.createElement("p");
+        p.className = "aviso error";
+        p.textContent = "Error de conexión al enviar la comida";
+        avisos.append(p);
+      }
+      botonEnviar.disabled = false;
+      (botonEnviar.querySelector("[data-texto]") || botonEnviar).textContent = textoOriginal;
+    }
+  });
+}
+
+const esperandoComidaIa = document.querySelector("[data-esperando-comida-ia]");
+if (esperandoComidaIa) {
+  const idBorrador = esperandoComidaIa.dataset.esperandoComidaIa;
+  const intervalo = setInterval(async () => {
+    try {
+      const resp = await fetch(`/comida/ia/${idBorrador}/estado`);
+      if (resp.ok) {
+        const datos = await resp.json();
+        if (datos.estado && datos.estado !== "preparando") {
+          clearInterval(intervalo);
+          location.reload();
+        }
+      }
+    } catch {
+      // Ignorar fallos puntuales de red
     }
   }, 4000);
 }
