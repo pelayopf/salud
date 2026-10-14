@@ -74,6 +74,15 @@ PLANTILLAS = Environment(
 )
 PLANTILLAS.globals["version"] = _version_estaticos()
 PLANTILLAS.filters["cifra"] = cifra
+
+
+def gramos(valor: float | None) -> str:
+    """Gramos con un decimal solo si lo tienen: 16,2 · 3 (en comida, 1,6 g no es 2 g)."""
+    texto = cifra(valor, 1)
+    return texto.removesuffix(",0")
+
+
+PLANTILLAS.filters["gramos"] = gramos
 PLANTILLAS.filters["texto"] = lambda codigo, clave="": texto(clave, codigo)
 PLANTILLAS.filters["tipo"] = nombre_tipo
 

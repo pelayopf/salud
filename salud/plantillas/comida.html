@@ -41,9 +41,9 @@
           <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
           <div class="suave">
             <span>{% if c.kcal is not none %}{{ c.kcal | cifra }} kcal{% else %}—{% endif %}</span>
-            <span>· P: {% if c.proteinas is not none %}{{ c.proteinas | cifra }} g{% else %}—{% endif %}</span>
-            <span>· HC: {% if c.hidratos is not none %}{{ c.hidratos | cifra }} g{% else %}—{% endif %}</span>
-            <span>· G: {% if c.grasas is not none %}{{ c.grasas | cifra }} g{% else %}—{% endif %}</span>
+            <span>· P: {% if c.proteinas is not none %}{{ c.proteinas | gramos }} g{% else %}—{% endif %}</span>
+            <span>· HC: {% if c.hidratos is not none %}{{ c.hidratos | gramos }} g{% else %}—{% endif %}</span>
+            <span>· G: {% if c.grasas is not none %}{{ c.grasas | gramos }} g{% else %}—{% endif %}</span>
           </div>
         </div>
         <form method="post" action="/comida/{{ c.id }}/borrar?fecha={{ fecha }}" onsubmit="return confirm('¿Borrar esta entrada?')">
@@ -56,9 +56,9 @@
     <div class="pie suave">
       <p>
         Subtotal: {% if tot_m.sin_kcal == tot_m.entradas %}—{% else %}{{ tot_m.kcal | cifra }} kcal{% endif %}
-        · P: {% if tot_m.sin_proteinas == tot_m.entradas %}—{% else %}{{ tot_m.proteinas | cifra }} g{% endif %}
-        · HC: {% if tot_m.sin_hidratos == tot_m.entradas %}—{% else %}{{ tot_m.hidratos | cifra }} g{% endif %}
-        · G: {% if tot_m.sin_grasas == tot_m.entradas %}—{% else %}{{ tot_m.grasas | cifra }} g{% endif %}
+        · P: {% if tot_m.sin_proteinas == tot_m.entradas %}—{% else %}{{ tot_m.proteinas | gramos }} g{% endif %}
+        · HC: {% if tot_m.sin_hidratos == tot_m.entradas %}—{% else %}{{ tot_m.hidratos | gramos }} g{% endif %}
+        · G: {% if tot_m.sin_grasas == tot_m.entradas %}—{% else %}{{ tot_m.grasas | gramos }} g{% endif %}
       </p>
       {% if tot_m.incompletas > 0 %}
       <p class="suave">faltan datos de {{ tot_m.incompletas }} entrada{% if tot_m.incompletas > 1 %}s{% endif %}</p>
@@ -78,9 +78,9 @@
     </span>
   </div>
   <p class="suave">
-    Proteínas: <strong>{% if totales.total.sin_proteinas == totales.total.entradas %}—{% else %}{{ totales.total.proteinas | cifra }} g{% endif %}</strong>
-    · Hidratos: <strong>{% if totales.total.sin_hidratos == totales.total.entradas %}—{% else %}{{ totales.total.hidratos | cifra }} g{% endif %}</strong>
-    · Grasas: <strong>{% if totales.total.sin_grasas == totales.total.entradas %}—{% else %}{{ totales.total.grasas | cifra }} g{% endif %}</strong>
+    Proteínas: <strong>{% if totales.total.sin_proteinas == totales.total.entradas %}—{% else %}{{ totales.total.proteinas | gramos }} g{% endif %}</strong>
+    · Hidratos: <strong>{% if totales.total.sin_hidratos == totales.total.entradas %}—{% else %}{{ totales.total.hidratos | gramos }} g{% endif %}</strong>
+    · Grasas: <strong>{% if totales.total.sin_grasas == totales.total.entradas %}—{% else %}{{ totales.total.grasas | gramos }} g{% endif %}</strong>
   </p>
   {% if totales.total.incompletas > 0 %}
   <p class="suave">faltan datos de {{ totales.total.incompletas }} entrada{% if totales.total.incompletas > 1 %}s{% endif %}</p>

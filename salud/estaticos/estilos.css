@@ -272,7 +272,7 @@ th { color: var(--suave); font-weight: 500; }
 }
 .escaner-video { width: 100%; max-width: 360px; max-height: 240px; object-fit: cover; border-radius: 8px; }
 
-.de-ia { background: var(--cuidado-fondo); border-color: var(--cuidado); }
+.formulario .de-ia { background: var(--cuidado-fondo); border-color: var(--cuidado); }
 .chip-ia {
   display: inline-block;
   background: var(--cuidado-fondo);

@@ -767,3 +767,12 @@ def test_producto_incompleto_incluye_data_leer_etiqueta_sin_capture(settings):
     assert "data-leer-etiqueta" in r.text
     assert "data-foto-etiqueta" in r.text
     assert "capture" not in r.text
+
+
+def test_gramos_con_un_decimal_solo_si_lo_tiene():
+    from salud.web import gramos
+
+    assert gramos(16.2) == "16,2"
+    assert gramos(3.0) == "3"
+    assert gramos(1.04) == "1"
+    assert gramos(None) == "—"

@@ -38,15 +38,15 @@
     </div>
     <div class="fila">
       <span>Proteínas</span>
-      <strong>{% if producto.proteinas is not none %}{{ producto.proteinas | cifra }} g{% else %}—{% endif %}</strong>
+      <strong>{% if producto.proteinas is not none %}{{ producto.proteinas | gramos }} g{% else %}—{% endif %}</strong>
     </div>
     <div class="fila">
       <span>Hidratos de carbono</span>
-      <strong>{% if producto.hidratos is not none %}{{ producto.hidratos | cifra }} g{% else %}—{% endif %}</strong>
+      <strong>{% if producto.hidratos is not none %}{{ producto.hidratos | gramos }} g{% else %}—{% endif %}</strong>
     </div>
     <div class="fila">
       <span>Grasas</span>
-      <strong>{% if producto.grasas is not none %}{{ producto.grasas | cifra }} g{% else %}—{% endif %}</strong>
+      <strong>{% if producto.grasas is not none %}{{ producto.grasas | gramos }} g{% else %}—{% endif %}</strong>
     </div>
   </div>
   {% if producto.preparado %}
