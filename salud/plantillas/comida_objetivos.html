@@ -57,7 +57,7 @@
 
     <label for="kcal_minimo">Mínimo de calorías al día</label>
     <input id="kcal_minimo" name="kcal_minimo" type="number" min="800" max="4000" step="10" value="{{ ajustes.kcal_minimo if ajustes.kcal_minimo is not none else '' }}">
-    <p class="suave">Vacío = tu gasto basal de Garmin{% if basal %} ({{ basal }} kcal){% endif %}. Pacta la cifra con tu médico.</p>
+    <p class="suave">Opcional. Vacío = sin mínimo: ni marca en la barra ni aviso. Si lo pones, pacta la cifra con tu médico.</p>
 
     <h3>Reparto por comida (%)</h3>
     <p class="suave">Porcentajes para cada momento (deben sumar 100 %).</p>

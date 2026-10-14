@@ -112,7 +112,7 @@ def test_contexto(con, settings: Settings):
     assert comidas[0]["nombre"] == "Arroz con pollo"
 
     assert ctx["objetivo_hoy"] is not None
-    assert ctx["objetivo_hoy"]["kcal_minimo"] == 2000
+    assert ctx["objetivo_hoy"]["kcal_minimo"] is None
     assert ctx["queda_hoy"] is not None
     obj_kcal = ctx["objetivo_hoy"]["total"]["kcal"]
     tot_kcal = ctx["totales_hoy"]["kcal"]

@@ -1358,6 +1358,11 @@ def pauta(con: sqlite3.Connection) -> Pauta:
     )
 
 
+def hay_pauta(con: sqlite3.Connection) -> bool:
+    """Si se ha guardado una pauta (si no, `pauta` da la de por defecto)."""
+    return con.execute("SELECT 1 FROM pauta WHERE id = 1").fetchone() is not None
+
+
 def guardar_pauta(con: sqlite3.Connection, p: Pauta) -> None:
     """Guarda (upsert id=1) la pauta de tratamiento."""
     momento = ahora()

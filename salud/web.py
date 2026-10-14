@@ -148,6 +148,19 @@ def dia_corto(fecha: str | date) -> str:
     return f"{lectura.DIAS_SEMANA[d.weekday()]} {d.day} {graficas.MESES_CORTOS[d.month - 1]}"
 
 
+def _tratamiento(con: sqlite3.Connection, dia: date) -> dict[str, Any]:
+    """Pauta, última dosis, próxima y zona sugerida, para `_tarjeta_tratamiento.html`."""
+    pauta = db.pauta(con)
+    recientes = db.dosis(con, limite=1)
+    ultima = recientes[0] if recientes else None
+    return {
+        "pauta": pauta,
+        "ultima": ultima,
+        "prox": tratamiento.proxima(pauta, ultima, dia),
+        "zona_sugerida": tratamiento.zona_sugerida(ultima.zona if ultima else None),
+    }
+
+
 PLANTILLAS.filters["horas"] = horas_y_minutos
 PLANTILLAS.filters["fecha_larga"] = fecha_larga
 PLANTILLAS.filters["fecha_corta"] = lambda f: graficas.fecha_corta(f)
@@ -749,15 +762,9 @@ def crear_app(
         con = abrir_db()
         try:
             semana = (fecha - timedelta(days=6)).isoformat()
-            fila_pauta = con.execute("SELECT 1 FROM pauta WHERE id = 1").fetchone()
-            dosis_lista = db.dosis(con, limite=1)
-            tiene_tratamiento = fila_pauta is not None or len(dosis_lista) > 0
-            pauta_obj = db.pauta(con) if tiene_tratamiento else None
-            u_dosis = dosis_lista[0] if dosis_lista else None
-            prox_dosis = (
-                tratamiento.proxima(pauta_obj, u_dosis, fecha) if (pauta_obj and u_dosis) else None
-            )
-            zona_sug = tratamiento.zona_sugerida(u_dosis.zona if u_dosis else None)
+            trat = _tratamiento(con, fecha) if fecha == hoy() else None
+            if trat is not None and trat["ultima"] is None and not db.hay_pauta(con):
+                trat = None
             return _render(
                 "hoy.html",
                 seccion="hoy",
@@ -771,11 +778,7 @@ def crear_app(
                 rendimiento=_rendimiento(con, fecha),
                 actividades=_actividades(db.actividades(con, semana, fecha.isoformat())),
                 sync=db.ultima_sincronizacion(con, GARMIN),
-                tiene_tratamiento=tiene_tratamiento,
-                pauta=pauta_obj,
-                prox_tratamiento=prox_dosis,
-                ultima_dosis=u_dosis,
-                zona_sugerida=zona_sug,
+                tratamiento=trat,
                 mensaje=request.query_params.get("mensaje"),
             )
         finally:
@@ -1278,15 +1281,18 @@ def crear_app(
                 llevas_m = tot_m.kcal if tot_m else 0.0
                 prog_momento[m] = _progreso(llevas_m, obj_m.kcal)
 
+        minimo = objetivo.kcal_minimo if objetivo is not None else None
         pct_minimo = 0
-        if objetivo is not None and objetivo.total.kcal > 0:
-            pct_minimo = min(100, round(100 * objetivo.kcal_minimo / objetivo.total.kcal))
-
         bajo_minimo = False
-        if objetivo is not None and totales.total.entradas > 0:
+        if objetivo is not None and minimo is not None:
+            if objetivo.total.kcal > 0:
+                pct_minimo = min(100, round(100 * minimo / objetivo.total.kcal))
             es_tarde = fecha == hoy() and datetime.now(ZONA).hour >= 21
-            if (fecha < hoy() or es_tarde) and totales.total.kcal < objetivo.kcal_minimo:
-                bajo_minimo = True
+            bajo_minimo = (
+                totales.total.entradas > 0
+                and (fecha < hoy() or es_tarde)
+                and totales.total.kcal < minimo
+            )
 
         err_consejo = error_consejo["texto"]
         error_consejo["texto"] = None
@@ -1503,7 +1509,6 @@ def crear_app(
         con = abrir_db()
         try:
             ajustes = db.ajustes_comida(con)
-            b = nutricion.basal(con, hoy())
             objetivo_hoy = nutricion.objetivo_dia(con, hoy(), hoy(), ajustes=ajustes)
         finally:
             con.close()
@@ -1516,7 +1521,6 @@ def crear_app(
             seccion="comida",
             ajustes=ajustes,
             objetivo=objetivo_hoy,
-            basal=b,
             momentos_reparto=momentos_reparto,
             mensaje=request.query_params.get("mensaje"),
             error=request.query_params.get("error"),
@@ -1984,11 +1988,8 @@ def crear_app(
     def ver_tratamiento(request: Request) -> Response:
         con = abrir_db()
         try:
-            p = db.pauta(con)
+            trat = _tratamiento(con, hoy())
             lista_dosis = db.dosis(con)
-            u = lista_dosis[0] if lista_dosis else None
-            prox = tratamiento.proxima(p, u, hoy()) if u else None
-            zona_sug = tratamiento.zona_sugerida(u.zona if u else None)
 
             historial: list[dict[str, Any]] = []
             for i, d in enumerate(lista_dosis):
@@ -2018,10 +2019,9 @@ def crear_app(
         return _render(
             "tratamiento.html",
             seccion="hoy",
-            pauta=p,
-            prox=prox,
-            ultima_dosis=u,
-            zona_sug=zona_sug,
+            t=trat,
+            con_enlace=False,
+            pauta=trat["pauta"],
             zonas=tratamiento.ZONAS,
             historial=historial,
             hoy_str=hoy().isoformat(),
@@ -2031,25 +2031,19 @@ def crear_app(
 
     async def guardar_tratamiento_dosis(request: Request) -> Response:
         datos = await _formulario(request)
-        con = abrir_db()
-        try:
-            p = db.pauta(con)
-        finally:
-            con.close()
-
-        try:
-            args = tratamiento.dosis_desde_formulario(datos, p, hoy())
-        except ValueError as exc:
-            return _volver(str(exc), "/tratamiento")
 
         def _guardar() -> None:
             c = abrir_db()
             try:
+                args = tratamiento.dosis_desde_formulario(datos, db.pauta(c), hoy())
                 db.anadir_dosis(c, **args)
             finally:
                 c.close()
 
-        await run_in_threadpool(_guardar)
+        try:
+            await run_in_threadpool(_guardar)
+        except ValueError as exc:
+            return _volver(str(exc), "/tratamiento")
         return _volver("Dosis registrada", "/tratamiento")
 
     async def borrar_tratamiento_dosis(request: Request) -> Response:

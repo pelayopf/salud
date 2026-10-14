@@ -10,33 +10,7 @@
   <span class="flecha vacia"></span>
 </div>
 
-<section class="panel tarjeta-tratamiento{% if prox and prox.estado in ('hoy', 'retrasada', 'saltar') %} resaltada{% endif %}">
-  <div class="cabecera">
-    <h2>{{ pauta.farmaco }} {{ pauta.dosis_mg | gramos }} mg</h2>
-    <span class="derecha suave">Próxima dosis</span>
-  </div>
-  {% if prox %}
-    {% if prox.estado == 'esperar' %}
-    <p>Toca el {{ prox.prevista | dia_corto }}. Puedes adelantarla desde el {{ prox.adelantar_desde | dia_corto }}.</p>
-    {% elif prox.estado == 'puede_adelantar' %}
-    <p>Toca el {{ prox.prevista | dia_corto }}. Si quieres adelantarla, ya puedes.</p>
-    {% elif prox.estado == 'hoy' %}
-    <p class="resaltada"><strong>Toca hoy.</strong></p>
-    {% elif prox.estado == 'retrasada' %}
-    <p class="resaltada"><strong>Tocaba el {{ prox.prevista | dia_corto }}. Aún puedes ponértela hasta el {{ prox.limite | dia_corto }}.</strong></p>
-    {% elif prox.estado == 'saltar' %}
-    <p class="resaltada"><strong>Han pasado más de {{ pauta.margen_olvido_dias }} días desde el {{ prox.prevista | dia_corto }}: según el prospecto, sáltala y sigue el {{ prox.siguiente_habitual | dia_corto }}. Si dudas, consúltalo.</strong></p>
-    {% endif %}
-    {% if ultima_dosis %}
-    <p class="suave">Zona sugerida: {{ prox.zona_sugerida }}. Última: {{ ultima_dosis.fecha | dia_corto }} · {{ ultima_dosis.zona }} · hace {{ prox.dias_desde_ultima }} día{% if prox.dias_desde_ultima != 1 %}s{% endif %}.</p>
-    {% else %}
-    <p class="suave">Zona sugerida: {{ prox.zona_sugerida }}.</p>
-    {% endif %}
-  {% else %}
-    <p class="suave">Aún no hay dosis registradas.</p>
-    <p class="suave">Zona sugerida: {{ zona_sug }}.</p>
-  {% endif %}
-</section>
+{% include "_tarjeta_tratamiento.html" %}
 
 <section class="panel">
   <h2>Apuntar dosis</h2>
@@ -45,12 +19,12 @@
     <input id="fecha" name="fecha" type="date" value="{{ hoy_str }}" max="{{ hoy_str }}" required>
 
     <label for="dosis_mg">Dosis (mg)</label>
-    <input id="dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg | gramos }}">
+    <input id="dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg }}">
 
     <label for="zona">Zona de inyección</label>
     <select id="zona" name="zona" required>
       {% for z in zonas %}
-      <option value="{{ z }}"{% if z == zona_sug %} selected{% endif %}>{{ z | capitalize }}</option>
+      <option value="{{ z }}"{% if z == t.zona_sugerida %} selected{% endif %}>{{ z | capitalize }}</option>
       {% endfor %}
     </select>
 
@@ -79,8 +53,8 @@
           {% if d.nota %} · {{ d.nota }}{% endif %}
         </p>
       </div>
-      <form method="post" action="/tratamiento/dosis/{{ d.id }}/borrar" style="margin: 0;">
-        <button type="submit" class="boton secundario" onclick="return confirm('¿Borrar esta dosis?')">Borrar</button>
+      <form method="post" action="/tratamiento/dosis/{{ d.id }}/borrar" style="margin: 0;" onsubmit="return confirm('¿Borrar esta dosis?')">
+        <button type="submit" class="boton secundario">Borrar</button>
       </form>
     </div>
     {% endfor %}
@@ -97,7 +71,7 @@
     <input id="farmaco" name="farmaco" value="{{ pauta.farmaco }}" maxlength="40" required>
 
     <label for="pauta_dosis_mg">Dosis habitual (mg)</label>
-    <input id="pauta_dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg | gramos }}" required>
+    <input id="pauta_dosis_mg" name="dosis_mg" type="number" step="0.1" min="0.1" max="50" value="{{ pauta.dosis_mg }}" required>
 
     <label for="intervalo_dias">Intervalo habitual (días)</label>
     <input id="intervalo_dias" name="intervalo_dias" type="number" min="1" max="60" value="{{ pauta.intervalo_dias }}" required>

@@ -1427,6 +1427,12 @@ def test_web_comida_proteinas_primero_y_minimo(settings, con):
     assert pos_prot != -1 and pos_kcal != -1
     assert pos_prot < pos_kcal
 
+    # Sin mínimo guardado: ni marca ni aviso
+    assert "progreso-minimo" not in texto
+    assert "Por debajo del mínimo" not in texto
+
+    db.guardar_ajustes_comida(con, db.AjustesComida(kcal_minimo=1800))
+    texto = c.get(f"/comida?fecha={ayer_str}").text
     assert "progreso-minimo" in texto
     assert "Por debajo del mínimo" in texto
 

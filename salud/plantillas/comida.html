@@ -160,11 +160,11 @@
     <div class="progreso-item">
       <div class="progreso-item-cabecera">
         <span>Calorías</span>
-        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal · mínimo {{ objetivo.kcal_minimo | cifra }}</span>
+        <span><strong>{{ totales.total.kcal | cifra }}</strong> / {{ objetivo.total.kcal | cifra }} kcal{% if objetivo.kcal_minimo is not none %} · mínimo {{ objetivo.kcal_minimo | cifra }}{% endif %}</span>
       </div>
       <div class="progreso">
         <div class="progreso-barra{% if prog_dia.kcal.pasado %} pasado{% endif %}" style="width: {{ prog_dia.kcal.pct }}%"></div>
-        <div class="progreso-minimo" style="left: {{ pct_minimo }}%" title="Mínimo"></div>
+        {% if objetivo.kcal_minimo is not none %}<div class="progreso-minimo" style="left: {{ pct_minimo }}%" title="Mínimo"></div>{% endif %}
       </div>
     </div>
     <div class="progreso-item">

@@ -360,11 +360,11 @@ def test_objetivo_dia_kcal_minimo(con):
     _preparar_historial_basal_y_neat(con, hoy, b_kcal=2000, neat_kcal=200)
     guardar_metrica(con, hoy.isoformat(), "peso", 80.0)
 
-    # Con kcal_minimo = None, usa el basal (2000)
+    # Con kcal_minimo = None, sin mínimo
     ajustes_none = db.AjustesComida(kcal_minimo=None)
     obj_none = nutricion.objetivo_dia(con, hoy, hoy, ajustes=ajustes_none)
     assert obj_none is not None
-    assert obj_none.kcal_minimo == 2000
+    assert obj_none.kcal_minimo is None
 
     # Con kcal_minimo = 1800, usa 1800
     ajustes_1800 = db.AjustesComida(kcal_minimo=1800)

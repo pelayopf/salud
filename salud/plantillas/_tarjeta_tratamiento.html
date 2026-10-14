@@ -1,0 +1,24 @@
+{# Próxima dosis. Espera `t` (de _tratamiento en web.py) y `con_enlace`. #}
+{% set p = t.prox %}
+<section class="panel tarjeta-tratamiento{% if p and p.estado in ('hoy', 'retrasada', 'saltar') %} resaltada{% endif %}">
+  <div class="cabecera">
+    <h2>{{ t.pauta.farmaco }} {{ t.pauta.dosis_mg | gramos }} mg</h2>
+    {% if con_enlace %}<a href="/tratamiento">Apuntar dosis</a>{% else %}<span class="derecha suave">Próxima dosis</span>{% endif %}
+  </div>
+  {% if p %}
+    {% if p.estado == 'esperar' %}
+    <p>Toca el {{ p.prevista | dia_corto }}. Puedes adelantarla desde el {{ p.adelantar_desde | dia_corto }}.</p>
+    {% elif p.estado == 'puede_adelantar' %}
+    <p>Toca el {{ p.prevista | dia_corto }}. Si quieres adelantarla, ya puedes.</p>
+    {% elif p.estado == 'hoy' %}
+    <p><strong>Toca hoy.</strong></p>
+    {% elif p.estado == 'retrasada' %}
+    <p><strong>Tocaba el {{ p.prevista | dia_corto }}. Aún puedes ponértela hasta el {{ p.limite | dia_corto }}.</strong></p>
+    {% elif p.estado == 'saltar' %}
+    <p><strong>Han pasado más de {{ t.pauta.margen_olvido_dias }} días desde el {{ p.prevista | dia_corto }}: según el prospecto, sáltala y sigue el {{ p.siguiente_habitual | dia_corto }}. Si dudas, consúltalo.</strong></p>
+    {% endif %}
+    <p class="suave">Zona sugerida: {{ t.zona_sugerida }}. Última: {{ t.ultima.fecha | dia_corto }} · {{ t.ultima.zona }} · hace {{ p.dias_desde_ultima }} día{% if p.dias_desde_ultima != 1 %}s{% endif %}.</p>
+  {% else %}
+    <p class="suave">Aún no hay dosis registradas. Zona sugerida: {{ t.zona_sugerida }}.</p>
+  {% endif %}
+</section>

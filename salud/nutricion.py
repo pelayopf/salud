@@ -44,7 +44,7 @@ class ObjetivoDia:
     por_momento: dict[str, Macros]
     desglose: list[tuple[str, int]]
     peso_kg: float
-    kcal_minimo: int
+    kcal_minimo: int | None  # None: sin mínimo
 
 
 def basal(con: sqlite3.Connection, hoy: date) -> int | None:
@@ -214,13 +214,12 @@ def objetivo_dia(
                 grasas=round(total.grasas * pct / 100),
             )
 
-    minimo = ajustes.kcal_minimo if ajustes.kcal_minimo is not None else b
     return ObjetivoDia(
         total=total,
         por_momento=por_momento,
         desglose=desglose,
         peso_kg=peso_kg,
-        kcal_minimo=minimo,
+        kcal_minimo=ajustes.kcal_minimo,
     )
 
 
