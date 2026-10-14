@@ -1,0 +1,51 @@
+<div class="fila plan-dia{% if dia.es_hoy %} es-hoy{% endif %}">
+  <div class="dia-col">
+    <strong>{{ dia.titulo }}</strong>
+  </div>
+  <div class="dia-contenido">
+    {% for p in dia.plan %}
+    <div class="plan-item">
+      <span class="plan-datos">
+        {% if p.hora %}<strong>{{ p.hora }}</strong>{% endif %}
+        <span>{{ p.nombre }}</span>
+        {% if p.duracion %}<span class="suave">· {{ p.duracion }}</span>{% endif %}
+        {% if p.intensidad %}<span class="suave">· {{ p.intensidad }}</span>{% endif %}
+      </span>
+      <span class="etiqueta{% if p.origen == 'semana-tipo' %} suave{% endif %}">{% if p.origen == 'google' %}calendario{% else %}semana tipo{% endif %}</span>
+      {% if p.hecho %}<span class="bien marca-hecho">✓ hecho</span>{% endif %}
+      {% if p.origen == "google" %}
+      <details class="ajustar">
+        <summary>Ajustar</summary>
+        <form method="post" action="/calendario/titulo">
+          <input type="hidden" name="titulo" value="{{ p.titulo }}">
+          <input type="hidden" name="deporte" value="0">
+          <button type="submit" class="boton secundario">No es deporte</button>
+        </form>
+        {% if p.tipo is none %}
+        <form method="post" action="/calendario/titulo">
+          <input type="hidden" name="titulo" value="{{ p.titulo }}">
+          <input type="hidden" name="deporte" value="1">
+          <select name="tipo">
+            {% for clave, nombre in tipos_actividad.items() %}
+            <option value="{{ clave }}">{{ nombre }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="boton">Guardar deporte</button>
+        </form>
+        {% endif %}
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% for h in dia.hechas %}
+    <div class="hecha-item suave">
+      <span>{{ h.nombre or h.nombre_tipo }}</span>
+      {% if h.hora %}<span>· {{ h.hora }}</span>{% endif %}
+      {% if h.duracion %}<span>· {{ h.duracion }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    {% if not dia.plan and not dia.hechas %}
+    <span class="suave">Descanso</span>
+    {% endif %}
+  </div>
+</div>

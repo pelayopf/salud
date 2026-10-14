@@ -290,4 +290,120 @@ th { color: var(--suave); font-weight: 500; }
   margin-top: 16px;
 }
 
+/* --- Calendario y semana tipo ------------------------------------------- */
+
+.plan-dia {
+  align-items: flex-start;
+  gap: 14px;
+}
+.plan-dia.es-hoy .dia-col strong {
+  color: var(--marca);
+}
+.dia-col {
+  flex: none;
+  width: 76px;
+}
+.dia-contenido {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plan-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.plan-datos {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.marca-hecho {
+  color: var(--bien);
+  font-weight: 600;
+  font-size: .85rem;
+}
+.plan-item details.ajustar {
+  margin: 0;
+  display: inline-block;
+}
+.plan-item details.ajustar summary {
+  font-size: .8rem;
+}
+.plan-item details.ajustar form {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.plan-item details.ajustar .boton {
+  padding: 4px 10px;
+  font-size: .8rem;
+}
+.plan-item details.ajustar select {
+  font: inherit;
+  font-size: .8rem;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--borde);
+  background: var(--crema);
+}
+.hecha-item {
+  font-size: .85rem;
+}
+
+.fila-semana {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.fila-semana:last-child {
+  border-bottom: 0;
+}
+.fila-semana .campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fila-semana .campo label {
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--suave);
+}
+.fila-semana .campo input,
+.fila-semana .campo select {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--crema);
+  color: var(--texto);
+}
+.fila-semana .campo-quitar {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+.fila-semana .campo-quitar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--texto);
+}
+
+@media (max-width: 600px) {
+  .fila-semana {
+    grid-template-columns: 1fr;
+  }
+}
+
+
 

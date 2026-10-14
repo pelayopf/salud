@@ -36,7 +36,7 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import alimentos, db, garmin, graficas, ia, lectura, sync
+from . import alimentos, calendario, db, garmin, graficas, ia, lectura, metricas, sync
 from .acceso import AccesoMiddleware
 from .config import Settings
 from .garmin import FuenteGarmin, GarminNoConectado
@@ -52,6 +52,10 @@ DIAS_SPARK = 14
 DIAS_MEDIA = 28
 PERIODOS = (30, 90, 180, 365)
 DIAS_SYNC_WEB = 2
+DIAS_SEMANA = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+DIAS_PASADOS_PLAN = 6
+DIAS_FUTUROS_PLAN = 7
+FILAS_VACIAS_SEMANA = 2
 
 # Entrar en Garmin desde Conexiones.
 CADUCIDAD_CODIGO_S = 10 * 60
@@ -482,6 +486,160 @@ def datos_producto(datos: dict[str, str]) -> DatosProducto:
     )
 
 
+@dataclass(frozen=True)
+class DiaPlan:
+    """Un día del panel de planificación con su plan y actividades hechas."""
+
+    fecha: str
+    titulo: str  # "Hoy", "Mañana", "Ayer" o fecha_corta
+    es_hoy: bool
+    futuro: bool
+    plan: list[dict[str, Any]]
+    hechas: list[dict[str, Any]]
+
+
+def dias_plan(
+    planificado: list[db.Planificado],
+    actividades: list[sqlite3.Row],
+    desde: date,
+    hasta: date,
+    hoy: date,
+) -> list[DiaPlan]:
+    """Construye la lista de días con su plan y actividades hechas."""
+    actividades_por_dia: dict[str, list[sqlite3.Row]] = defaultdict(list)
+    for a in actividades:
+        f = a["fecha"] if "fecha" in a.keys() else a["inicio"][:10]
+        actividades_por_dia[f].append(a)
+
+    plan_por_dia: dict[str, list[db.Planificado]] = defaultdict(list)
+    for p in planificado:
+        plan_por_dia[p.fecha].append(p)
+
+    resultado: list[DiaPlan] = []
+    d = desde
+    while d <= hasta:
+        f_str = d.isoformat()
+        if d == hoy:
+            titulo = "Hoy"
+        elif d == hoy + timedelta(days=1):
+            titulo = "Mañana"
+        elif d == hoy - timedelta(days=1):
+            titulo = "Ayer"
+        else:
+            titulo = graficas.fecha_corta(f_str)
+
+        acts_dia = actividades_por_dia.get(f_str, [])
+        hechas = _actividades(acts_dia)
+
+        plan_dia: list[dict[str, Any]] = []
+        for p in plan_por_dia.get(f_str, []):
+            if p.tipo is not None:
+                hecho = any(a["tipo"] == p.tipo for a in acts_dia)
+            else:
+                hecho = len(acts_dia) > 0
+
+            plan_dia.append(
+                {
+                    "hora": p.inicio or "",
+                    "nombre": nombre_tipo(p.tipo) if p.tipo else p.titulo,
+                    "titulo": p.titulo,
+                    "duracion": f"{p.duracion_min} min" if p.duracion_min else "",
+                    "intensidad": p.intensidad,
+                    "origen": p.origen,
+                    "tipo": p.tipo,
+                    "hecho": hecho,
+                }
+            )
+
+        resultado.append(
+            DiaPlan(
+                fecha=f_str,
+                titulo=titulo,
+                es_hoy=d == hoy,
+                futuro=d > hoy,
+                plan=plan_dia,
+                hechas=hechas,
+            )
+        )
+        d += timedelta(days=1)
+
+    return resultado
+
+
+def entradas_semana(datos: dict[str, str]) -> list[db.EntradaSemana]:
+    """Valida y extrae las entradas de la semana tipo del formulario web."""
+    filas_raw = datos.get("filas", "").strip()
+    try:
+        num_filas = int(filas_raw)
+    except ValueError:
+        raise ValueError("Formulario no válido") from None
+
+    if not (0 <= num_filas <= 50):
+        raise ValueError("Formulario no válido")
+
+    entradas: list[db.EntradaSemana] = []
+    for i in range(num_filas):
+        if datos.get(f"quitar-{i}") == "on":
+            continue
+        tipo = datos.get(f"tipo-{i}", "").strip()
+        if not tipo:
+            continue
+
+        dia_raw = datos.get(f"dia-{i}", "").strip()
+        try:
+            dia = int(dia_raw)
+            if not (0 <= dia <= 6):
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"Fila {i + 1}: día no válido") from None
+
+        inicio_raw = datos.get(f"inicio-{i}", "").strip()
+        if inicio_raw:
+            partes = inicio_raw.split(":")
+            if len(partes) != 2:
+                raise ValueError(f"Fila {i + 1}: hora no válida")
+            try:
+                h, m = int(partes[0]), int(partes[1])
+                if not (
+                    0 <= h <= 23 and 0 <= m <= 59 and len(partes[0]) == 2 and len(partes[1]) == 2
+                ):
+                    raise ValueError
+            except ValueError:
+                raise ValueError(f"Fila {i + 1}: hora no válida") from None
+            inicio: str | None = f"{h:02d}:{m:02d}"
+        else:
+            inicio = None
+
+        duracion_raw = datos.get(f"duracion-{i}", "").strip()
+        if duracion_raw:
+            try:
+                duracion: int | None = int(duracion_raw)
+                if not (5 <= duracion <= 600):
+                    raise ValueError
+            except ValueError:
+                raise ValueError(f"Fila {i + 1}: duración no válida") from None
+        else:
+            duracion = None
+
+        if tipo not in metricas.TIPOS_ACTIVIDAD:
+            raise ValueError(f"Fila {i + 1}: tipo no válido")
+
+        intensidad = datos.get(f"intensidad-{i}", "").strip()
+        if intensidad not in lectura.INTENSIDADES:
+            raise ValueError(f"Fila {i + 1}: intensidad no válida")
+
+        entradas.append(
+            db.EntradaSemana(
+                dia=dia,
+                inicio=inicio,
+                duracion_min=duracion,
+                tipo=tipo,
+                intensidad=intensidad,
+            )
+        )
+    return entradas
+
+
 # --- Aplicación ----------------------------------------------------------------
 
 
@@ -496,6 +654,7 @@ def crear_app(
     reloj: Callable[[], float] = time.monotonic,
     cliente_off: httpx.Client | None = None,
     lector_etiqueta: Callable[[bytes], ia.Etiqueta] | None = None,
+    cliente_calendario: httpx.Client | None = None,
 ) -> Starlette:
     """Construye la aplicación web."""
     leer = lector_etiqueta or (lambda imagen: ia.leer_etiqueta(settings, imagen))
@@ -623,20 +782,170 @@ def crear_app(
             dias = 30
         dias = dias if dias in PERIODOS else 30
         fin = hoy()
+        desde_plan = fin - timedelta(days=DIAS_PASADOS_PLAN)
+        hasta_plan = fin + timedelta(days=DIAS_FUTUROS_PLAN)
         con = abrir_db()
         try:
             filas = db.actividades(
                 con, (fin - timedelta(days=dias - 1)).isoformat(), fin.isoformat()
             )
+            plan_items = calendario.plan(con, desde_plan, hasta_plan, fin)
+            acts_plan = db.actividades(con, desde_plan.isoformat(), hasta_plan.isoformat())
+            sync_cal = db.ultima_sincronizacion(con, calendario.GOOGLE)
         finally:
             con.close()
+        dias_p = dias_plan(plan_items, acts_plan, desde_plan, hasta_plan, fin)
         return _render(
             "actividades.html",
             seccion="actividades",
             dias=dias,
             periodos=PERIODOS,
             actividades=_actividades(filas),
+            dias_plan=dias_p,
+            sync_calendario=sync_cal,
+            tipos_actividad=metricas.TIPOS_ACTIVIDAD,
+            mensaje=request.query_params.get("mensaje"),
         )
+
+    async def sincronizar_calendario_web(_request: Request) -> Response:
+        if settings.gcal_ics is None:
+            return _volver("Falta SALUD_GCAL_ICS en el .env", "/actividades")
+
+        url = settings.gcal_ics
+
+        def _sync() -> int:
+            con = abrir_db()
+            try:
+                res = calendario.sincronizar_calendario(con, url, hoy(), cliente=cliente_calendario)
+                return res.deportes
+            finally:
+                con.close()
+
+        try:
+            n = await run_in_threadpool(_sync)
+            return _volver(f"Calendario al día: {n} deportes", "/actividades")
+        except calendario.ErrorCalendario as exc:
+            return _volver(str(exc), "/actividades")
+
+    async def calendario_titulo_web(request: Request) -> Response:
+        datos = await _formulario(request)
+        titulo = datos.get("titulo", "").strip()
+        if not titulo:
+            return _volver("El título no puede estar vacío", "/actividades")
+
+        deporte = datos.get("deporte", "").strip()
+        if deporte == "0":
+
+            def _desmarcar() -> None:
+                con = abrir_db()
+                try:
+                    db.marcar_titulo(con, titulo=titulo, deporte=False, tipo=None)
+                    db.borrar_planificado_titulo(con, titulo)
+                finally:
+                    con.close()
+
+            await run_in_threadpool(_desmarcar)
+            return _volver(f"«{titulo}» ya no cuenta como deporte", "/actividades")
+
+        if deporte == "1":
+            tipo = datos.get("tipo", "").strip()
+            if tipo not in metricas.TIPOS_ACTIVIDAD:
+                return _volver("Tipo de deporte no válido", "/actividades")
+
+            def _marcar() -> None:
+                con = abrir_db()
+                try:
+                    db.marcar_titulo(con, titulo=titulo, deporte=True, tipo=tipo)
+                    db.actualizar_tipo_titulo(
+                        con,
+                        titulo=titulo,
+                        tipo=tipo,
+                        intensidad=calendario.intensidad(tipo),
+                    )
+                finally:
+                    con.close()
+
+            await run_in_threadpool(_marcar)
+            return _volver(f"«{titulo}» es {nombre_tipo(tipo)}", "/actividades")
+
+        return _volver("Opción no válida", "/actividades")
+
+    def ver_semana_tipo(request: Request) -> Response:
+        proponer = request.query_params.get("proponer") == "1"
+        aviso: str | None = None
+        mensaje = request.query_params.get("mensaje")
+
+        con = abrir_db()
+        try:
+            if proponer:
+                filas_semana = calendario.proponer_semana_tipo(con, hoy())
+                if filas_semana:
+                    aviso = (
+                        "Propuesta a partir de tus actividades de las últimas 8 semanas:"
+                        " revísala y guarda."
+                    )
+                else:
+                    aviso = "No hay suficientes actividades repetidas para proponer una semana tipo"
+            else:
+                filas_semana = db.semana_tipo(con)
+        finally:
+            con.close()
+
+        total_filas = len(filas_semana) + FILAS_VACIAS_SEMANA
+        filas_contexto = []
+        for i in range(total_filas):
+            if i < len(filas_semana):
+                e = filas_semana[i]
+                filas_contexto.append(
+                    {
+                        "indice": i,
+                        "dia": e.dia,
+                        "inicio": e.inicio or "",
+                        "tipo": e.tipo,
+                        "duracion": str(e.duracion_min) if e.duracion_min is not None else "",
+                        "intensidad": e.intensidad,
+                    }
+                )
+            else:
+                filas_contexto.append(
+                    {
+                        "indice": i,
+                        "dia": 0,
+                        "inicio": "",
+                        "tipo": "",
+                        "duracion": "",
+                        "intensidad": "moderada",
+                    }
+                )
+
+        return _render(
+            "semana_tipo.html",
+            seccion="actividades",
+            filas=filas_contexto,
+            total_filas=total_filas,
+            dias_opciones=list(enumerate(DIAS_SEMANA)),
+            tipos_actividad=metricas.TIPOS_ACTIVIDAD,
+            intensidades=[i for i in lectura.INTENSIDADES if i != "descanso"],
+            aviso=aviso,
+            mensaje=mensaje,
+        )
+
+    async def guardar_semana_tipo_web(request: Request) -> Response:
+        datos = await _formulario(request)
+        try:
+            entradas = entradas_semana(datos)
+        except ValueError as exc:
+            return _volver(str(exc), "/actividades/semana-tipo")
+
+        def _guardar() -> None:
+            con = abrir_db()
+            try:
+                db.guardar_semana_tipo(con, entradas)
+            finally:
+                con.close()
+
+        await run_in_threadpool(_guardar)
+        return _volver("Semana tipo guardada", "/actividades/semana-tipo")
 
     def ver_lecturas(_request: Request) -> Response:
         con = abrir_db()
@@ -1173,6 +1482,10 @@ def crear_app(
             Route("/", ver_hoy),
             Route("/tendencias", ver_tendencias),
             Route("/actividades", ver_actividades),
+            Route("/actividades/semana-tipo", ver_semana_tipo),
+            Route("/actividades/semana-tipo", guardar_semana_tipo_web, methods=["POST"]),
+            Route("/calendario/sincronizar", sincronizar_calendario_web, methods=["POST"]),
+            Route("/calendario/titulo", calendario_titulo_web, methods=["POST"]),
             Route("/lecturas", ver_lecturas),
             Route("/comida", ver_comida),
             Route("/comida/nuevo", ver_comida_nuevo),

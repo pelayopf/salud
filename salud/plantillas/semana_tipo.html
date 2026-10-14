@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}Semana tipo · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if aviso %}<p class="aviso">{{ aviso }}</p>{% endif %}
+
+<div class="cabecera">
+  <h1>Semana tipo</h1>
+  <a href="/actividades">‹ Volver a Actividades</a>
+</div>
+
+<p class="suave">Define tus entrenos habituales de cada día de la semana para planificar cuando no hay eventos en el calendario.</p>
+
+<form method="post" action="/actividades/semana-tipo">
+  <input type="hidden" name="filas" value="{{ total_filas }}">
+  <div class="panel">
+    {% for f in filas %}
+    <div class="fila-semana">
+      <div class="campo">
+        <label for="dia-{{ f.indice }}">Día</label>
+        <select name="dia-{{ f.indice }}" id="dia-{{ f.indice }}">
+          {% for val, nom in dias_opciones %}
+          <option value="{{ val }}"{% if val == f.dia %} selected{% endif %}>{{ nom }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="inicio-{{ f.indice }}">Hora de inicio</label>
+        <input type="time" name="inicio-{{ f.indice }}" id="inicio-{{ f.indice }}" value="{{ f.inicio }}">
+      </div>
+      <div class="campo">
+        <label for="tipo-{{ f.indice }}">Deporte</label>
+        <select name="tipo-{{ f.indice }}" id="tipo-{{ f.indice }}">
+          <option value="">—</option>
+          {% for clave, nombre in tipos_actividad.items() %}
+          <option value="{{ clave }}"{% if clave == f.tipo %} selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+          {% if f.tipo and f.tipo not in tipos_actividad %}
+          <option value="{{ f.tipo }}" selected>{{ f.tipo }}</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="duracion-{{ f.indice }}">Duración (min)</label>
+        <input type="number" min="5" max="600" name="duracion-{{ f.indice }}" id="duracion-{{ f.indice }}" value="{{ f.duracion }}" placeholder="min">
+      </div>
+      <div class="campo">
+        <label for="intensidad-{{ f.indice }}">Intensidad</label>
+        <select name="intensidad-{{ f.indice }}" id="intensidad-{{ f.indice }}">
+          {% for int_op in intensidades %}
+          <option value="{{ int_op }}"{% if int_op == f.intensidad %} selected{% endif %}>{{ int_op | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo campo-quitar">
+        <label for="quitar-{{ f.indice }}">
+          <input type="checkbox" name="quitar-{{ f.indice }}" id="quitar-{{ f.indice }}">
+          Quitar
+        </label>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="acciones" style="margin-top: 16px;">
+    <button type="submit" class="boton">Guardar</button>
+    <a class="boton secundario" href="/actividades/semana-tipo?proponer=1">Proponer desde mis actividades</a>
+    <a href="/actividades">‹ Volver a Actividades</a>
+  </div>
+</form>
+{% endblock %}

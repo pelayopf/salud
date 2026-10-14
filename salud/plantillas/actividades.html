@@ -1,7 +1,35 @@
 {% extends "base.html" %}
 {% block titulo %}Actividades · Salud{% endblock %}
 {% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 <h1>Actividades</h1>
+
+<section class="panel">
+  <div class="cabecera">
+    <h2>Esta semana y lo que viene</h2>
+  </div>
+  <div class="lista">
+    {% for dia in dias_plan %}
+    {% include "_plan_dia.html" %}
+    {% endfor %}
+  </div>
+  <div class="pie">
+    <span class="suave">
+      {% if sync_calendario %}
+      Calendario actualizado {{ sync_calendario.hecha | hace }}
+      {% else %}
+      Calendario sin leer todavía
+      {% endif %}
+    </span>
+    <div class="acciones">
+      <a href="/actividades/semana-tipo">Semana tipo</a>
+      <form method="post" action="/calendario/sincronizar">
+        <button type="submit" class="boton secundario">Actualizar calendario</button>
+      </form>
+    </div>
+  </div>
+</section>
+
 <nav class="filtros" aria-label="Periodo">
   {% for p in periodos %}
   <a href="/actividades?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{% if p == 365 %}1 año{% else %}{{ p }} días{% endif %}</a>
