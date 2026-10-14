@@ -47,6 +47,10 @@ class Settings:
     ia_modelo_consejo: str = "gemini-3.8-flash-high"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
+    # Web pública (Cloudflare Tunnel): correos de Google con acceso.
+    cuentas_google: frozenset[str] = frozenset()
+    url_publica: str = ""
+    google_oauth: Path = Path("~/.config/salud/google-oauth.json").expanduser()
 
 
 def _ruta(valor: str) -> Path:
@@ -57,6 +61,7 @@ def load_settings() -> Settings:
     """Lee la configuración del .env del proyecto y del entorno."""
     load_dotenv(ENV_PATH)
     usuarios = os.environ.get("SALUD_USUARIOS", "")
+    cuentas = os.environ.get("SALUD_CUENTAS_GOOGLE", "")
     fitness = os.environ.get("SALUD_FITNESS_TRACKER", "").strip()
     if fitness and not _ruta(fitness).is_dir():
         raise ConfigError(f"SALUD_FITNESS_TRACKER no es un directorio: {fitness}")
@@ -84,4 +89,9 @@ def load_settings() -> Settings:
         ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
         or "gemini-3.8-flash-high",
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
+        cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
+        url_publica=os.environ.get("SALUD_URL_PUBLICA", "").strip().rstrip("/"),
+        google_oauth=_ruta(
+            os.environ.get("SALUD_GOOGLE_OAUTH", "~/.config/salud/google-oauth.json")
+        ),
     )

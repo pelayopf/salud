@@ -20,8 +20,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import secrets
 import sqlite3
 import unicodedata
 from collections.abc import Iterable
@@ -209,6 +211,16 @@ CREATE TABLE IF NOT EXISTS dosis (
     creado TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS dosis_fecha ON dosis (fecha);
+CREATE TABLE IF NOT EXISTS sesiones_web (
+    token_hash TEXT PRIMARY KEY,
+    correo TEXT NOT NULL,
+    creada TEXT NOT NULL,
+    caduca TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS autorizaciones_pendientes (
+    state TEXT PRIMARY KEY,
+    creada TEXT NOT NULL
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -1445,3 +1457,80 @@ def borrar_dosis(con: sqlite3.Connection, id_: int) -> bool:
     with con:
         cur = con.execute("DELETE FROM dosis WHERE id = ?", (id_,))
         return cur.rowcount > 0
+
+
+# --- Sesiones de la web pública (ver acceso.py) ---------------------------
+
+DIAS_SESION = 90
+DIAS_RENOVACION = 30
+HORAS_AUTORIZACION = 1
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def crear_sesion_web(con: sqlite3.Connection, correo: str, dias: int = DIAS_SESION) -> str:
+    """Abre una sesión para un correo y devuelve su token (solo se guarda su hash)."""
+    token = secrets.token_urlsafe(32)
+    caduca = (datetime.now(UTC) + timedelta(days=dias)).isoformat(timespec="seconds")
+    with con:
+        con.execute("DELETE FROM sesiones_web WHERE caduca < ?", (ahora(),))
+        con.execute(
+            "INSERT INTO sesiones_web (token_hash, correo, creada, caduca) VALUES (?, ?, ?, ?)",
+            (_hash_token(token), correo, ahora(), caduca),
+        )
+    return token
+
+
+def correo_de_sesion_web(con: sqlite3.Connection, token: str) -> str | None:
+    """El correo de una sesión vigente (None si no existe o caducó).
+
+    Si a la sesión le quedan menos de DIAS_RENOVACION (30 días), amplía
+    su caducidad a DIAS_SESION (90 días) desde hoy manteniendo el token.
+    """
+    th = _hash_token(token)
+    fila = con.execute(
+        "SELECT correo, caduca FROM sesiones_web WHERE token_hash = ? AND caduca >= ?",
+        (th, ahora()),
+    ).fetchone()
+    if not fila:
+        return None
+    correo = fila["correo"]
+    caduca_str = fila["caduca"]
+    limite_renovacion = (datetime.now(UTC) + timedelta(days=DIAS_RENOVACION)).isoformat(
+        timespec="seconds"
+    )
+    if caduca_str < limite_renovacion:
+        nueva_caduca = (datetime.now(UTC) + timedelta(days=DIAS_SESION)).isoformat(
+            timespec="seconds"
+        )
+        with con:
+            con.execute(
+                "UPDATE sesiones_web SET caduca = ? WHERE token_hash = ?",
+                (nueva_caduca, th),
+            )
+    return str(correo)
+
+
+def cerrar_sesion_web(con: sqlite3.Connection, token: str) -> None:
+    """Cierra una sesión."""
+    with con:
+        con.execute("DELETE FROM sesiones_web WHERE token_hash = ?", (_hash_token(token),))
+
+
+def guardar_autorizacion(con: sqlite3.Connection, state: str) -> None:
+    """Recuerda el `state` de una autorización iniciada y olvida las abandonadas."""
+    limite = (datetime.now(UTC) - timedelta(hours=HORAS_AUTORIZACION)).isoformat(timespec="seconds")
+    with con:
+        con.execute("DELETE FROM autorizaciones_pendientes WHERE creada < ?", (limite,))
+        con.execute(
+            "INSERT INTO autorizaciones_pendientes (state, creada) VALUES (?, ?)", (state, ahora())
+        )
+
+
+def consumir_autorizacion(con: sqlite3.Connection, state: str) -> bool:
+    """Borra el `state` y devuelve si existía (protege el callback de peticiones ajenas)."""
+    with con:
+        cur = con.execute("DELETE FROM autorizaciones_pendientes WHERE state = ?", (state,))
+    return cur.rowcount == 1

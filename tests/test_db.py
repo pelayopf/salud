@@ -919,3 +919,50 @@ def test_leer_comida(con):
     assert c.unidad == "ml"
     assert c.kcal == 80.0
     assert db.leer_comida(con, 99999) is None
+
+
+def test_sesiones_web_crear_leer_cerrar(con):
+    token = db.crear_sesion_web(con, "yo@example.com")
+    assert db.correo_de_sesion_web(con, token) == "yo@example.com"
+    db.cerrar_sesion_web(con, token)
+    assert db.correo_de_sesion_web(con, token) is None
+
+
+def test_sesiones_web_caducadas_y_renovacion(con):
+    # Sesión caducada
+    t1 = db.crear_sesion_web(con, "antiguo@example.com", dias=-1)
+    assert db.correo_de_sesion_web(con, t1) is None
+
+    # Crear una nueva limpia las caducadas
+    _ = db.crear_sesion_web(con, "nuevo@example.com", dias=90)
+    fila = con.execute("SELECT * FROM sesiones_web WHERE correo = 'antiguo@example.com'").fetchone()
+    assert fila is None
+
+    # Renovación cuando quedan menos de 30 días:
+    # Simulamos que le quedan 10 días
+    token = db.crear_sesion_web(con, "renovable@example.com", dias=10)
+    correo = db.correo_de_sesion_web(con, token)
+    assert correo == "renovable@example.com"
+    # Debe haberse ampliado a ~90 días
+    fila = con.execute(
+        "SELECT caduca FROM sesiones_web WHERE correo = 'renovable@example.com'"
+    ).fetchone()
+    assert fila is not None
+    dt_caduca = db.datetime.fromisoformat(fila["caduca"])
+    dias_restantes = (dt_caduca - db.datetime.now(db.UTC)).total_seconds() / 86400
+    assert 88 < dias_restantes <= 90
+
+
+def test_autorizaciones_pendientes(con):
+    db.guardar_autorizacion(con, "state-123")
+    assert not db.consumir_autorizacion(con, "state-inexistente")
+    assert db.consumir_autorizacion(con, "state-123")
+    # Solo se puede consumir una vez
+    assert not db.consumir_autorizacion(con, "state-123")
+
+    # Limpieza de abandonadas (> 1 hora)
+    db.guardar_autorizacion(con, "viejo")
+    con.execute("UPDATE autorizaciones_pendientes SET creada = '2000-01-01T00:00:00+00:00'")
+    db.guardar_autorizacion(con, "nuevo")
+    assert not db.consumir_autorizacion(con, "viejo")
+    assert db.consumir_autorizacion(con, "nuevo")
