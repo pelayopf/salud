@@ -29,7 +29,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -641,6 +641,10 @@ ESQUEMA_COMIDA: dict[str, Any] = {
 }
 
 
+# Lo que se puede escribir en "Añadir con IA".
+MAX_TEXTO_COMIDA = 500
+
+
 def analizar_comida(
     settings: Settings,
     texto: str,
@@ -659,7 +663,7 @@ def analizar_comida(
     tiene_imagen = bool(imagen)
     if not tiene_texto and not tiene_imagen:
         raise ErrorIA("Escribe qué has comido o añade una foto")
-    if len(t) > 500:
+    if len(t) > MAX_TEXTO_COMIDA:
         raise ErrorIA("El texto es demasiado largo")
 
     adjuntos: tuple[Adjunto, ...] = ()
@@ -680,7 +684,16 @@ def analizar_comida(
         modelo_agy=settings.ia_modelo_comida,
         tiempo_maximo_s=TIEMPO_COMIDA_S,
     )
-    datos = ejecutar(tarea, settings, motor=motor)
+    try:
+        datos = ejecutar(tarea, settings, motor=motor)
+    except CupoAgotado:
+        log.warning(
+            "Sin cupo para %s; la comida va con %s",
+            tarea.modelo_agy,
+            settings.ia_modelo_comida_respaldo,
+        )
+        tarea = replace(tarea, modelo_agy=settings.ia_modelo_comida_respaldo)
+        datos = ejecutar(tarea, settings, motor=motor)
 
     alimentos_raw = datos.get("alimentos")
     if not isinstance(alimentos_raw, list):

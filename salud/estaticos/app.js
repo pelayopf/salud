@@ -462,6 +462,24 @@ if (esperandoConsejo) {
 
 // Añadir comida con IA
 for (const formIa of document.querySelectorAll("form[data-comida-ia]")) {
+  // Los chips de momento cambian el campo oculto sin recargar: así no se
+  // pierden el texto escrito ni la foto elegida.
+  const campoMomento = formIa.querySelector("[data-momento-ia]");
+  const chips = formIa.querySelectorAll("[data-chip-momento]");
+  for (const chip of chips) {
+    chip.addEventListener("click", (e) => {
+      if (!campoMomento) return;
+      e.preventDefault();
+      campoMomento.value = chip.dataset.chipMomento;
+      for (const otro of chips) {
+        const activo = otro === chip;
+        otro.classList.toggle("activo", activo);
+        if (activo) otro.setAttribute("aria-pressed", "true");
+        else otro.removeAttribute("aria-pressed");
+      }
+    });
+  }
+
   const inputFoto = formIa.querySelector("[data-input-foto-ia]");
   const vistaPrevia = formIa.querySelector("[data-vista-previa-foto]");
   const imgPrevia = vistaPrevia ? vistaPrevia.querySelector("img") : null;

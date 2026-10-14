@@ -906,6 +906,129 @@ def entradas_semana(datos: dict[str, str]) -> list[db.EntradaSemana]:
 # --- Aplicación ----------------------------------------------------------------
 
 
+async def _leer_foto(request: Request) -> bytes | Response:
+    """La foto del cuerpo de la petición, o la respuesta de error (tamaño o tipo)."""
+    demasiado = JSONResponse({"error": "La foto es demasiado grande"}, 413)
+    try:
+        if int(request.headers.get("content-length") or 0) > ia.MAX_BYTES_IMAGEN:
+            return demasiado
+    except ValueError:
+        pass
+    partes: list[bytes] = []
+    tam = 0
+    async for trozo in request.stream():
+        tam += len(trozo)
+        if tam > ia.MAX_BYTES_IMAGEN:
+            return demasiado
+        partes.append(trozo)
+    cuerpo = b"".join(partes)
+    if ia.tipo_imagen(cuerpo) is None:
+        return JSONResponse({"error": "El fichero no es una imagen JPEG, PNG o WebP"}, 415)
+    return cuerpo
+
+
+@dataclass(frozen=True)
+class PeticionIA:
+    """Lo que se pide analizar: fecha y momento del diario y el texto (puede ir vacío con foto)."""
+
+    fecha: str
+    momento: str
+    texto: str
+
+
+def peticion_ia(datos: dict[str, str], *, hay_foto: bool, hoy_: date) -> PeticionIA:
+    """Valida la petición de "Añadir con IA". ValueError con el mensaje para el usuario."""
+    texto = datos.get("texto", "").strip()
+    if len(texto) > ia.MAX_TEXTO_COMIDA:
+        raise ValueError("El texto es demasiado largo")
+    if len(texto) < 2 and not hay_foto:
+        raise ValueError("Escribe qué has comido o añade una foto")
+    fecha_raw = datos.get("fecha", "").strip()
+    try:
+        fecha = date.fromisoformat(fecha_raw) if fecha_raw else hoy_
+    except ValueError:
+        raise ValueError("Fecha no válida") from None
+    if fecha > hoy_:
+        raise ValueError("La fecha no puede ser posterior a hoy")
+    momento = momento_valido(datos.get("momento"))
+    if momento is None:
+        raise ValueError("Momento no válido")
+    return PeticionIA(fecha.isoformat(), momento, texto)
+
+
+@dataclass(frozen=True)
+class AlimentoFormulario:
+    """Un alimento revisado en el formulario de "Añadir con IA"."""
+
+    nombre: str
+    cantidad: float
+    unidad: str
+    momento: str
+    kcal: float | None
+    proteinas: float | None
+    hidratos: float | None
+    grasas: float | None
+    producto: bool
+
+
+def alimentos_desde_formulario(datos: dict[str, str], n: int) -> list[AlimentoFormulario]:
+    """Los alimentos marcados de las `n` tarjetas (`a-<i>-…`). ValueError si alguno está mal."""
+    elegidos: list[AlimentoFormulario] = []
+    for i in range(n):
+
+        def campo(nombre: str, i: int = i) -> str:
+            return datos.get(f"a-{i}-{nombre}", "").strip()
+
+        if f"a-{i}-incluir" not in datos:
+            continue
+        nombre = campo("nombre")
+        if not nombre or len(nombre) > 120:
+            raise ValueError("Cada alimento necesita un nombre (como mucho 120 caracteres)")
+
+        def numero(clave: str, nombre: str = nombre) -> float | None:
+            valor = campo(clave).replace(",", ".")
+            if not valor:
+                return None
+            try:
+                v = float(valor)
+            except ValueError:
+                raise ValueError(f"Valor no válido en {nombre}") from None
+            if not math.isfinite(v) or v < 0:
+                raise ValueError(f"Valor no válido en {nombre}")
+            return v
+
+        cantidad = numero("cantidad")
+        if cantidad is None or not 0 < cantidad <= 5000:
+            raise ValueError(f"Cantidad no válida en {nombre}")
+        unidad = campo("unidad")
+        if unidad not in ("g", "ml"):
+            raise ValueError(f"Unidad no válida en {nombre}")
+        momento = momento_valido(campo("momento"))
+        if momento is None:
+            raise ValueError(f"Momento no válido en {nombre}")
+        elegidos.append(
+            AlimentoFormulario(
+                nombre=nombre,
+                cantidad=cantidad,
+                unidad=unidad,
+                momento=momento,
+                kcal=numero("kcal"),
+                proteinas=numero("proteinas"),
+                hidratos=numero("hidratos"),
+                grasas=numero("grasas"),
+                producto=f"a-{i}-producto" in datos,
+            )
+        )
+    if not elegidos:
+        raise ValueError("No has marcado ningún alimento")
+    return elegidos
+
+
+def por_100(total: float | None, cantidad: float) -> float | None:
+    """Valor por 100 g/ml a partir del total de una cantidad, con un decimal."""
+    return None if total is None else round(total * 100 / cantidad, 1)
+
+
 def crear_app(
     settings: Settings,
     abrir_db: Callable[[], sqlite3.Connection],
@@ -1874,186 +1997,92 @@ def crear_app(
             return _volver(str(exc), f"/comida?fecha={fecha_str}")
 
     def ver_comida_ia(request: Request) -> Response:
-        fecha = _fecha(request)
-        fecha_str = fecha.isoformat()
-        momento_param = request.query_params.get("momento")
-        momento_elegido = momento_valido(momento_param) or momento_por_hora(datetime.now(ZONA).hour)
-        texto = request.query_params.get("texto", "").strip()
+        momento = momento_valido(request.query_params.get("momento"))
         return _render(
             "comida_ia.html",
-            fecha=fecha_str,
-            momento_elegido=momento_elegido,
+            fecha=_fecha(request).isoformat(),
+            momento_elegido=momento or momento_por_hora(datetime.now(ZONA).hour),
             momentos_chips=db.MOMENTOS,
-            texto=texto,
+            texto=request.query_params.get("texto", "").strip(),
             pestana="anadir",
             seccion="comida",
             mensaje=request.query_params.get("mensaje"),
             error=request.query_params.get("error"),
         )
 
-    async def crear_comida_ia_web(request: Request) -> Response:
-        ct = request.headers.get("content-type", "").lower()
-        es_foto = ct.startswith("image/")
-
-        if es_foto:
-            fecha_raw = request.query_params.get("fecha", "").strip()
-            momento_raw = request.query_params.get("momento", "").strip()
-            texto = request.query_params.get("texto", "").strip()
-
-            cl_hdr = request.headers.get("content-length")
-            if cl_hdr:
-                try:
-                    if int(cl_hdr) > ia.MAX_BYTES_IMAGEN:
-                        return JSONResponse({"error": "La foto es demasiado grande"}, 413)
-                except ValueError:
-                    pass
-
-            partes: list[bytes] = []
-            tam = 0
-            async for trozo in request.stream():
-                tam += len(trozo)
-                if tam > ia.MAX_BYTES_IMAGEN:
-                    return JSONResponse({"error": "La foto es demasiado grande"}, 413)
-                partes.append(trozo)
-            cuerpo_foto = b"".join(partes)
-
-            if ia.tipo_imagen(cuerpo_foto) is None:
-                return JSONResponse({"error": "El fichero no es una imagen JPEG, PNG o WebP"}, 415)
-
-            if len(texto) > 500:
-                return JSONResponse({"error": "El texto es demasiado largo"}, 400)
-
-            if len(texto) < 2 and not cuerpo_foto:
-                return JSONResponse({"error": "Escribe qué has comido o añade una foto"}, 400)
-
-            try:
-                fecha_dt = min(date.fromisoformat(fecha_raw) if fecha_raw else hoy(), hoy())
-            except ValueError:
-                return JSONResponse({"error": "Fecha no válida"}, 400)
-
-            momento = momento_valido(momento_raw)
-            if not momento:
-                return JSONResponse({"error": "Momento no válido"}, 400)
-
-            con = abrir_db()
-            try:
-                id_ = db.crear_borrador_comida(
-                    con,
-                    fecha=fecha_dt.isoformat(),
-                    momento=momento,
-                    texto=texto,
-                    con_foto=True,
-                )
-            finally:
-                con.close()
-
-            def _trabajo(borrador_id: int, t: str, img: bytes) -> None:
-                con_hilo = abrir_db()
-                try:
-                    alimentos = analizar_fn(t, img)
-                    db.completar_borrador_comida(
-                        con_hilo,
-                        borrador_id,
-                        [asdict(a) for a in alimentos],
-                    )
-                except (ia.ErrorIA, ia.IAOcupada) as exc:
-                    db.fallar_borrador_comida(con_hilo, borrador_id, str(exc))
-                except Exception:
-                    log.exception("Error al analizar la comida con IA")
-                    db.fallar_borrador_comida(
-                        con_hilo, borrador_id, "No se pudo analizar la comida"
-                    )
-                finally:
-                    con_hilo.close()
-
-            threading.Thread(target=_trabajo, args=(id_, texto, cuerpo_foto), daemon=True).start()
-            return JSONResponse({"url": f"/comida/ia/{id_}"}, 200)
-
-        # Formulario estándar
-        datos = await _formulario(request)
-        fecha_raw = datos.get("fecha", "").strip()
-        momento_raw = datos.get("momento", "").strip()
-        texto = datos.get("texto", "").strip()
-
-        try:
-            fecha_dt = min(date.fromisoformat(fecha_raw) if fecha_raw else hoy(), hoy())
-        except ValueError:
-            return _volver("Fecha no válida", "/comida/ia")
-
-        momento = momento_valido(momento_raw) or momento_por_hora(datetime.now(ZONA).hour)
-        url_error = f"/comida/ia?fecha={fecha_dt.isoformat()}&momento={momento}&texto={texto}"
-
-        if len(texto) > 500:
-            return _volver("El texto es demasiado largo", url_error)
-        if len(texto) < 2:
-            return _volver("Escribe qué has comido o añade una foto", url_error)
-
+    def _analizar_en_segundo_plano(peticion: PeticionIA, foto: bytes | None) -> int:
+        """Crea el borrador y lanza el análisis en un hilo; devuelve el id del borrador."""
         con = abrir_db()
         try:
             id_ = db.crear_borrador_comida(
                 con,
-                fecha=fecha_dt.isoformat(),
-                momento=momento,
-                texto=texto,
-                con_foto=False,
+                fecha=peticion.fecha,
+                momento=peticion.momento,
+                texto=peticion.texto,
+                con_foto=foto is not None,
             )
         finally:
             con.close()
 
-        def _trabajo_txt(borrador_id: int, t: str) -> None:
+        def _trabajo() -> None:
             con_hilo = abrir_db()
             try:
-                alimentos = analizar_fn(t, None)
-                db.completar_borrador_comida(
-                    con_hilo,
-                    borrador_id,
-                    [asdict(a) for a in alimentos],
-                )
+                alimentos = analizar_fn(peticion.texto, foto)
+                db.completar_borrador_comida(con_hilo, id_, [asdict(a) for a in alimentos])
             except (ia.ErrorIA, ia.IAOcupada) as exc:
-                db.fallar_borrador_comida(con_hilo, borrador_id, str(exc))
+                db.fallar_borrador_comida(con_hilo, id_, str(exc))
             except Exception:
                 log.exception("Error al analizar la comida con IA")
-                db.fallar_borrador_comida(con_hilo, borrador_id, "No se pudo analizar la comida")
+                db.fallar_borrador_comida(con_hilo, id_, "No se pudo analizar la comida")
             finally:
                 con_hilo.close()
 
-        threading.Thread(target=_trabajo_txt, args=(id_, texto), daemon=True).start()
+        threading.Thread(target=_trabajo, daemon=True).start()
+        return id_
+
+    async def crear_comida_ia_web(request: Request) -> Response:
+        # Con foto, app.js manda la imagen como cuerpo y el resto en la query string
+        # (sin python-multipart) y espera JSON; sin foto, es un formulario normal.
+        if request.headers.get("content-type", "").lower().startswith("image/"):
+            foto = await _leer_foto(request)
+            if isinstance(foto, Response):
+                return foto
+            try:
+                peticion = peticion_ia(dict(request.query_params), hay_foto=True, hoy_=hoy())
+            except ValueError as exc:
+                return JSONResponse({"error": str(exc)}, 400)
+            id_ = await run_in_threadpool(_analizar_en_segundo_plano, peticion, foto)
+            return JSONResponse({"url": f"/comida/ia/{id_}"})
+
+        datos = await _formulario(request)
+        try:
+            peticion = peticion_ia(datos, hay_foto=False, hoy_=hoy())
+        except ValueError as exc:
+            volver = {k: datos.get(k, "") for k in ("fecha", "momento", "texto")}
+            return _volver(str(exc), f"/comida/ia?{urlencode(volver)}")
+        id_ = await run_in_threadpool(_analizar_en_segundo_plano, peticion, None)
         return RedirectResponse(f"/comida/ia/{id_}", 303)
 
-    def estado_comida_ia(request: Request) -> Response:
-        id_ = int(request.path_params["id"])
+    def _borrador(request: Request) -> db.BorradorComida | None:
         con = abrir_db()
         try:
-            borrador = db.leer_borrador_comida(con, id_)
+            return db.leer_borrador_comida(con, int(request.path_params["id"]))
         finally:
             con.close()
-        if not borrador:
+
+    def estado_comida_ia(request: Request) -> Response:
+        borrador = _borrador(request)
+        if borrador is None:
             return JSONResponse({"error": "Borrador no encontrado"}, 404)
         return JSONResponse({"estado": borrador.estado})
 
     def ver_comida_ia_borrador(request: Request) -> Response:
-        id_ = int(request.path_params["id"])
-        con = abrir_db()
-        try:
-            borrador = db.leer_borrador_comida(con, id_)
-        finally:
-            con.close()
-        if not borrador:
+        borrador = _borrador(request)
+        if borrador is None:
             return HTMLResponse("Borrador no encontrado", 404)
 
-        total_kcal = 0.0
-        total_proteinas = 0.0
-        total_hidratos = 0.0
-        total_grasas = 0.0
-        for al in borrador.alimentos:
-            if al.get("kcal") is not None:
-                total_kcal += float(al["kcal"])
-            if al.get("proteinas") is not None:
-                total_proteinas += float(al["proteinas"])
-            if al.get("hidratos") is not None:
-                total_hidratos += float(al["hidratos"])
-            if al.get("grasas") is not None:
-                total_grasas += float(al["grasas"])
+        def total(clave: str) -> float:
+            return sum(float(a[clave]) for a in borrador.alimentos if a.get(clave) is not None)
 
         return _render(
             "comida_ia_revisar.html",
@@ -2062,10 +2091,11 @@ def crear_app(
             momento_elegido=borrador.momento,
             momentos=db.MOMENTOS,
             momentos_chips=db.MOMENTOS,
-            total_kcal=total_kcal,
-            total_proteinas=total_proteinas,
-            total_hidratos=total_hidratos,
-            total_grasas=total_grasas,
+            texto=borrador.texto,
+            total_kcal=total("kcal"),
+            total_proteinas=total("proteinas"),
+            total_hidratos=total("hidratos"),
+            total_grasas=total("grasas"),
             pestana="anadir",
             seccion="comida",
             mensaje=request.query_params.get("mensaje"),
@@ -2073,161 +2103,69 @@ def crear_app(
         )
 
     def descartar_comida_ia_web(request: Request) -> Response:
-        id_ = int(request.path_params["id"])
-        con = abrir_db()
-        try:
-            borrador = db.leer_borrador_comida(con, id_)
-            fecha_str = borrador.fecha if borrador else hoy().isoformat()
-            db.borrar_borrador_comida(con, id_)
-        finally:
-            con.close()
-        return RedirectResponse(f"/comida/ia?fecha={fecha_str}", 303)
+        borrador = _borrador(request)
+        fecha = borrador.fecha if borrador else hoy().isoformat()
+        if borrador is not None:
+            con = abrir_db()
+            try:
+                db.borrar_borrador_comida(con, borrador.id)
+            finally:
+                con.close()
+        return RedirectResponse(f"/comida/ia?fecha={fecha}", 303)
 
     async def anadir_comida_ia_web(request: Request) -> Response:
-        id_ = int(request.path_params["id"])
         datos = await _formulario(request)
-        con = abrir_db()
-        try:
-            borrador = db.leer_borrador_comida(con, id_)
-        finally:
-            con.close()
-
-        if not borrador:
+        borrador = await run_in_threadpool(_borrador, request)
+        if borrador is None:
             return _volver("Borrador no encontrado", "/comida/ia")
-
-        url_retorno = f"/comida/ia/{id_}"
-
-        alimentos_a_guardar = []
-        algun_incluido = False
-        num_items = len(borrador.alimentos) + 20
-        for i in range(num_items):
-            clave_nombre = f"a-{i}-nombre"
-            if clave_nombre not in datos:
-                continue
-            if f"a-{i}-incluir" not in datos:
-                continue
-            algun_incluido = True
-
-            nombre = datos.get(clave_nombre, "").strip()
-            if not nombre or len(nombre) > 120:
-                return _volver(
-                    "El nombre del alimento es obligatorio (máximo 120 caracteres)", url_retorno
-                )
-
-            cant_str = datos.get(f"a-{i}-cantidad", "").strip()
-            try:
-                cantidad = float(cant_str)
-                if not (0 < cantidad <= 5000) or not math.isfinite(cantidad):
-                    raise ValueError()
-            except ValueError:
-                return _volver(f"Cantidad no válida para {nombre}", url_retorno)
-
-            unidad = datos.get(f"a-{i}-unidad", "").strip()
-            if unidad not in ("g", "ml"):
-                return _volver(f"Unidad no válida para {nombre}", url_retorno)
-
-            momento = datos.get(f"a-{i}-momento", "").strip()
-            if momento not in db.MOMENTOS:
-                return _volver(f"Momento no válido para {nombre}", url_retorno)
-
-            def _parse_num(val_str: str) -> float | None:
-                if not val_str:
-                    return None
-                try:
-                    vf = float(val_str)
-                    if not math.isfinite(vf) or vf < 0:
-                        raise ValueError()
-                    return vf
-                except ValueError:
-                    raise ValueError(f"Valor numérico no válido para {nombre}")
-
-            try:
-                kcal = _parse_num(datos.get(f"a-{i}-kcal", "").strip())
-                proteinas = _parse_num(datos.get(f"a-{i}-proteinas", "").strip())
-                hidratos = _parse_num(datos.get(f"a-{i}-hidratos", "").strip())
-                grasas = _parse_num(datos.get(f"a-{i}-grasas", "").strip())
-            except ValueError as exc:
-                return _volver(str(exc), url_retorno)
-
-            guardar_prod = f"a-{i}-producto" in datos
-
-            alimentos_a_guardar.append(
-                {
-                    "nombre": nombre,
-                    "cantidad": cantidad,
-                    "unidad": unidad,
-                    "momento": momento,
-                    "kcal": kcal,
-                    "proteinas": proteinas,
-                    "hidratos": hidratos,
-                    "grasas": grasas,
-                    "producto": guardar_prod,
-                }
-            )
-
-        if not algun_incluido:
-            return _volver("No has marcado ningún alimento", url_retorno)
-
-        con = abrir_db()
         try:
-            with con:
-                for item in alimentos_a_guardar:
+            elegidos = alimentos_desde_formulario(datos, len(borrador.alimentos))
+        except ValueError as exc:
+            return _volver(str(exc), f"/comida/ia/{borrador.id}")
+
+        def _guardar() -> None:
+            con = abrir_db()
+            try:
+                for a in elegidos:
                     db.anadir_comida(
                         con,
                         fecha=borrador.fecha,
-                        momento=item["momento"],
-                        nombre=item["nombre"],
-                        cantidad=item["cantidad"],
-                        unidad=item["unidad"],
-                        kcal=item["kcal"],
-                        proteinas=item["proteinas"],
-                        hidratos=item["hidratos"],
-                        grasas=item["grasas"],
+                        momento=a.momento,
+                        nombre=a.nombre,
+                        cantidad=a.cantidad,
+                        unidad=a.unidad,
+                        kcal=a.kcal,
+                        proteinas=a.proteinas,
+                        hidratos=a.hidratos,
+                        grasas=a.grasas,
                     )
-                    if item["producto"]:
-                        cant = item["cantidad"]
-                        k_100 = (
-                            round(item["kcal"] * 100 / cant, 1)
-                            if item["kcal"] is not None
-                            else None
-                        )
-                        p_100 = (
-                            round(item["proteinas"] * 100 / cant, 1)
-                            if item["proteinas"] is not None
-                            else None
-                        )
-                        h_100 = (
-                            round(item["hidratos"] * 100 / cant, 1)
-                            if item["hidratos"] is not None
-                            else None
-                        )
-                        g_100 = (
-                            round(item["grasas"] * 100 / cant, 1)
-                            if item["grasas"] is not None
-                            else None
-                        )
+                    if a.producto:
                         db.guardar_producto_propio(
                             con,
                             id_=None,
                             codigo=None,
-                            nombre=item["nombre"],
+                            nombre=a.nombre,
                             marca=None,
-                            unidad=item["unidad"],
-                            kcal=k_100,
-                            proteinas=p_100,
-                            hidratos=h_100,
-                            grasas=g_100,
-                            origen="etiqueta-ia",
-                            racion_g=cant,
+                            unidad=a.unidad,
+                            kcal=por_100(a.kcal, a.cantidad),
+                            proteinas=por_100(a.proteinas, a.cantidad),
+                            hidratos=por_100(a.hidratos, a.cantidad),
+                            grasas=por_100(a.grasas, a.cantidad),
+                            origen="comida-ia",
+                            racion_g=a.cantidad,
                             racion_nombre="ración",
                         )
-                db.borrar_borrador_comida(con, id_)
-        finally:
-            con.close()
+                db.borrar_borrador_comida(con, borrador.id)
+            finally:
+                con.close()
 
-        n = len(alimentos_a_guardar)
-        msg = f"Añadido {alimentos_a_guardar[0]['nombre']}" if n == 1 else f"Añadidos {n} alimentos"
-        return _volver(msg, f"/comida?fecha={borrador.fecha}")
+        await run_in_threadpool(_guardar)
+        mensaje = (
+            f"Añadido {elegidos[0].nombre}"
+            if len(elegidos) == 1
+            else f"Añadidos {len(elegidos)} alimentos"
+        )
+        return _volver(mensaje, f"/comida?fecha={borrador.fecha}")
 
     def ver_comida_objetivos(request: Request) -> Response:
         con = abrir_db()
@@ -2469,25 +2407,9 @@ def crear_app(
         )
 
     async def leer_etiqueta_foto(request: Request) -> Response:
-        cl_hdr = request.headers.get("content-length")
-        if cl_hdr:
-            try:
-                if int(cl_hdr) > ia.MAX_BYTES_IMAGEN:
-                    return JSONResponse({"error": "La foto es demasiado grande"}, 413)
-            except ValueError:
-                pass
-
-        partes: list[bytes] = []
-        tam = 0
-        async for trozo in request.stream():
-            tam += len(trozo)
-            if tam > ia.MAX_BYTES_IMAGEN:
-                return JSONResponse({"error": "La foto es demasiado grande"}, 413)
-            partes.append(trozo)
-        cuerpo = b"".join(partes)
-
-        if ia.tipo_imagen(cuerpo) is None:
-            return JSONResponse({"error": "El fichero no es una imagen JPEG, PNG o WebP"}, 415)
+        cuerpo = await _leer_foto(request)
+        if isinstance(cuerpo, Response):
+            return cuerpo
 
         try:
             etiqueta = await run_in_threadpool(leer, cuerpo)

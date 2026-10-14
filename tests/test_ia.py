@@ -859,3 +859,31 @@ def test_analizar_comida_maximo_20_alimentos(tmp_path):
 
     resultado = analizar_comida(settings, "buffet libre", None, motor=motor_muchos)
     assert len(resultado) == 20
+
+
+def test_analizar_comida_sin_cupo_pasa_al_respaldo(settings):
+    modelos: list[str | None] = []
+
+    def motor(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+        modelos.append(tarea.modelo_agy)
+        if tarea.modelo_agy == settings.ia_modelo_comida:
+            raise CupoAgotado("sin cupo")
+        return {
+            "alimentos": [
+                {
+                    "nombre": "Cerveza (5 tercios)",
+                    "cantidad": 1650,
+                    "unidad": "ml",
+                    "kcal": 700,
+                    "proteinas": 5,
+                    "hidratos": 51,
+                    "grasas": 0,
+                    "momento": "cena",
+                    "aviso": None,
+                }
+            ]
+        }
+
+    [cerveza] = analizar_comida(settings, "5 cervezas", None, motor=motor)
+    assert cerveza.cantidad == 1650
+    assert modelos == [settings.ia_modelo_comida, settings.ia_modelo_comida_respaldo]

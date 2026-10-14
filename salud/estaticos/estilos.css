@@ -1823,3 +1823,39 @@ th { color: var(--suave); font-weight: 500; }
 .panel-peso { margin-top: 14px; }
 
 .boton:disabled, .tarjeta-acceso:disabled, .boton-pedir-consejo:disabled { opacity: .7; cursor: progress; }
+
+/* --- Añadir con IA ------------------------------------------------------- */
+.visualmente-oculto {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+.comida-ia-form .fila-anadir-a { margin-bottom: 14px; }
+.comida-ia-pregunta { display: block; font-weight: 700; margin-bottom: 6px; }
+.comida-ia-form textarea { width: 100%; }
+.comida-ia-nota { margin: 6px 0 12px; font-size: 13px; }
+.fila-foto-ia { margin-bottom: 16px; }
+.boton-foto-ia { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.vista-previa-foto { position: relative; display: inline-block; margin-top: 10px; }
+.vista-previa-foto[hidden] { display: none; }
+.vista-previa-foto img { display: block; max-height: 160px; border-radius: 12px; border: 1px solid var(--borde); }
+.boton-quitar-foto {
+  position: absolute; top: 6px; right: 6px; width: 28px; height: 28px;
+  border: 0; border-radius: 50%; background: var(--texto); color: var(--panel);
+  font-size: 18px; line-height: 1; cursor: pointer; opacity: .8;
+}
+.boton-ancho { width: 100%; }
+.tarjeta-alimento-ia { margin-bottom: 12px; }
+.alimento-ia-cabecera { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.alimento-ia-cabecera input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+.alimento-ia-nombre { flex: 1; min-width: 0; font-weight: 700; }
+.alimento-ia-campos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.alimento-ia-campos label { flex: 1; min-width: 90px; font-size: 12px; color: var(--suave); }
+.alimento-ia-macros label { min-width: 70px; }
+.alimento-ia-campos .campo-estrecho { flex: 0 0 72px; min-width: 72px; }
+.alimento-ia-campos input, .alimento-ia-campos select { display: block; width: 100%; margin-top: 2px; color: var(--texto); }
+.alimento-ia-aviso { margin: 4px 0 8px; font-size: 13px; }
+.alimento-ia-producto { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.form-descartar-ia { margin-top: 8px; }
+.comida-ia-totales { margin-bottom: 12px; }
+.comida-ia-totales h2 { margin-top: 0; }
+.boton-diario-ia { gap: 8px; margin: 12px 0 16px; }

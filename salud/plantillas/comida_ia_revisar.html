@@ -40,30 +40,24 @@
 <form method="post" action="/comida/ia/{{ borrador.id }}/anadir" class="formulario-revision-ia">
   {% for al in borrador.alimentos %}
   {% set idx = loop.index0 %}
-  <section class="panel tarjeta-alimento-ia" style="margin-bottom: 12px;">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-      <label style="display: flex; align-items: center; cursor: pointer;">
-        <input type="checkbox" name="a-{{ idx }}-incluir" value="1" checked style="width: 18px; height: 18px;">
-        <span class="sr-only">Incluir</span>
-      </label>
-      <input type="text" name="a-{{ idx }}-nombre" value="{{ al.nombre }}" required maxlength="120" placeholder="Nombre del alimento" style="flex: 1; font-weight: 600;">
+  <section class="panel tarjeta-alimento-ia" aria-label="{{ al.nombre }}">
+    <div class="alimento-ia-cabecera">
+      <input type="checkbox" name="a-{{ idx }}-incluir" value="1" checked aria-label="Incluir {{ al.nombre }}">
+      <input type="text" name="a-{{ idx }}-nombre" value="{{ al.nombre }}" required maxlength="120" aria-label="Nombre" class="alimento-ia-nombre">
     </div>
 
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-      <label style="flex: 1; min-width: 90px;">
-        <span class="suave" style="font-size: 12px; display: block;">Cantidad</span>
-        <input type="number" name="a-{{ idx }}-cantidad" value="{{ al.cantidad }}" step="any" min="0.1" max="5000" inputmode="decimal" required style="width: 100%;">
+    <div class="alimento-ia-campos">
+      <label>Cantidad
+        <input type="number" name="a-{{ idx }}-cantidad" value="{{ '%g' | format(al.cantidad) }}" step="any" min="0.1" max="5000" inputmode="decimal" required>
       </label>
-      <label style="width: 70px;">
-        <span class="suave" style="font-size: 12px; display: block;">Unidad</span>
-        <select name="a-{{ idx }}-unidad" style="width: 100%;">
+      <label class="campo-estrecho">Unidad
+        <select name="a-{{ idx }}-unidad">
           <option value="g"{% if al.unidad == 'g' %} selected{% endif %}>g</option>
           <option value="ml"{% if al.unidad == 'ml' %} selected{% endif %}>ml</option>
         </select>
       </label>
-      <label style="flex: 1; min-width: 110px;">
-        <span class="suave" style="font-size: 12px; display: block;">Momento</span>
-        <select name="a-{{ idx }}-momento" style="width: 100%;">
+      <label>Momento
+        <select name="a-{{ idx }}-momento">
           {% for m in momentos %}
           <option value="{{ m }}"{% if (al.momento or borrador.momento) == m %} selected{% endif %}>{{ m | capitalize }}</option>
           {% endfor %}
@@ -71,45 +65,28 @@
       </label>
     </div>
 
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-      <label style="flex: 1; min-width: 65px;">
-        <span class="suave" style="font-size: 12px; display: block;">Kcal</span>
-        <input type="number" name="a-{{ idx }}-kcal" value="{{ al.kcal if al.kcal is not none else '' }}" step="any" min="0" max="5000" inputmode="decimal" placeholder="—" style="width: 100%;">
+    <div class="alimento-ia-campos alimento-ia-macros">
+      {% for clave, rotulo in (("kcal", "Kcal"), ("proteinas", "Proteína (g)"), ("hidratos", "Hidratos (g)"), ("grasas", "Grasas (g)")) %}
+      <label>{{ rotulo }}
+        <input type="number" name="a-{{ idx }}-{{ clave }}" value="{{ '%g' | format(al[clave]) if al[clave] is not none else '' }}" step="any" min="0" inputmode="decimal" placeholder="—">
       </label>
-      <label style="flex: 1; min-width: 65px;">
-        <span class="suave" style="font-size: 12px; display: block;">Proteínas</span>
-        <input type="number" name="a-{{ idx }}-proteinas" value="{{ al.proteinas if al.proteinas is not none else '' }}" step="any" min="0" max="1000" inputmode="decimal" placeholder="—" style="width: 100%;">
-      </label>
-      <label style="flex: 1; min-width: 65px;">
-        <span class="suave" style="font-size: 12px; display: block;">Hidratos</span>
-        <input type="number" name="a-{{ idx }}-hidratos" value="{{ al.hidratos if al.hidratos is not none else '' }}" step="any" min="0" max="1000" inputmode="decimal" placeholder="—" style="width: 100%;">
-      </label>
-      <label style="flex: 1; min-width: 65px;">
-        <span class="suave" style="font-size: 12px; display: block;">Grasas</span>
-        <input type="number" name="a-{{ idx }}-grasas" value="{{ al.grasas if al.grasas is not none else '' }}" step="any" min="0" max="1000" inputmode="decimal" placeholder="—" style="width: 100%;">
-      </label>
+      {% endfor %}
     </div>
 
-    {% if al.aviso %}
-    <p class="suave" style="margin: 4px 0 8px; font-size: 13px;">{{ al.aviso }}</p>
-    {% endif %}
+    {% if al.aviso %}<p class="suave alimento-ia-aviso">{{ al.aviso }}</p>{% endif %}
 
-    <div>
-      <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
-        <input type="checkbox" name="a-{{ idx }}-producto" value="1">
-        <span>Guardar también en Mis productos</span>
-      </label>
-    </div>
+    <label class="alimento-ia-producto">
+      <input type="checkbox" name="a-{{ idx }}-producto" value="1">
+      Guardar también en Mis productos
+    </label>
   </section>
   {% endfor %}
 
-  <div style="margin-top: 16px;">
-    <button type="submit" class="boton" data-enviando="Añadiendo…" style="width: 100%;">Añadir al diario</button>
-  </div>
+  <button type="submit" class="boton boton-ancho" data-enviando="Añadiendo…">Añadir al diario</button>
 </form>
 
-<form method="post" action="/comida/ia/{{ borrador.id }}/descartar" style="margin-top: 8px;">
-  <button type="submit" class="boton secundario" style="width: 100%;">Descartar</button>
+<form method="post" action="/comida/ia/{{ borrador.id }}/descartar" class="form-descartar-ia">
+  <button type="submit" class="boton secundario boton-ancho">Descartar</button>
 </form>
 {% endif %}
 {% endblock %}

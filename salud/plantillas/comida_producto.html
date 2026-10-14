@@ -13,6 +13,8 @@
     {% endif %}
     {% if producto.origen == "etiqueta-ia" %}
     <span class="etiqueta neutro">leído de la etiqueta con IA y revisado</span>
+    {% elif producto.origen == "comida-ia" %}
+    <span class="etiqueta neutro">estimado con IA y revisado</span>
     {% elif producto.origen == "manual" %}
     <span class="etiqueta neutro">corregido por ti</span>
     {% endif %}

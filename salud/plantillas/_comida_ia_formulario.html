@@ -1,33 +1,32 @@
-<div class="fila-anadir-a" role="group" aria-label="Añadir a">
-  <span class="etiqueta-anadir-a">Añadir a</span>
-  {% for m in momentos_chips %}
-  <a href="/comida/ia?fecha={{ fecha }}&momento={{ m | urlencode }}{% if texto %}&texto={{ texto | urlencode }}{% endif %}" class="chip{% if m == momento_elegido %} activo{% endif %}"{% if m == momento_elegido %} aria-pressed="true"{% endif %}>{{ m | capitalize }}</a>
-  {% endfor %}
-</div>
-
 <form method="post" action="/comida/ia" class="panel comida-ia-form" data-comida-ia>
   <input type="hidden" name="fecha" value="{{ fecha }}">
-  <input type="hidden" name="momento" value="{{ momento_elegido }}">
+  <input type="hidden" name="momento" value="{{ momento_elegido }}" data-momento-ia>
 
-  <label for="texto-comida" class="label-nota"><strong>¿Qué has comido?</strong></label>
+  <div class="fila-anadir-a" role="group" aria-label="Añadir a">
+    <span class="etiqueta-anadir-a">Añadir a</span>
+    {% for m in momentos_chips %}
+    {# Sin JS, el chip recarga con su momento; con JS solo cambia el campo oculto (no se pierde lo escrito ni la foto). #}
+    <a href="/comida/ia?fecha={{ fecha }}&momento={{ m | urlencode }}{% if texto %}&texto={{ texto | urlencode }}{% endif %}" class="chip{% if m == momento_elegido %} activo{% endif %}" data-chip-momento="{{ m }}"{% if m == momento_elegido %} aria-pressed="true"{% endif %}>{{ m | capitalize }}</a>
+    {% endfor %}
+  </div>
+
+  <label for="texto-comida" class="comida-ia-pregunta">¿Qué has comido?</label>
   <textarea id="texto-comida" name="texto" rows="3" maxlength="500" placeholder="150 g de sopa de fideos, un scoop de Optimum Nutrition con 300 ml de leche, 5 cervezas…">{{ texto or '' }}</textarea>
+  <p class="suave comida-ia-nota">Puedes escribir, hacer una foto o las dos cosas. La IA propone y tú revisas antes de guardar.</p>
 
-  <p class="suave" style="margin: 4px 0 12px; font-size: 13px;">Puedes escribir, hacer una foto o las dos cosas.</p>
-
-  <div class="fila-foto-ia" style="margin-bottom: 16px;">
-    <label class="boton secundario" for="foto-ia" style="cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+  <div class="fila-foto-ia">
+    <label class="boton secundario boton-foto-ia" for="foto-ia">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-      <span data-texto-foto>Añadir foto (opcional)</span>
+      <span>Añadir foto (opcional)</span>
     </label>
-    <input type="file" id="foto-ia" accept="image/*" data-input-foto-ia style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">
-
-    <div class="vista-previa-foto" data-vista-previa-foto hidden style="margin-top: 8px; position: relative; display: inline-block;">
-      <img src="" alt="Vista previa" class="img-vista-previa" style="max-height: 140px; border-radius: 8px; border: 1px solid var(--borde); display: block;">
-      <button type="button" class="boton-quitar-foto" data-quitar-foto aria-label="Quitar foto" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;">×</button>
+    <input type="file" id="foto-ia" accept="image/*" class="visualmente-oculto" data-input-foto-ia>
+    <div class="vista-previa-foto" data-vista-previa-foto hidden>
+      <img src="" alt="Foto elegida">
+      <button type="button" class="boton-quitar-foto" data-quitar-foto aria-label="Quitar foto">×</button>
     </div>
   </div>
 
   <div data-avisos-ia></div>
 
-  <button type="submit" class="boton" data-enviando="Enviando…">Analizar con IA</button>
+  <button type="submit" class="boton boton-ancho" data-enviando="Enviando…">Analizar con IA</button>
 </form>

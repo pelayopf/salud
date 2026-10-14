@@ -594,7 +594,7 @@ def guardar_producto(
         )
 
 
-ORIGENES_PROPIOS = ("manual", "etiqueta-ia", "ciqual")
+ORIGENES_PROPIOS = ("manual", "etiqueta-ia", "comida-ia", "ciqual")
 
 
 def guardar_producto_propio(
