@@ -1113,10 +1113,13 @@ th { color: var(--suave); font-weight: 500; }
 }
 .item-descripcion {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+.item-cantidad {
+  font-size: 13px;
+  white-space: nowrap;
 }
 .item-nombre {
   overflow: hidden;

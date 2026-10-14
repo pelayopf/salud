@@ -1647,6 +1647,48 @@ def crear_app(
             codigo_buscado=codigo_buscado,
         )
 
+    def _pagina_anadir(
+        fecha: str,
+        momento: str,
+        q: str = "",
+        *,
+        resultados: dict[str, Any] | None = None,
+        mensaje: str | None = None,
+        error: str | None = None,
+    ) -> Response:
+        """Pestaña Añadir: con `resultados` de una búsqueda, o lo reciente y lo tuyo."""
+        recientes: list[sqlite3.Row] = []
+        propios: list[sqlite3.Row] = []
+        if resultados is None:
+            con = abrir_db()
+            try:
+                recientes = db.productos_recientes(con)
+                propios = db.productos_propios(con)
+            finally:
+                con.close()
+        vacios: dict[str, Any] = {
+            "productos_locales": [],
+            "comidas_anteriores": [],
+            "genericos": [],
+            "off_productos": [],
+            "off_error": None,
+        }
+        return _render(
+            "comida_buscar.html",
+            pestana="anadir",
+            seccion="comida",
+            fecha=fecha,
+            momento_elegido=momento,
+            momentos_chips=[m for m in db.MOMENTOS if m != "otro"],
+            q=q,
+            recientes=recientes,
+            productos_propios=propios,
+            ciqual_fuente=ciqual.FUENTE,
+            mensaje=mensaje,
+            error=error,
+            **(vacios | (resultados or {})),
+        )
+
     def ver_comida(request: Request) -> Response:
         momento_elegido = momento_valido(request.query_params.get("momento"))
         return _pagina_comida(request, _fecha(request), momento_elegido=momento_elegido)
@@ -1656,37 +1698,13 @@ def crear_app(
         fecha_str = fecha.isoformat()
         q = request.query_params.get("q", "").strip()
         momento_elegido = momento_valido(request.query_params.get("momento"))
-        momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
-        if momento_elegido is None:
-            momento_elegido = momento_defecto
-
-        momentos_chips = ["desayuno", "media mañana", "comida", "merienda", "cena"]
+        momento_elegido = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
+        mensaje = request.query_params.get("mensaje")
+        error = request.query_params.get("error")
 
         if not q:
-            con = abrir_db()
-            try:
-                recientes = db.productos_recientes(con)
-                propios = db.productos_propios(con)
-            finally:
-                con.close()
-            return _render(
-                "comida_buscar.html",
-                pestana="anadir",
-                seccion="comida",
-                fecha=fecha_str,
-                momento_elegido=momento_elegido,
-                momentos_chips=momentos_chips,
-                q="",
-                recientes=recientes,
-                productos_propios=propios,
-                productos_locales=[],
-                comidas_anteriores=[],
-                genericos=[],
-                ciqual_fuente=ciqual.FUENTE,
-                off_productos=[],
-                off_error=None,
-                mensaje=request.query_params.get("mensaje"),
-                error=request.query_params.get("error"),
+            return await run_in_threadpool(
+                _pagina_anadir, fecha_str, momento_elegido, mensaje=mensaje, error=error
             )
 
         cod_norm = alimentos.normalizar_codigo(q)
@@ -1715,24 +1733,19 @@ def crear_app(
         except (alimentos.OpenFoodFactsNoDisponible, httpx.HTTPError):
             off_error = "Open Food Facts no responde ahora; prueba en un minuto"
 
-        return _render(
-            "comida_buscar.html",
-            pestana="anadir",
-            seccion="comida",
-            fecha=fecha_str,
-            momento_elegido=momento_elegido,
-            momentos_chips=momentos_chips,
-            q=q,
-            recientes=[],
-            productos_propios=[],
-            productos_locales=productos_locales,
-            comidas_anteriores=anteriores,
-            genericos=genericos,
-            ciqual_fuente=ciqual.FUENTE,
-            off_productos=off_productos,
-            off_error=off_error,
-            mensaje=request.query_params.get("mensaje"),
-            error=request.query_params.get("error"),
+        return _pagina_anadir(
+            fecha_str,
+            momento_elegido,
+            q,
+            resultados={
+                "productos_locales": productos_locales,
+                "comidas_anteriores": anteriores,
+                "genericos": genericos,
+                "off_productos": off_productos,
+                "off_error": off_error,
+            },
+            mensaje=mensaje,
+            error=error,
         )
 
     async def repetir_comida(request: Request) -> Response:
@@ -1936,24 +1949,8 @@ def crear_app(
         momento_elegido = momento_valido(request.query_params.get("momento"))
         momento_defecto = momento_elegido or momento_por_hora(datetime.now(ZONA).hour)
         if not codigo:
-            return _render(
-                "comida_buscar.html",
-                pestana="anadir",
-                seccion="comida",
-                fecha=fecha.isoformat(),
-                momento_elegido=momento_defecto,
-                momentos_chips=["desayuno", "media mañana", "comida", "merienda", "cena"],
-                q="",
-                recientes=[],
-                productos_propios=[],
-                productos_locales=[],
-                comidas_anteriores=[],
-                genericos=[],
-                ciqual_fuente=ciqual.FUENTE,
-                off_productos=[],
-                off_error=None,
-                mensaje=None,
-                error="Escribe un código de barras",
+            return _pagina_anadir(
+                fecha.isoformat(), momento_defecto, "", error="Escribe un código de barras"
             )
         con = abrir_db()
         try:
@@ -1961,23 +1958,10 @@ def crear_app(
                 res = alimentos.obtener_producto(con, codigo, cliente_off)
             except alimentos.ErrorAlimentos as exc:
                 if isinstance(exc, alimentos.CodigoInvalido):
-                    return _render(
-                        "comida_buscar.html",
-                        pestana="anadir",
-                        seccion="comida",
-                        fecha=fecha.isoformat(),
-                        momento_elegido=momento_defecto,
-                        momentos_chips=["desayuno", "media mañana", "comida", "merienda", "cena"],
-                        q=codigo,
-                        recientes=[],
-                        productos_propios=[],
-                        productos_locales=[],
-                        comidas_anteriores=[],
-                        genericos=[],
-                        ciqual_fuente=ciqual.FUENTE,
-                        off_productos=[],
-                        off_error=None,
-                        mensaje=None,
+                    return _pagina_anadir(
+                        fecha.isoformat(),
+                        momento_defecto,
+                        codigo,
                         error=f"Código no válido: {codigo}",
                     )
                 elif isinstance(exc, alimentos.ProductoNoEncontrado):
@@ -1997,25 +1981,7 @@ def crear_app(
                     )
                 else:
                     error_msg = "Open Food Facts no responde en este momento"
-                return _render(
-                    "comida_buscar.html",
-                    pestana="anadir",
-                    seccion="comida",
-                    fecha=fecha.isoformat(),
-                    momento_elegido=momento_defecto,
-                    momentos_chips=["desayuno", "media mañana", "comida", "merienda", "cena"],
-                    q=codigo,
-                    recientes=[],
-                    productos_propios=[],
-                    productos_locales=[],
-                    comidas_anteriores=[],
-                    genericos=[],
-                    ciqual_fuente=ciqual.FUENTE,
-                    off_productos=[],
-                    off_error=None,
-                    mensaje=None,
-                    error=error_msg,
-                )
+                return _pagina_anadir(fecha.isoformat(), momento_defecto, codigo, error=error_msg)
         finally:
             con.close()
         return _render(

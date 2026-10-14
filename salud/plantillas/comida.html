@@ -107,7 +107,7 @@
       <li class="tarjeta-momento-item">
         <div class="item-descripcion">
           <span class="item-nombre">{{ c.nombre }}</span>
-          <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
+          <span class="suave item-cantidad">{{ c.cantidad | cifra }} {{ c.unidad }}</span>
         </div>
         <div class="item-derecha">
           <span class="item-kcal suave">{% if c.kcal is not none %}{{ c.kcal | cifra }} kcal{% else %}—{% endif %}</span>

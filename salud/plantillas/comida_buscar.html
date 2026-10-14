@@ -37,9 +37,8 @@
     <a href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="fila-resultado">
       <div class="resultado-info">
         <strong>{{ r.nombre or r.codigo }}</strong>
-        {% if r.marca %}<span class="suave">· {{ r.marca }}</span>{% endif %}
+        {% if r.marca %}<span class="suave">{{ r.marca }}</span>{% endif %}
       </div>
-      <span class="suave">{{ r.unidad }}</span>
     </a>
     {% endfor %}
   </div>
@@ -56,9 +55,8 @@
     <a href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}" class="fila-resultado">
       <div class="resultado-info">
         <strong>{{ p.nombre }}</strong>
-        {% if p.marca %}<span class="suave">· {{ p.marca }}</span>{% endif %}
+        {% if p.marca %}<span class="suave">{{ p.marca }}</span>{% endif %}
       </div>
-      <span class="suave">{{ p.unidad }}</span>
     </a>
     {% endfor %}
   </div>
@@ -77,7 +75,7 @@
     <a href="{% if prod.tipo == 'propio' and not prod.codigo %}/comida/propio/{{ prod.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/producto?codigo={{ prod.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}" class="fila-resultado">
       <div class="resultado-info">
         <strong>{{ prod.nombre }}</strong>
-        {% if prod.marca %}<span class="suave">· {{ prod.marca }}</span>{% endif %}
+        {% if prod.marca %}<span class="suave">{{ prod.marca }}</span>{% endif %}
       </div>
       {% if prod.kcal is not none %}<span class="suave">{{ prod.kcal | cifra }} kcal/100 g</span>{% endif %}
     </a>
