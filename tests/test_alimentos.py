@@ -567,3 +567,69 @@ def test_nombre_con_raciones():
     assert alimentos.nombre_con_raciones("Plátano", 130, 120, "plátano") == "Plátano"
     assert alimentos.nombre_con_raciones("Plátano", 100, None, None) == "Plátano"
     assert alimentos.nombre_con_raciones("Pan", 60, 30, "rebanadas") == "Pan (2 rebanadas)"
+
+
+def test_buscar_off_exito():
+    # 3 productos, uno con código no válido
+    cliente, peticiones = cliente_falso(
+        lambda _: httpx.Response(
+            200,
+            json={
+                "count": 3,
+                "products": [
+                    {
+                        "code": EAN13,
+                        "product_name": "Pan de centeno",
+                        "brands": "Hacendado",
+                        "nutriments": {"energy-kcal_100g": 250},
+                    },
+                    {
+                        "code": "1234",  # no válido
+                        "product_name": "Pan con código corto",
+                        "brands": "Marca",
+                    },
+                    {
+                        "code": EAN13_BIS,
+                        "product_name_es": "Pan de molde",
+                        "brands": "Bimbo, Bimbo España",
+                        "nutriments": {"energy_100g": 1000},
+                    },
+                ],
+            },
+        )
+    )
+    res = alimentos.buscar_off("pan", cliente, limite=5)
+    assert len(res) == 2
+    assert res[0].codigo == EAN13
+    assert res[0].nombre == "Pan de centeno"
+    assert res[0].marca == "Hacendado"
+    assert res[0].kcal == 250.0
+
+    assert res[1].codigo == EAN13_BIS
+    assert res[1].nombre == "Pan de molde"
+    assert res[1].marca == "Bimbo"
+    assert res[1].kcal == round(1000 / 4.184, 1)
+
+    [p] = peticiones
+    assert p.url.path == "/cgi/search.pl"
+    assert p.url.params["search_terms"] == "pan"
+    assert p.url.params["page_size"] == "5"
+    assert p.url.params["countries_tags_en"] == "spain"
+
+
+def test_buscar_off_500():
+    cliente, _ = cliente_falso(lambda _: httpx.Response(500, text="Internal Server Error"))
+    with pytest.raises(OpenFoodFactsNoDisponible, match="Open Food Facts no responde ahora"):
+        alimentos.buscar_off("pan", cliente)
+
+
+def test_buscar_off_json_raro():
+    # Texto HTML en vez de JSON
+    cliente_html, _ = cliente_falso(lambda _: httpx.Response(200, text="<html>Error</html>"))
+    with pytest.raises(OpenFoodFactsNoDisponible, match="Open Food Facts no responde ahora"):
+        alimentos.buscar_off("pan", cliente_html)
+
+    # JSON sin lista de products
+    cliente_sin_products, _ = cliente_falso(lambda _: httpx.Response(200, json={"status": 0}))
+    with pytest.raises(OpenFoodFactsNoDisponible, match="Open Food Facts no responde ahora"):
+        alimentos.buscar_off("pan", cliente_sin_products)

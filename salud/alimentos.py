@@ -21,6 +21,8 @@ import httpx
 from . import ciqual, db
 
 URL_PRODUCTO = "https://world.openfoodfacts.org/api/v2/product/{codigo}.json"
+URL_BUSQUEDA = "https://world.openfoodfacts.org/cgi/search.pl"
+TIMEOUT_BUSQUEDA = 8.0
 CAMPOS = (
     "code",
     "product_name",
@@ -106,6 +108,16 @@ class Nutrientes(NamedTuple):
         return any(v is None for v in (self.kcal, self.proteinas, self.hidratos, self.grasas))
 
 
+@dataclass(frozen=True)
+class ResultadoBusqueda:
+    """Resultado básico de una búsqueda de producto en Open Food Facts."""
+
+    codigo: str
+    nombre: str
+    marca: str | None
+    kcal: float | None
+
+
 def user_agent() -> str:
     """User-Agent propio, como pide Open Food Facts."""
     try:
@@ -182,6 +194,77 @@ def buscar_producto(codigo: str, cliente: httpx.Client | None = None) -> Product
     """
     producto, _ = consultar_open_food_facts(codigo, cliente=cliente)
     return producto
+
+
+def buscar_off(
+    texto: str, cliente: httpx.Client | None = None, limite: int = 10
+) -> list[ResultadoBusqueda]:
+    """Busca productos en Open Food Facts por texto."""
+    q = texto.strip()
+    if not q or limite <= 0:
+        return []
+
+    propio = cliente is None
+    http = cliente or httpx.Client(timeout=TIMEOUT_BUSQUEDA)
+    try:
+        respuesta = http.get(
+            URL_BUSQUEDA,
+            params={
+                "search_terms": q,
+                "search_simple": 1,
+                "action": "process",
+                "json": 1,
+                "page_size": limite,
+                "countries_tags_en": "spain",
+                "fields": "code,product_name,product_name_es,brands,nutriments",
+            },
+            headers={"User-Agent": user_agent()},
+        )
+    except httpx.HTTPError:
+        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora") from None
+    finally:
+        if propio:
+            http.close()
+
+    if respuesta.status_code != 200:
+        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora")
+
+    try:
+        datos = respuesta.json()
+    except (ValueError, TypeError):
+        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora") from None
+
+    if not isinstance(datos, dict):
+        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora")
+
+    products = datos.get("products")
+    if not isinstance(products, list):
+        raise OpenFoodFactsNoDisponible("Open Food Facts no responde ahora")
+
+    resultados: list[ResultadoBusqueda] = []
+    for p in products:
+        if not isinstance(p, dict):
+            continue
+        codigo_raw = p.get("code")
+        if not isinstance(codigo_raw, str):
+            continue
+        codigo = normalizar_codigo(codigo_raw)
+        if not codigo_valido(codigo):
+            continue
+        nombre = _texto(p.get("product_name_es")) or _texto(p.get("product_name"))
+        if not nombre:
+            continue
+        marca = _primera_marca(p.get("brands"))
+        nutrientes = p.get("nutriments")
+        n: dict[str, Any] = nutrientes if isinstance(nutrientes, dict) else {}
+        kcal = _numero(n.get("energy-kcal_100g"))
+        if kcal is None:
+            kj = _numero(n.get("energy_100g"))
+            if kj is not None:
+                kcal = round(kj / KJ_POR_KCAL, 1)
+        resultados.append(ResultadoBusqueda(codigo=codigo, nombre=nombre, marca=marca, kcal=kcal))
+
+    return resultados
 
 
 def producto_desde_json(codigo: str, p: dict[str, Any]) -> Producto:
