@@ -1057,11 +1057,11 @@ def crear_app(
                 )
                 if obj_c:
                     cifra_prot = (
-                        f"{gramos(totales_c.total.proteinas)} / {gramos(obj_c.total.proteinas)}"
+                        f"{cifra(totales_c.total.proteinas)} / {cifra(obj_c.total.proteinas)}"
                     )
                     txt_kcal = f"{cifra(totales_c.total.kcal)} / {cifra(obj_c.total.kcal)} kcal"
                 else:
-                    cifra_prot = f"{gramos(totales_c.total.proteinas)}"
+                    cifra_prot = cifra(totales_c.total.proteinas)
                     txt_kcal = f"{cifra(totales_c.total.kcal)} kcal"
                 comida_hoy = {
                     "grafico": graf,

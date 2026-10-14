@@ -236,7 +236,9 @@ def fases_sueno(
 
     return Markup(
         f'<svg class="fases-sueno" width="100%" height="{alto}" viewBox="0 0 {int(ancho)} {alto}"'
-        f' aria-hidden="true" focusable="false">' + "".join(partes) + "</svg>"
+        f' preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+        + "".join(partes)
+        + "</svg>"
     )
 
 
