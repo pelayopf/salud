@@ -30,6 +30,29 @@
   </div>
 </section>
 
+{% if rendimiento %}
+<h2>Rendimiento</h2>
+<div class="panel lista">
+  {% for r in rendimiento %}
+  <div class="fila">
+    <span>{{ r.titulo }}</span>
+    <span class="derecha"><strong>{{ r.valor }}</strong> <span class="suave">· {{ r.fecha | fecha_corta }}</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="cabecera"><h2>Últimos 7 días</h2></div>
+{% if actividades_7dias %}
+<div class="panel lista">
+  {% for a in actividades_7dias %}
+  {% include "_actividad.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<p class="panel suave">Sin actividades esta semana.</p>
+{% endif %}
+
 <nav class="filtros" aria-label="Periodo">
   {% for p in periodos %}
   <a href="/actividades?dias={{ p }}"{% if p == dias %} aria-current="true"{% endif %}>{% if p == 365 %}1 año{% else %}{{ p }} días{% endif %}</a>

@@ -1,103 +1,179 @@
 {% extends "base.html" %}
 {% block titulo %}Hoy · Salud{% endblock %}
+
+{% block cabecera %}
+<header class="cabecera-hoy">
+  <div class="cabecera-hoy-interior">
+    <div class="cabecera-hoy-barra">
+      <a class="marca marca-invertida" href="/">
+        <span class="logo-icono logo-invertido">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+        </span>
+        Salud
+      </a>
+      <nav class="nav-escritorio nav-invertida" aria-label="Secciones">
+        {% for clave, url, nombre, _ in secciones %}
+        <a href="{{ url }}"{% if seccion == clave %} aria-current="page"{% endif %}>{{ nombre }}</a>
+        {% endfor %}
+      </nav>
+      <a class="ajustes ajustes-invertido" href="/conexiones" aria-label="Conexiones" title="Conexiones">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </a>
+    </div>
+
+    <div class="cabecera-hoy-fecha">
+      <a class="flecha flecha-invertida" href="/?fecha={{ anterior }}" aria-label="Día anterior">‹</a>
+      <span class="fecha-etiqueta">{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</span>
+      {% if siguiente %}<a class="flecha flecha-invertida" href="/?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
+    </div>
+
+    {% set estados = {
+      'verde': ('Adelante', '<path d="M5 12.5 10 17l9-10"/>'),
+      'ambar': ('Con cabeza', '<path d="M12 6v8M12 18h.01"/>'),
+      'rojo': ('Toca recuperar', '<path d="M7 7l10 10M17 7 7 17"/>'),
+    } %}
+
+    {% if lectura and lectura.contenido %}
+    {% set c = lectura.contenido %}
+    <h1 class="cabecera-hoy-titular">{{ c.titular }}</h1>
+    <div class="cabecera-hoy-resumen">
+      {{ anillo_prep }}
+      <div class="cabecera-hoy-info">
+        <span class="pastilla pastilla-{{ c.estado }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">{{ estados[c.estado][1] | safe }}</svg>
+          {{ estados[c.estado][0] }}
+        </span>
+        {% if c.entreno and c.entreno.titulo %}
+        <span class="cabecera-hoy-entreno">{{ c.entreno.titulo }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% elif generando %}
+    <h1 class="cabecera-hoy-titular">Preparando la lectura…</h1>
+    <p class="suave suave-invertido">Tarda un minuto o dos. Recarga la página.</p>
+    {% else %}
+    <h1 class="cabecera-hoy-titular">{% if es_hoy %}Aún no hay lectura de hoy{% else %}No hubo lectura este día{% endif %}</h1>
+    {% if lectura and lectura.error %}<p class="suave suave-invertido">La última vez falló: {{ lectura.error }}</p>{% endif %}
+    {% if es_hoy %}
+    <form method="post" action="/lectura">
+      <button class="boton boton-cabecera">Preparar la lectura</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
 {% block contenido %}
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 
-<div class="cabecera-dia">
-  <a class="flecha" href="/?fecha={{ anterior }}" aria-label="Día anterior">‹</a>
-  <h1>{% if es_hoy %}Hoy, {% endif %}{{ fecha | fecha_larga }}</h1>
-  {% if siguiente %}<a class="flecha" href="/?fecha={{ siguiente }}" aria-label="Día siguiente">›</a>{% else %}<span class="flecha vacia"></span>{% endif %}
-</div>
-
-{% set estados = {
-  'verde': ('Adelante', '<path d="M5 12.5 10 17l9-10"/>'),
-  'ambar': ('Con cabeza', '<path d="M12 6v8M12 18h.01"/>'),
-  'rojo': ('Toca recuperar', '<path d="M7 7l10 10M17 7 7 17"/>'),
-} %}
+{% if lectura and lectura.contenido %}
+{% set c = lectura.contenido %}
 {% set intensidades = {'descanso': 'Descanso', 'suave': 'Suave', 'moderada': 'Moderada', 'alta': 'Alta'} %}
-<section class="panel lectura{% if lectura and lectura.contenido %} estado-{{ lectura.contenido.estado }}{% endif %}" aria-labelledby="titulo-lectura">
-  {% if lectura and lectura.contenido %}
-  {% set c = lectura.contenido %}
-  <p class="estado">
-    <svg viewBox="0 0 24 24" aria-hidden="true">{{ estados[c.estado][1] | safe }}</svg>
-    {{ estados[c.estado][0] }}
-  </p>
-  <h2 id="titulo-lectura" class="titular">{{ c.titular }}</h2>
-  <p>{{ c.analisis }}</p>
-  <div class="bloque">
-    <h3>Entreno · {{ intensidades.get(c.entreno.intensidad, c.entreno.intensidad) }}{% if c.entreno.duracion_min %} · {{ c.entreno.duracion_min }} min{% endif %}</h3>
-    <p><strong>{{ c.entreno.titulo }}</strong>. {{ c.entreno.detalle }}</p>
+<details class="panel lectura-completa">
+  <summary>Lectura completa</summary>
+  <div class="lectura-completa-cuerpo">
+    <p>{{ c.analisis }}</p>
+    <div class="bloque">
+      <h3>Entreno · {{ intensidades.get(c.entreno.intensidad, c.entreno.intensidad) }}{% if c.entreno.duracion_min %} · {{ c.entreno.duracion_min }} min{% endif %}</h3>
+      <p><strong>{{ c.entreno.titulo }}</strong>. {{ c.entreno.detalle }}</p>
+    </div>
+    <div class="bloque">
+      <h3>Comida</h3>
+      <p>{{ c.comida }}</p>
+    </div>
+    {% if c.alertas %}
+    <div class="bloque alertas">
+      <h3>Ojo</h3>
+      <ul>{% for a in c.alertas %}<li>{{ a }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    <p class="suave pie-lectura">Lectura hecha con Claude {{ lectura.generada | hace }}. No sustituye a un médico.</p>
+    {% if es_hoy and not generando %}
+    <form method="post" action="/lectura">
+      <button class="boton secundario">Rehacer la lectura</button>
+    </form>
+    {% endif %}
   </div>
-  <div class="bloque">
-    <h3>Comida</h3>
-    <p>{{ c.comida }}</p>
-  </div>
-  {% if c.alertas %}
-  <div class="bloque alertas">
-    <h3>Ojo</h3>
-    <ul>{% for a in c.alertas %}<li>{{ a }}</li>{% endfor %}</ul>
-  </div>
-  {% endif %}
-  <p class="suave pie-lectura">Lectura hecha con Claude {{ lectura.generada | hace }}. No sustituye a un médico.</p>
-  {% elif generando %}
-  <h2 id="titulo-lectura" class="titular">Preparando la lectura…</h2>
-  <p class="suave">Tarda un minuto o dos. Recarga la página.</p>
+</details>
+{% endif %}
+
+<h2>Cómo estás</h2>
+<section class="como-estas" aria-label="Cómo estás">
+  {% for t in tarjetas %}
+  <article class="panel tarjeta-compacta" aria-label="{{ t.titulo }}">
+    <div class="tarjeta-cabecera">
+      <span class="icono-cuadro {{ t.color_icono }} pequeño">{{ t.icono | safe }}</span>
+      <span class="tarjeta-titulo">{{ t.titulo }}</span>
+    </div>
+    <span class="tarjeta-cifra">{{ t.valor }}{% if t.unidad and t.valor != '—' %} <span class="unidad">{{ t.unidad }}</span>{% endif %}</span>
+    {% if t.grafico %}
+    <div class="tarjeta-grafico">{{ t.grafico }}</div>
+    {% endif %}
+    {% if t.comparacion %}
+    <span class="tarjeta-detalle {{ t.clase }}">{{ t.comparacion }}</span>
+    {% elif t.detalle %}
+    <span class="tarjeta-detalle {{ t.clase }}">{{ t.detalle }}</span>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+
+{% if es_hoy %}
+<section class="panel hoy-toca" aria-label="Hoy toca">
+  <h2>Hoy toca</h2>
+  {% if not plan_hoy and not dosis_hoy %}
+  <p class="suave" style="margin: 0;">Nada planificado hoy</p>
   {% else %}
-  <h2 id="titulo-lectura" class="titular">{% if es_hoy %}Aún no hay lectura de hoy{% else %}No hubo lectura este día{% endif %}</h2>
-  {% if lectura and lectura.error %}<p class="suave">La última vez falló: {{ lectura.error }}</p>{% endif %}
-  {% endif %}
-  {% if es_hoy and not generando %}
-  <form method="post" action="/lectura">
-    <button class="boton{% if lectura and lectura.contenido %} secundario{% endif %}">{% if lectura and lectura.contenido %}Rehacer la lectura{% else %}Preparar la lectura{% endif %}</button>
-  </form>
+    {% for p in plan_hoy %}
+    <div class="fila-hoy-toca">
+      <span class="icono-cuadro ambar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/><circle cx="19" cy="5" r="1.6"/></svg>
+      </span>
+      <div class="info-hoy-toca">
+        <strong>{{ p.titulo }}</strong>
+        {% if p.detalle %}<span class="suave">{{ p.detalle }}</span>{% endif %}
+      </div>
+      {% if p.pastilla_texto %}
+      <span class="pastilla pastilla-{{ p.pastilla_clase }}">{{ p.pastilla_texto }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if dosis_hoy %}
+    <div class="fila-hoy-toca{% if plan_hoy %} fila-separada{% endif %}">
+      <span class="icono-cuadro violeta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3a1 1 0 0 1-1.4 0l-2.6-2.6a1 1 0 0 1 0-1.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/></svg>
+      </span>
+      <div class="info-hoy-toca">
+        <strong>{{ dosis_hoy.titulo }}</strong>
+        <span class="suave">{{ dosis_hoy.detalle }}</span>
+      </div>
+    </div>
+    {% endif %}
   {% endif %}
 </section>
 
-<h2>Cómo estás</h2>
-<div class="tarjetas">
-  {% for t in tarjetas %}
-  <article class="panel tarjeta">
-    <h3>{{ t.titulo }}</h3>
-    <div class="cifra-linea">
-      <p class="cifra">{{ t.valor }}{% if t.unidad and t.valor != '—' %}<span class="unidad"> {{ t.unidad }}</span>{% endif %}</p>
-      {{ t.spark }}
-    </div>
-    {% if t.comparacion %}<p class="comparacion {{ t.clase }}">{{ t.comparacion }}</p>{% endif %}
-    {% if t.detalle %}<p class="suave">{{ t.detalle }}</p>{% endif %}
-    {% if t.fecha %}<p class="suave">Último dato: {{ t.fecha | fecha_larga }}</p>{% endif %}
-  </article>
-  {% endfor %}
-</div>
-
-{% if rendimiento %}
-<h2>Rendimiento</h2>
-<div class="panel lista">
-  {% for r in rendimiento %}
-  <div class="fila">
-    <span>{{ r.titulo }}</span>
-    <span class="derecha"><strong>{{ r.valor }}</strong> <span class="suave">· {{ r.fecha | fecha_corta }}</span></span>
+{% if comida_hoy %}
+<a href="/comida" class="panel comida-hoy-tarjeta" aria-label="Comida de hoy">
+  {{ comida_hoy.grafico }}
+  <div class="comida-hoy-info">
+    <span class="comida-hoy-titulo">Comida de hoy</span>
+    <span class="comida-hoy-proteina"><strong>{{ comida_hoy.cifra_proteina }}</strong> g proteína</span>
+    <span class="comida-hoy-kcal suave">{{ comida_hoy.texto_kcal }}</span>
   </div>
-  {% endfor %}
-</div>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+</a>
+{% endif %}
 {% endif %}
 
-<div class="cabecera"><h2>Últimos 7 días</h2><a href="/actividades">Todas</a></div>
-{% if actividades %}
-<div class="panel lista">
-  {% for a in actividades %}
-  {% include "_actividad.html" %}
-  {% endfor %}
-</div>
-{% else %}
-<p class="panel suave">Sin actividades esta semana.</p>
-{% endif %}
-
-<div class="pie">
-  <p class="suave">
+<div class="pie-discreto">
+  <span class="suave">
     Garmin: {% if sync %}sincronizado {{ sync.hecha | hace }}{% if sync.estado != 'ok' %} ({{ sync.estado }}){% endif %}{% else %}sin sincronizar todavía{% endif %}
-  </p>
-  <form method="post" action="/sincronizar"><button class="boton secundario">Sincronizar ahora</button></form>
+  </span>
+  <form method="post" action="/sincronizar">
+    <button class="boton-discreto">Sincronizar ahora</button>
+  </form>
 </div>
 
-<p class="suave" style="text-align: center; margin: 20px 0;"><a href="/lecturas">Lecturas anteriores</a></p>
+<a href="/lecturas" class="lecturas-anteriores">Lecturas anteriores</a>
 {% endblock %}

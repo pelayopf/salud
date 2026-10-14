@@ -634,4 +634,301 @@ th { color: var(--suave); font-weight: 500; }
   background: transparent;
 }
 
+/* --- Rediseño Hoy ------------------------------------------------------- */
+
+.cabecera-hoy {
+  background: var(--marca);
+  color: #f4f7f6;
+  padding: calc(18px + env(safe-area-inset-top)) 20px 26px;
+  border-radius: 0 0 28px 28px;
+}
+.cabecera-hoy-interior {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.cabecera-hoy-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.marca-invertida {
+  color: #f4f7f6;
+}
+.logo-invertido {
+  background: rgba(255, 255, 255, .12);
+  color: #f4f7f6;
+}
+.nav-invertida a {
+  color: rgba(244, 247, 246, .8);
+}
+.nav-invertida a:hover,
+.nav-invertida a[aria-current="page"] {
+  background: rgba(255, 255, 255, .15);
+  color: #ffffff;
+}
+.ajustes-invertido {
+  color: #f4f7f6;
+}
+.ajustes-invertido:hover {
+  background: rgba(255, 255, 255, .15);
+  color: #ffffff;
+}
+.cabecera-hoy-fecha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cabecera-hoy-fecha .fecha-etiqueta {
+  font-size: 13px;
+  opacity: .8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.flecha-invertida {
+  color: #f4f7f6;
+  margin-bottom: 0;
+}
+.flecha-invertida:hover {
+  background: rgba(255, 255, 255, .15);
+}
+.cabecera-hoy-titular {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: #f4f7f6;
+}
+.cabecera-hoy-resumen {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, .08);
+  border-radius: 18px;
+  padding: 14px;
+}
+.cabecera-hoy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cabecera-hoy-entreno {
+  font-size: 14px;
+  line-height: 1.4;
+  opacity: .92;
+}
+.suave-invertido {
+  color: rgba(244, 247, 246, .8);
+  margin: 0;
+}
+.boton-cabecera {
+  background: #ffffff;
+  color: var(--marca);
+}
+.boton-cabecera:hover {
+  background: #f0f4f5;
+}
+
+.pastilla-verde, .pastilla-bien {
+  background: #50ca86;
+  color: #08331a;
+}
+.pastilla-ambar, .pastilla-cuidado {
+  background: #f5b54a;
+  color: #3b2600;
+}
+.pastilla-rojo, .pastilla-mal {
+  background: #f98b78;
+  color: #3a0d06;
+}
+
+.como-estas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+@media (max-width: 360px) {
+  .como-estas {
+    grid-template-columns: 1fr;
+  }
+}
+.tarjeta-compacta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+}
+.tarjeta-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--suave);
+  font-size: 13px;
+  font-weight: 600;
+}
+.icono-cuadro.pequeño {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+.icono-cuadro.pequeño svg {
+  width: 16px;
+  height: 16px;
+}
+.tarjeta-cifra {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+.tarjeta-cifra .unidad {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--suave);
+  letter-spacing: 0;
+}
+.tarjeta-grafico {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+.tarjeta-detalle {
+  font-size: 12px;
+  color: var(--suave);
+  line-height: 1.3;
+}
+.tarjeta-detalle.bien {
+  color: var(--verde);
+  font-weight: 600;
+}
+.tarjeta-detalle.mal {
+  color: var(--rojo);
+  font-weight: 600;
+}
+.tarjeta-detalle.cuidado {
+  color: var(--ambar);
+  font-weight: 600;
+}
+
+.lectura-completa {
+  margin-bottom: 14px;
+}
+.lectura-completa summary {
+  font-weight: 700;
+  font-size: .92rem;
+  color: var(--marca);
+}
+.lectura-completa-cuerpo {
+  margin-top: 12px;
+}
+
+.hoy-toca {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.hoy-toca h2 {
+  margin: 0;
+}
+.fila-hoy-toca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fila-hoy-toca.fila-separada {
+  border-top: 1px solid var(--borde);
+  padding-top: 12px;
+}
+.info-hoy-toca {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.info-hoy-toca strong {
+  font-size: 16px;
+}
+
+.comida-hoy-tarjeta {
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.comida-hoy-tarjeta:hover strong {
+  color: var(--marca-hover);
+}
+.comida-hoy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+.comida-hoy-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--suave);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.comida-hoy-proteina {
+  font-size: 15px;
+  color: var(--proteina);
+}
+.comida-hoy-proteina strong {
+  font-weight: 800;
+}
+.comida-hoy-kcal {
+  font-size: 13px;
+  color: var(--suave);
+}
+
+.pie-discreto {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.pie-discreto form {
+  margin: 0;
+}
+.boton-discreto {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--marca);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.boton-discreto:hover {
+  color: var(--marca-hover);
+}
+.lecturas-anteriores {
+  display: block;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--marca);
+  text-decoration: none;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.lecturas-anteriores:hover {
+  color: var(--marca-hover);
+}
+
 

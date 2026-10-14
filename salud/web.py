@@ -201,10 +201,38 @@ class _EntradaGarmin:
 
 # --- Tarjetas de Hoy -----------------------------------------------------------
 
+ICONO_SUENO = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    ' aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+)
+ICONO_VFC = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    ' aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8'
+    ' 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>'
+)
+ICONO_BB = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    ' aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2"/>'
+    '<path d="M22 11v2"/><path d="M6 10v4M10 10v4"/></svg>'
+)
+ICONO_PESO = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    ' aria-hidden="true"><path d="M5 20h14"/><path d="M7 20V9a5 5 0 0 1 10 0v11"/></svg>'
+)
+ICONO_FC = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    ' aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+)
+
 
 @dataclass(frozen=True)
 class Tarjeta:
-    """Una cifra de Hoy: valor, comparación con lo normal y mini-gráfica."""
+    """Una cifra de Hoy: valor, comparación con lo normal y mini-gráfica o icono."""
 
     titulo: str
     valor: str
@@ -214,6 +242,35 @@ class Tarjeta:
     clase: str = "neutro"  # bien / mal / neutro: sentido del cambio por si subir es bueno
     spark: Markup = Markup("")
     fecha: str = ""  # si el valor no es del día que se mira
+    icono: str = ""
+    color_icono: str = ""
+    grafico: Markup = Markup("")
+
+
+def _tiempo_hasta(inicio: str, ahora_dt: datetime) -> str:
+    """Devuelve 'en X h' o 'en X min' si es hoy en el futuro."""
+    try:
+        partes = [int(x) for x in inicio.split(":")[:2]]
+        inicio_dt = ahora_dt.replace(hour=partes[0], minute=partes[1], second=0, microsecond=0)
+        diff_s = (inicio_dt - ahora_dt).total_seconds()
+        if diff_s <= 0:
+            return ""
+        horas = diff_s / 3600
+        if horas >= 1:
+            return f"en {round(horas)} h"
+        minutos = round(diff_s / 60)
+        return f"en {minutos} min" if minutos > 0 else "ahora"
+    except Exception:
+        return ""
+
+
+def _resumen_comida_dia(
+    con: sqlite3.Connection, fecha: date, hoy_dia: date
+) -> tuple[db.TotalesDia, nutricion.ObjetivoDia | None]:
+    """Totales y objetivo de nutrición de un día."""
+    totales = db.totales_dia(con, fecha.isoformat())
+    objetivo = nutricion.objetivo_dia(con, fecha, hoy_dia)
+    return totales, objetivo
 
 
 def _clase(clave: str, diferencia: float, decimales: int) -> str:
@@ -247,7 +304,7 @@ def _tarjetas(con: sqlite3.Connection, fecha: date) -> list[Tarjeta]:
     desde_spark = (fecha - timedelta(days=DIAS_SPARK - 1)).isoformat()
     desde_media = (fecha - timedelta(days=DIAS_MEDIA)).isoformat()
     ayer = (fecha - timedelta(days=1)).isoformat()
-    claves = ("sueno_h", "vfc_noche", "fc_reposo", "bb_despertar", "preparacion")
+    claves = ("sueno_h", "vfc_noche", "fc_reposo", "bb_despertar")
     sparks = db.series(con, claves, desde_spark, hoy)
     medias_series = db.series(con, claves, desde_media, ayer)
 
@@ -271,79 +328,105 @@ def _tarjetas(con: sqlite3.Connection, fecha: date) -> list[Tarjeta]:
         return v.valor if v else None
 
     tarjetas: list[Tarjeta] = []
+
+    # 1. Sueño (violeta)
     sueno = valor("sueno_h")
     puntuacion = d.get("sueno_puntuacion")
-    detalle_sueno = ""
+    profundo = valor("sueno_profundo_h")
+    rem = valor("sueno_rem_h")
+    ligero = valor("sueno_ligero_h")
+    despierto = valor("sueno_despierto_h")
+    partes_sueno = []
     if puntuacion and puntuacion.valor is not None:
-        detalle_sueno = f"Puntuación {cifra(puntuacion.valor)}"
-        if puntuacion.texto:
-            detalle_sueno += f" · {texto('sueno_puntuacion', puntuacion.texto)}"
+        partes_sueno.append(f"Puntuación {cifra(puntuacion.valor)}")
+    if profundo is not None:
+        partes_sueno.append(f"{round(profundo * 60)} min profundo")
+    elif puntuacion and puntuacion.texto:
+        partes_sueno.append(texto("sueno_puntuacion", puntuacion.texto))
+    detalle_sueno = " · ".join(partes_sueno)
     comp, clase = normal("sueno_h")
+    graf_sueno = graficas.fases_sueno(profundo, rem, ligero, despierto)
     tarjetas.append(
-        Tarjeta("Sueño", horas_y_minutos(sueno), "", detalle_sueno, comp, clase, spark("sueno_h"))
+        Tarjeta(
+            titulo="Sueño",
+            valor=horas_y_minutos(sueno),
+            unidad="",
+            detalle=detalle_sueno,
+            comparacion=comp,
+            clase=clase,
+            spark=spark("sueno_h"),
+            icono=ICONO_SUENO,
+            color_icono="violeta",
+            grafico=graf_sueno,
+        )
     )
 
-    vfc = d.get("vfc_noche")
+    # 2. VFC noche (rojo)
+    vfc_val = valor("vfc_noche")
     lo, hi = valor("vfc_base_baja"), valor("vfc_base_alta")
-    partes_vfc = [texto("vfc_noche", vfc.texto).capitalize()] if vfc and vfc.texto else []
-    if lo is not None and hi is not None:
-        partes_vfc.append(f"tu franja equilibrada: {cifra(lo)}–{cifra(hi)} ms")
-    detalle_vfc = " · ".join(partes_vfc)
-    comp, clase = normal("vfc_noche")
+    if lo is not None and hi is not None and vfc_val is not None:
+        rango_str = f"({cifra(lo)}–{cifra(hi)})"
+        if vfc_val < lo:
+            detalle_vfc = f"Por debajo de tu rango {rango_str}"
+            clase_vfc = "mal"
+        elif vfc_val > hi:
+            detalle_vfc = f"Por encima de tu rango {rango_str}"
+            clase_vfc = "mal"
+        else:
+            detalle_vfc = f"Dentro de tu rango {rango_str}"
+            clase_vfc = "bien"
+    else:
+        vfc_obj = d.get("vfc_noche")
+        partes_vfc = (
+            [texto("vfc_noche", vfc_obj.texto).capitalize()] if vfc_obj and vfc_obj.texto else []
+        )
+        if lo is not None and hi is not None:
+            partes_vfc.append(f"tu franja equilibrada: {cifra(lo)}–{cifra(hi)} ms")
+        detalle_vfc = " · ".join(partes_vfc)
+        _, clase_vfc = normal("vfc_noche")
+
+    graf_vfc = graficas.rango(vfc_val, lo, hi)
     tarjetas.append(
         Tarjeta(
-            "VFC nocturna",
-            cifra(valor("vfc_noche")),
-            "ms",
-            detalle_vfc,
-            comp,
-            clase,
-            spark("vfc_noche"),
+            titulo="VFC noche",
+            valor=cifra(vfc_val),
+            unidad="ms",
+            detalle=detalle_vfc,
+            comparacion="",
+            clase=clase_vfc,
+            spark=spark("vfc_noche"),
+            icono=ICONO_VFC,
+            color_icono="rojo",
+            grafico=graf_vfc,
         )
     )
 
-    comp, clase = normal("fc_reposo")
-    tarjetas.append(
-        Tarjeta(
-            "FC en reposo", cifra(valor("fc_reposo")), "lpm", "", comp, clase, spark("fc_reposo")
-        )
-    )
-
-    detalle_bb = ""
-    if valor("bb_max") is not None and valor("bb_min") is not None:
-        detalle_bb = f"Máxima {cifra(valor('bb_max'))} · mínima {cifra(valor('bb_min'))}"
+    # 3. Body Battery (verde)
+    partes_bb = []
+    if valor("bb_min") is not None:
+        partes_bb.append(f"Ahora {cifra(valor('bb_min'))}")
+    if valor("recuperacion_h") is not None:
+        partes_bb.append(f"recuperación {cifra(valor('recuperacion_h'))} h")
+    elif not partes_bb and valor("bb_max") is not None:
+        partes_bb.append(f"Máxima {cifra(valor('bb_max'))}")
+    detalle_bb = " · ".join(partes_bb)
     comp, clase = normal("bb_despertar")
     tarjetas.append(
         Tarjeta(
-            "Body Battery al despertar",
-            cifra(valor("bb_despertar")),
-            "",
-            detalle_bb,
-            comp,
-            clase,
-            spark("bb_despertar"),
+            titulo="Body Battery",
+            valor=cifra(valor("bb_despertar")),
+            unidad="al despertar",
+            detalle=detalle_bb,
+            comparacion=comp,
+            clase=clase,
+            spark=spark("bb_despertar"),
+            icono=ICONO_BB,
+            color_icono="verde",
+            grafico=Markup(""),
         )
     )
 
-    prep = d.get("preparacion")
-    partes = []
-    if prep and prep.texto:
-        partes.append(texto("preparacion", prep.texto).capitalize())
-    if valor("recuperacion_h"):
-        partes.append(f"recuperación {cifra(valor('recuperacion_h'))} h")
-    comp, clase = normal("preparacion")
-    tarjetas.append(
-        Tarjeta(
-            "Preparación para entrenar",
-            cifra(valor("preparacion")),
-            "",
-            " · ".join(partes),
-            comp,
-            clase,
-            spark("preparacion"),
-        )
-    )
-
+    # 4. Peso (marca)
     peso = db.ultimo(con, "peso", hoy)
     if peso is not None and peso.valor is not None:
         antes = db.ultimo(
@@ -352,23 +435,42 @@ def _tarjetas(con: sqlite3.Connection, fecha: date) -> list[Tarjeta]:
         comp, clase = ("", "neutro")
         if antes is not None and antes.valor is not None:
             comp, clase = _comparacion("peso", peso.valor, antes.valor, "en 30 días")
-        grasa = db.ultimo(con, "grasa", hoy)
-        detalle_peso = (
-            f"Grasa {cifra(grasa.valor, 1)} %" if grasa and grasa.fecha == peso.fecha else ""
-        )
         serie_peso = db.serie(con, "peso", (fecha - timedelta(days=60)).isoformat(), hoy)
+        spk_peso = graficas.sparkline([v.valor for v in serie_peso])
         tarjetas.append(
             Tarjeta(
-                "Peso",
-                cifra(peso.valor, 1),
-                "kg",
-                detalle_peso,
-                comp,
-                clase,
-                graficas.sparkline([v.valor for v in serie_peso]),
-                peso.fecha if peso.fecha != hoy else "",
+                titulo="Peso",
+                valor=cifra(peso.valor, 1),
+                unidad="kg",
+                detalle="",
+                comparacion=comp,
+                clase=clase,
+                spark=spk_peso,
+                fecha=peso.fecha if peso.fecha != hoy else "",
+                icono=ICONO_PESO,
+                color_icono="marca",
+                grafico=spk_peso,
             )
         )
+
+    # 5. FC en reposo (rojo)
+    comp, clase = normal("fc_reposo")
+    spk_fc = spark("fc_reposo")
+    tarjetas.append(
+        Tarjeta(
+            titulo="FC en reposo",
+            valor=cifra(valor("fc_reposo")),
+            unidad="lpm",
+            detalle="",
+            comparacion=comp,
+            clase=clase,
+            spark=spk_fc,
+            icono=ICONO_FC,
+            color_icono="rojo",
+            grafico=spk_fc,
+        )
+    )
+
     return tarjetas
 
 
@@ -832,24 +934,156 @@ def crear_app(
         fecha = _fecha(request)
         con = abrir_db()
         try:
-            semana = (fecha - timedelta(days=6)).isoformat()
-            trat = _tratamiento(con, fecha) if fecha == hoy() else None
-            if trat is not None and trat["ultima"] is None and not db.hay_pauta(con):
-                trat = None
+            es_hoy = fecha == hoy()
+            d = db.dia(con, fecha.isoformat())
+            prep = d.get("preparacion")
+            prep_valor = prep.valor if prep else None
+            anillo_prep = graficas.anillo(
+                prep_valor / 100 if prep_valor is not None else None,
+                clase="preparacion",
+                tamano=76,
+                grosor=8,
+                texto=str(round(prep_valor)) if prep_valor is not None else "—",
+                etiqueta=(
+                    f"Preparación {round(prep_valor)} de 100"
+                    if prep_valor is not None
+                    else "Sin preparación"
+                ),
+            )
+
+            plan_hoy: list[dict[str, Any]] = []
+            dosis_hoy: dict[str, str] | None = None
+            comida_hoy: dict[str, Any] | None = None
+
+            if es_hoy:
+                items_plan = calendario.plan(con, fecha, fecha, fecha)
+                acts_hoy = db.actividades(con, fecha.isoformat(), fecha.isoformat())
+                ahora_dt = datetime.now(ZONA)
+                for p in items_plan:
+                    esta_hecho = calendario.hecho(p, acts_hoy)
+                    deporte = metricas.nombre_tipo(p.tipo) if p.tipo else p.titulo
+                    hora = p.inicio[:5] if p.inicio else ""
+                    tit = f"{deporte} · {hora}" if hora else deporte
+                    detalles = []
+                    if p.duracion_min:
+                        detalles.append(f"{p.duracion_min} min")
+                    if p.intensidad:
+                        detalles.append(f"intensidad {p.intensidad}")
+                    k = nutricion.kcal_tipica(con, p, fecha)
+                    if k > 0:
+                        detalles.append(f"~{cifra(k)} kcal")
+
+                    if esta_hecho:
+                        pastilla_txt = "hecho"
+                        pastilla_cls = "bien"
+                    else:
+                        t_hasta = _tiempo_hasta(p.inicio, ahora_dt) if p.inicio else ""
+                        pastilla_txt = t_hasta or ""
+                        pastilla_cls = "cuidado" if pastilla_txt else ""
+
+                    plan_hoy.append(
+                        {
+                            "titulo": tit,
+                            "detalle": " · ".join(detalles),
+                            "pastilla_texto": pastilla_txt,
+                            "pastilla_clase": pastilla_cls,
+                        }
+                    )
+
+                trat = _tratamiento(con, fecha)
+                if trat is not None and (trat.get("pauta") or trat.get("ultima")):
+                    p_prox = trat.get("prox")
+                    pauta = trat.get("pauta")
+                    if p_prox and pauta:
+                        farmaco = pauta.farmaco
+                        dosis_mg = gramos(pauta.dosis_mg)
+                        if p_prox.estado == "hoy":
+                            t_dosis = f"{farmaco} {dosis_mg} mg · hoy"
+                            d_dosis = f"Toca hoy · {trat['zona_sugerida']}"
+                        elif p_prox.estado == "esperar":
+                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
+                            d_dosis = (
+                                f"Puedes adelantarla desde el {dia_corto(p_prox.adelantar_desde)}"
+                                f" · {trat['zona_sugerida']}"
+                            )
+                        elif p_prox.estado == "puede_adelantar":
+                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
+                            d_dosis = f"Si quieres adelantarla, ya puedes · {trat['zona_sugerida']}"
+                        elif p_prox.estado == "retrasada":
+                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
+                            d_dosis = (
+                                f"Tocaba el {dia_corto(p_prox.prevista)}. Aún puedes ponértela"
+                                f" hasta el {dia_corto(p_prox.limite)} · {trat['zona_sugerida']}"
+                            )
+                        elif p_prox.estado == "saltar":
+                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
+                            d_dosis = (
+                                f"Han pasado más de {pauta.margen_olvido_dias} días: sáltala y"
+                                f" sigue el {dia_corto(p_prox.siguiente_habitual)}"
+                            )
+                        else:
+                            t_dosis = f"{farmaco} {dosis_mg} mg"
+                            d_dosis = f"Zona sugerida: {trat['zona_sugerida']}"
+                        dosis_hoy = {"titulo": t_dosis, "detalle": d_dosis}
+                    elif pauta:
+                        t_dosis = f"{pauta.farmaco} {gramos(pauta.dosis_mg)} mg"
+                        d_dosis = f"Aún no hay dosis registradas · {trat['zona_sugerida']}"
+                        dosis_hoy = {"titulo": t_dosis, "detalle": d_dosis}
+
+                totales_c, obj_c = _resumen_comida_dia(con, fecha, fecha)
+                f_prot = (
+                    totales_c.total.proteinas / obj_c.total.proteinas
+                    if obj_c and obj_c.total.proteinas > 0
+                    else None
+                )
+                f_kcal = (
+                    totales_c.total.kcal / obj_c.total.kcal
+                    if obj_c and obj_c.total.kcal > 0
+                    else None
+                )
+                etiqueta = (
+                    f"Proteína {gramos(totales_c.total.proteinas)} de"
+                    f" {gramos(obj_c.total.proteinas)} gramos"
+                    if obj_c
+                    else "Comida de hoy"
+                )
+                graf = graficas.anillos(
+                    f_prot,
+                    f_kcal,
+                    clase_ext="proteina",
+                    clase_int="kcal",
+                    tamano=64,
+                    etiqueta=etiqueta,
+                )
+                if obj_c:
+                    cifra_prot = (
+                        f"{gramos(totales_c.total.proteinas)} / {gramos(obj_c.total.proteinas)}"
+                    )
+                    txt_kcal = f"{cifra(totales_c.total.kcal)} / {cifra(obj_c.total.kcal)} kcal"
+                else:
+                    cifra_prot = f"{gramos(totales_c.total.proteinas)}"
+                    txt_kcal = f"{cifra(totales_c.total.kcal)} kcal"
+                comida_hoy = {
+                    "grafico": graf,
+                    "cifra_proteina": cifra_prot,
+                    "texto_kcal": txt_kcal,
+                }
+
             return _render(
                 "hoy.html",
                 seccion="hoy",
                 fecha=fecha.isoformat(),
-                es_hoy=fecha == hoy(),
+                es_hoy=es_hoy,
                 anterior=(fecha - timedelta(days=1)).isoformat(),
                 siguiente=(fecha + timedelta(days=1)).isoformat() if fecha < hoy() else None,
                 lectura=db.lectura(con, fecha.isoformat()),
                 generando=generando.locked(),
+                anillo_prep=anillo_prep,
                 tarjetas=_tarjetas(con, fecha),
-                rendimiento=_rendimiento(con, fecha),
-                actividades=_actividades(db.actividades(con, semana, fecha.isoformat())),
+                plan_hoy=plan_hoy,
+                dosis_hoy=dosis_hoy,
+                comida_hoy=comida_hoy,
                 sync=db.ultima_sincronizacion(con, GARMIN),
-                tratamiento=trat,
                 mensaje=request.query_params.get("mensaje"),
             )
         finally:
@@ -918,14 +1152,17 @@ def crear_app(
         inicio = fin - timedelta(days=dias - 1)
         desde_plan = fin - timedelta(days=DIAS_PASADOS_PLAN)
         hasta_plan = fin + timedelta(days=DIAS_FUTUROS_PLAN)
+        semana_7dias = (fin - timedelta(days=6)).isoformat()
         con = abrir_db()
         try:
             filas = db.actividades(con, inicio.isoformat(), fin.isoformat())
+            filas_7dias = db.actividades(con, semana_7dias, fin.isoformat())
             plan_items = calendario.plan(con, desde_plan, hasta_plan, fin)
             acts_plan = db.actividades(con, desde_plan.isoformat(), hasta_plan.isoformat())
             sync_cal = db.ultima_sincronizacion(con, calendario.GOOGLE)
             graficas_act = _graficas(con, ("preparacion", "vo2max"), inicio, fin)
             carga = _carga_semanal(con, inicio, fin)
+            rendimiento = _rendimiento(con, fin)
         finally:
             con.close()
         g_carga = graficas.columnas(carga, titulo="Carga de entrenamiento por semana")
@@ -944,6 +1181,8 @@ def crear_app(
             seccion="actividad",
             dias=dias,
             periodos=PERIODOS,
+            rendimiento=rendimiento,
+            actividades_7dias=_actividades(filas_7dias),
             actividades=_actividades(filas),
             dias_plan=dias_p,
             sync_calendario=sync_cal,
@@ -1283,10 +1522,9 @@ def crear_app(
         con = abrir_db()
         try:
             comidas_dia = db.comidas(con, fecha.isoformat())
-            totales = db.totales_dia(con, fecha.isoformat())
+            totales, objetivo = _resumen_comida_dia(con, fecha, hoy())
             recientes = db.productos_recientes(con)
             propios = db.productos_propios(con)
-            objetivo = nutricion.objetivo_dia(con, fecha, hoy())
             consejo_hoy: dict[str, Any] | None = None
             proximo: str | None = None
             if fecha == hoy():

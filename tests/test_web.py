@@ -52,16 +52,61 @@ def cliente(settings, garmin):
 def test_hoy_con_datos_y_lectura(cliente, settings):
     con = db.conectar(settings.db_path)
     db.guardar_lectura(con, HOY.isoformat(), contenido=LECTURA)
+    db.guardar_semana_tipo(
+        con,
+        [
+            db.EntradaSemana(
+                dia=HOY.weekday(),
+                inicio="20:00",
+                duracion_min=90,
+                tipo="paddelball",
+                intensidad="alta",
+            )
+        ],
+    )
+    db.guardar_pauta(
+        con,
+        db.Pauta(
+            farmaco="Mounjaro",
+            dosis_mg=5.0,
+            intervalo_dias=7,
+            margen_olvido_dias=4,
+            separacion_min_dias=3,
+        ),
+    )
+    db.anadir_dosis(
+        con, farmaco="Mounjaro", fecha=HOY.isoformat(), dosis_mg=5.0, zona="muslo derecho"
+    )
+    db.anadir_comida(
+        con,
+        fecha=HOY.isoformat(),
+        momento="comida",
+        nombre="Pechuga",
+        cantidad=200,
+        unidad="g",
+        kcal=220,
+        proteinas=46,
+        hidratos=0,
+        grasas=3,
+    )
     con.close()
     r = cliente.get("/")
     assert r.status_code == 200
     assert "sábado 10 de enero" in r.text
     assert "Carga alta: hoy suave" in r.text and "Con cabeza" in r.text
+    assert "Lectura completa" in r.text
     assert "FC en reposo alta" in r.text
     assert "7 h 30 min" in r.text  # sueño
-    assert "Equilibrada · tu franja equilibrada: 50–70 ms" in r.text
+    assert "Dentro de tu rango (50–70)" in r.text
     assert "80,1" in r.text  # peso
-    assert "Productivo" in r.text
+    assert 'aria-label="Sueño"' in r.text
+    assert 'aria-label="VFC noche"' in r.text
+    assert 'aria-label="Body Battery"' in r.text
+    assert 'aria-label="Peso"' in r.text
+    assert 'aria-label="FC en reposo"' in r.text
+    assert "Hoy toca" in r.text and "Pádel · 20:00" in r.text
+    assert "Mounjaro 5 mg" in r.text
+    assert "Comida de hoy" in r.text and "g proteína" in r.text
     assert r.headers["x-frame-options"] == "DENY"
 
 
@@ -70,10 +115,13 @@ def test_hoy_vacio_y_otro_dia(settings):
     r = c.get("/")
     assert r.status_code == 200
     assert "Aún no hay lectura de hoy" in r.text
+    assert "Preparar la lectura" in r.text
     assert "sin sincronizar todavía" in r.text
     r = c.get("/?fecha=2026-01-05")
     assert "lunes 5 de enero" in r.text and "No hubo lectura este día" in r.text
     assert "Preparar la lectura" not in r.text
+    assert "Hoy toca" not in r.text
+    assert "Comida de hoy" not in r.text
     # Una fecha futura se queda en hoy.
     assert "sábado 10 de enero" in c.get("/?fecha=2030-01-01").text
 
@@ -101,9 +149,13 @@ def test_salud_actividades_y_lecturas(cliente, settings):
     assert r_salud_dosis.status_code == 200
     assert "Apuntar dosis" in r_salud_dosis.text
 
-    # /actividades contiene "VO2max", "Fútbol" y "Ciclismo"
+    # /actividades contiene "Rendimiento", "Productivo", "Últimos 7 días",
+    # "VO2max", "Fútbol" y "Ciclismo"
     r_act = cliente.get("/actividades")
     assert r_act.status_code == 200
+    assert "Rendimiento" in r_act.text
+    assert "Productivo" in r_act.text
+    assert "Últimos 7 días" in r_act.text
     assert "VO2max" in r_act.text
     assert "Fútbol" in r_act.text and "Ciclismo" in r_act.text
 
