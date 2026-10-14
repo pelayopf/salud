@@ -1194,7 +1194,9 @@ th { color: var(--suave); font-weight: 500; }
 .boton-discreto {
   background: none;
   border: 0;
-  padding: 0;
+  /* Zona táctil de 44 px sin cambiar cómo se ve. */
+  padding: 13px 0;
+  margin: -13px 0;
   color: var(--marca);
   font: inherit;
   font-size: 13px;
@@ -1205,6 +1207,11 @@ th { color: var(--suave); font-weight: 500; }
 }
 .boton-discreto:hover {
   color: var(--marca-hover);
+}
+.boton-discreto:disabled {
+  color: var(--suave);
+  text-decoration: none;
+  cursor: progress;
 }
 .lecturas-anteriores {
   display: block;
@@ -1814,3 +1821,5 @@ th { color: var(--suave); font-weight: 500; }
 
 
 .panel-peso { margin-top: 14px; }
+
+.boton:disabled, .tarjeta-acceso:disabled, .boton-pedir-consejo:disabled { opacity: .7; cursor: progress; }

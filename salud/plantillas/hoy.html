@@ -171,7 +171,7 @@
     Garmin: {% if sync %}sincronizado {{ sync.hecha | hace }}{% if sync.estado != 'ok' %} ({{ sync.estado }}){% endif %}{% else %}sin sincronizar todavía{% endif %}
   </span>
   <form method="post" action="/sincronizar">
-    <button class="boton-discreto">Sincronizar ahora</button>
+    <button class="boton-discreto" data-enviando="Sincronizando con Garmin…">Sincronizar ahora</button>
   </form>
 </div>
 

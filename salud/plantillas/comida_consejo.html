@@ -27,10 +27,10 @@
   {% if error_consejo %}
   <p class="aviso error" role="alert">{{ error_consejo }}</p>
   {% endif %}
-  <form class="formulario-consejo" method="post" action="/comida/consejo" data-consejo>
+  <form class="formulario-consejo" method="post" action="/comida/consejo">
     <label for="nota" class="label-nota">¿Algo que deba saber?</label>
     <textarea id="nota" name="nota" rows="2" maxlength="300" placeholder="Opcional: ceno fuera, tengo poco hambre…"></textarea>
-    <button type="submit" class="boton-pedir-consejo">Pedir consejo</button>
+    <button type="submit" class="boton-pedir-consejo" data-enviando="Enviando…">Pedir consejo</button>
   </form>
   {% endif %}
 </section>

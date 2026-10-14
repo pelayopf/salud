@@ -436,14 +436,19 @@ for (const form of document.querySelectorAll("form[data-producto]")) {
   }
 }
 
-const formConsejo = document.querySelector("form[data-consejo]");
-if (formConsejo) {
-  formConsejo.addEventListener("submit", () => {
-    const boton = formConsejo.querySelector("button");
-    if (boton) {
+// Botones que tardan (Garmin, calendario, IA): se desactivan y dicen qué
+// están haciendo hasta que llega la respuesta. El texto va en el propio botón
+// o, si lleva icono, en su hijo [data-texto]. setTimeout: el botón se
+// desactiva después de que el formulario lo haya enviado.
+for (const form of document.querySelectorAll("form")) {
+  form.addEventListener("submit", () => {
+    const boton = form.querySelector("button[data-enviando]");
+    if (!boton) return;
+    setTimeout(() => {
       boton.disabled = true;
-      boton.textContent = "Enviando…";
-    }
+      boton.setAttribute("aria-busy", "true");
+      (boton.querySelector("[data-texto]") || boton).textContent = boton.dataset.enviando;
+    });
   });
 }
 

@@ -35,7 +35,7 @@
   {% else %}
   {% if sesion_desde %}
   <form method="post" action="/conexiones/garmin/probar" class="acciones">
-    <button class="boton secundario">Probar conexión</button>
+    <button class="boton secundario" data-enviando="Probando…">Probar conexión</button>
   </form>
   {% endif %}
   <details{% if not sesion_desde or error %} open{% endif %}>

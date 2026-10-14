@@ -152,9 +152,9 @@
     <input type="hidden" name="q" value="{{ q }}">
     <input type="hidden" name="fecha" value="{{ fecha }}">
     {% if momento_elegido %}<input type="hidden" name="momento" value="{{ momento_elegido }}">{% endif %}
-    <button type="submit" class="panel tarjeta-acceso">
+    <button type="submit" class="panel tarjeta-acceso" data-enviando="Estimando…">
       <span class="icono-cuadro violeta"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
-      <span>Estimar con IA</span>
+      <span data-texto>Estimar con IA</span>
     </button>
   </form>
   {% else %}
