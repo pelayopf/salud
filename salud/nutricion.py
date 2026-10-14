@@ -166,15 +166,9 @@ def objetivo_dia(
         acts_hoy = db.actividades(con, fecha.isoformat(), fecha.isoformat())
         plan_items = calendario.plan(con, fecha, fecha, hoy)
 
-        plan_no_hechos: list[db.Planificado] = []
-        for p in plan_items:
-            hecho = (
-                any(a["tipo"] == p.tipo for a in acts_hoy)
-                if p.tipo is not None
-                else len(acts_hoy) > 0
-            )
-            if not hecho:
-                plan_no_hechos.append(p)
+        plan_no_hechos: list[db.Planificado] = [
+            p for p in plan_items if not calendario.hecho(p, acts_hoy)
+        ]
 
         prev = _previstos(con, plan_no_hechos, hoy)
         kcal_acts = [round(a["kcal"] or 0) for a in acts_hoy]

@@ -136,17 +136,7 @@ def hace(momento_utc: str | None) -> str:
     return f"el {m.day}/{m.month} a las {m:%H:%M}"
 
 
-def hora_local(momento_utc: str | None) -> str:
-    """Convierte una marca de tiempo UTC a hora local de Madrid HH:MM."""
-    if not momento_utc:
-        return ""
-    try:
-        dt = datetime.fromisoformat(momento_utc)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt.astimezone(ZONA).strftime("%H:%M")
-    except Exception:
-        return ""
+hora_local = db.hora_local
 
 
 PLANTILLAS.filters["horas"] = horas_y_minutos
@@ -572,11 +562,6 @@ def dias_plan(
 
         plan_dia: list[dict[str, Any]] = []
         for p in plan_por_dia.get(f_str, []):
-            if p.tipo is not None:
-                hecho = any(a["tipo"] == p.tipo for a in acts_dia)
-            else:
-                hecho = len(acts_dia) > 0
-
             plan_dia.append(
                 {
                     "hora": p.inicio or "",
@@ -586,7 +571,7 @@ def dias_plan(
                     "intensidad": p.intensidad,
                     "origen": p.origen,
                     "tipo": p.tipo,
-                    "hecho": hecho,
+                    "hecho": calendario.hecho(p, acts_dia),
                 }
             )
 
@@ -1191,13 +1176,7 @@ def crear_app(
                 acts = db.actividades(con, fecha.isoformat(), manana.isoformat())
                 ahora_hora = datetime.now(ZONA).strftime("%H:%M")
                 for p in items_plan:
-                    acts_dia = [a for a in acts if a["fecha"] == p.fecha]
-                    hecho = (
-                        any(a["tipo"] == p.tipo for a in acts_dia)
-                        if p.tipo is not None
-                        else len(acts_dia) > 0
-                    )
-                    if hecho:
+                    if calendario.hecho(p, acts):
                         continue
                     if p.fecha == fecha.isoformat():
                         if p.inicio and len(p.inicio) >= 5 and p.inicio[:5] <= ahora_hora:

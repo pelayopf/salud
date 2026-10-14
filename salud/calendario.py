@@ -15,6 +15,7 @@ import math
 import re
 import sqlite3
 import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -125,6 +126,15 @@ def clasificar(
         if palabra in palabras_titulo:
             return True, tipo
     return False, None
+
+
+def hecho(p: db.Planificado, actividades: Iterable[sqlite3.Row]) -> bool:
+    """Indica si una actividad planificada ya se ha realizado según las actividades registradas."""
+    for a in actividades:
+        if a["fecha"] == p.fecha:
+            if p.tipo is None or a["tipo"] == p.tipo:
+                return True
+    return False
 
 
 def intensidad(tipo: str | None) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 from unittest.mock import patch
 
@@ -388,3 +389,47 @@ def test_cli_cmd_sync_incluye_calendario(monkeypatch, tmp_path, capsys):
         assert codigo == 0
         captura = capsys.readouterr()
         assert "Fallo descarga" in captura.err
+
+
+def test_hecho():
+    p_padel = db.Planificado(
+        fecha="2026-05-04",
+        inicio="19:00",
+        duracion_min=90,
+        titulo="Pádel",
+        tipo="paddelball",
+        intensidad="alta",
+        origen="google",
+        uid="u1",
+    )
+    p_generico = db.Planificado(
+        fecha="2026-05-04",
+        inicio="19:00",
+        duracion_min=60,
+        titulo="Deporte",
+        tipo=None,
+        intensidad="moderada",
+        origen="google",
+        uid="u2",
+    )
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.execute("CREATE TABLE a (fecha TEXT, tipo TEXT)")
+    c.execute(
+        "INSERT INTO a VALUES ('2026-05-04', 'paddelball'),"
+        " ('2026-05-04', 'running'), ('2026-05-05', 'paddelball')"
+    )
+    filas = c.execute("SELECT * FROM a").fetchall()
+    f_padel = [filas[0]]
+    f_correr = [filas[1]]
+    f_otro_dia = [filas[2]]
+
+    assert calendario.hecho(p_padel, f_padel) is True
+    assert calendario.hecho(p_padel, f_correr) is False
+    assert calendario.hecho(p_padel, f_otro_dia) is False
+    assert calendario.hecho(p_generico, f_correr) is True
+    assert calendario.hecho(p_generico, f_otro_dia) is False
+    assert calendario.hecho(p_padel, []) is False
+    assert calendario.hecho(p_padel, filas) is True
+    assert calendario.hecho(p_generico, filas) is True
+    c.close()

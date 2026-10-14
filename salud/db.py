@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
+from zoneinfo import ZoneInfo
 
 from .metricas import Actividad, Metrica
 
@@ -327,6 +328,22 @@ def normalizar_titulo(texto: str) -> str:
 def ahora() -> str:
     """Marca de tiempo en UTC, con segundos."""
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+ZONA = ZoneInfo("Europe/Madrid")
+
+
+def hora_local(momento_utc: str | None) -> str:
+    """Convierte una marca de tiempo UTC a hora local de Madrid HH:MM."""
+    if not momento_utc:
+        return ""
+    try:
+        dt = datetime.fromisoformat(momento_utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(ZONA).strftime("%H:%M")
+    except Exception:
+        return ""
 
 
 def conectar(ruta: Path | str) -> sqlite3.Connection:

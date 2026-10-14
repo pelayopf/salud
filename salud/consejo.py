@@ -7,9 +7,8 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from . import calendario, db, ia, lectura, metricas, nutricion
 from .config import Settings
@@ -60,7 +59,6 @@ MAX_TEXTO = 600
 MAX_AVISO = 200
 MAX_AVISOS = 3
 MAX_NOTA = 300
-ZONA = ZoneInfo("Europe/Madrid")
 
 
 def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> dict[str, Any]:
@@ -72,15 +70,6 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
     comidas_raw = db.comidas(con, hoy_str)
     comido_hoy = []
     for c in comidas_raw:
-        apuntado = ""
-        if c.creado:
-            try:
-                dt = datetime.fromisoformat(c.creado)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=UTC)
-                apuntado = dt.astimezone(ZONA).strftime("%H:%M")
-            except Exception:
-                apuntado = ""
         comido_hoy.append(
             {
                 "momento": c.momento,
@@ -91,7 +80,7 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
                 "proteinas": c.proteinas,
                 "hidratos": c.hidratos,
                 "grasas": c.grasas,
-                "apuntado": apuntado,
+                "apuntado": db.hora_local(c.creado),
             }
         )
 
@@ -127,10 +116,6 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
 
     planificado = []
     for p in items_plan:
-        acts_dia = [a for a in acts if a["fecha"] == p.fecha]
-        hecho = (
-            any(a["tipo"] == p.tipo for a in acts_dia) if p.tipo is not None else len(acts_dia) > 0
-        )
         planificado.append(
             {
                 "fecha": p.fecha,
@@ -140,7 +125,7 @@ def contexto(con: sqlite3.Connection, settings: Settings, ahora: datetime) -> di
                 "duracion_min": p.duracion_min,
                 "intensidad": p.intensidad,
                 "origen": p.origen,
-                "hecho": hecho,
+                "hecho": calendario.hecho(p, acts),
             }
         )
 
