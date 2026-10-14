@@ -41,7 +41,7 @@ class Settings:
     agy: str = "agy"
     # Sesión de agy (Google): el HOME aislado de cada tarea solo enlaza este fichero.
     agy_token: Path = Path("~/.gemini/antigravity-cli/antigravity-oauth-token").expanduser()
-    ia_modelo_agy: str = "gemini-3.8-flash-medium"
+    ia_modelo_agy: str = "gemini-3.8-flash-low"
     ia_modelo_claude: str = "haiku"
 
 
@@ -75,7 +75,6 @@ def load_settings() -> Settings:
         agy_token=_ruta(
             os.environ.get("SALUD_AGY_TOKEN", "~/.gemini/antigravity-cli/antigravity-oauth-token")
         ),
-        ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip()
-        or "gemini-3.8-flash-medium",
+        ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip() or "gemini-3.8-flash-low",
         ia_modelo_claude=os.environ.get("SALUD_IA_MODELO_CLAUDE", "").strip() or "haiku",
     )

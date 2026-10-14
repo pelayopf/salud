@@ -42,6 +42,12 @@ TIEMPO_MAXIMO_S = 90
 
 Unidad = Literal["g", "ml"]
 
+# search_web no se puede denegar en agy; sin ficheros ni órdenes, solo podría
+# buscar con lo que ve en el adjunto. Se le pide que no lo haga (y tarda menos).
+SOLO_ADJUNTOS = (
+    "No uses ninguna otra herramienta: ni órdenes, ni búsquedas en internet, ni otros ficheros."
+)
+
 EXTENSIONES = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -110,7 +116,7 @@ def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
     if not salida.strip():
         err = stderr.strip()[-300:]
         if err:
-            raise ErrorIA(err)
+            raise ErrorIA(f"agy no respondió: {err}")
         raise ErrorIA("agy no devolvió una respuesta válida")
 
     try:
@@ -164,12 +170,14 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             json.dumps({"permissions": {"allow": [], "deny": ["command(regex:.*)"]}})
         )
 
+        # La mención va al principio: al final, el modelo busca el fichero con
+        # otras herramientas y tarda más de un minuto en vez de unos 10 s.
         if tarea.adjuntos:
             menciones = " ".join(
                 f"@adjunto-{i}.{EXTENSIONES.get(adj.tipo, 'jpg')}"
                 for i, adj in enumerate(tarea.adjuntos, start=1)
             )
-            prompt = f"{tarea.instrucciones}\n\nAdjuntos: {menciones}"
+            prompt = f"Lee {menciones}. {SOLO_ADJUNTOS}\n\n{tarea.instrucciones}"
         else:
             prompt = tarea.instrucciones
 
@@ -355,7 +363,8 @@ ESQUEMA_ETIQUETA: dict[str, Any] = {
         "legible": {"type": "boolean"},
         "nombre": {"type": ["string", "null"]},
         "marca": {"type": ["string", "null"]},
-        "unidad": {"type": ["string", "null"], "enum": ["g", "ml", None]},
+        # Sin enum: Gemini no admite null en un enum. Se valida en etiqueta_desde_respuesta.
+        "unidad": {"type": ["string", "null"]},
         "kcal_100": _NUMERO,
         "kj_100": _NUMERO,
         "proteinas_100": _NUMERO,
