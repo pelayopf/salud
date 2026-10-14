@@ -1,12 +1,14 @@
 [Unit]
-Description=Salud: Cloudflare Tunnel hacia 127.0.0.1:8792
+Description=Salud: Cloudflare Tunnel (salud.calamar-lab.dev → 127.0.0.1:8792)
+Documentation=https://github.com/pelayopf/calamar-lab/blob/main/infra/calamar/salud.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=pelayo
-ExecStart=/bin/sh -c 'exec /home/pelayo/.local/bin/cloudflared tunnel --no-autoupdate run --token "$(cat /home/pelayo/.config/cloudflare/salud-tunnel-run.token)"'
+# El token se lee del fichero (600), no va en la línea de órdenes (visible con ps).
+ExecStart=/home/pelayo/.local/bin/cloudflared tunnel --no-autoupdate run --token-file /home/pelayo/.config/cloudflare/salud-tunnel-run.token
 Restart=always
 RestartSec=5
 
