@@ -9,6 +9,7 @@
 - `productos`: caché de Open Food Facts por código de barras.
 - `productos_propios`: productos creados o corregidos (manual o por etiqueta con IA).
 - `comidas`: diario de alimentos por fecha y momento del día.
+- `ajustes_comida`: configuración de objetivos de comida (déficit, macros, reparto).
 - `planificado`: actividades planificadas (Google Calendar o semana tipo).
 - `titulos_calendario`: clasificación de títulos del calendario (deporte y tipo).
 - `semana_tipo`: plantilla semanal propuesta a partir de los hábitos de Garmin.
@@ -20,7 +21,7 @@ import json
 import sqlite3
 import unicodedata
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -162,6 +163,15 @@ CREATE TABLE IF NOT EXISTS semana_tipo (
     intensidad TEXT NOT NULL,
     actualizado TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ajustes_comida (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    deficit_kcal INTEGER NOT NULL,
+    proteinas_g_kg REAL NOT NULL,
+    grasas_g_kg REAL NOT NULL,
+    peso_kg REAL,
+    reparto TEXT NOT NULL,
+    actualizado TEXT NOT NULL
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -206,6 +216,24 @@ class Valor:
 
 
 MOMENTOS = ("desayuno", "media mañana", "comida", "merienda", "cena", "otro")
+REPARTO_DEFECTO = {
+    "desayuno": 20,
+    "media mañana": 10,
+    "comida": 35,
+    "merienda": 10,
+    "cena": 25,
+}
+
+
+@dataclass(frozen=True)
+class AjustesComida:
+    """Configuración de objetivos nutricionales y reparto calórico diario."""
+
+    deficit_kcal: int = 250
+    proteinas_g_kg: float = 1.6
+    grasas_g_kg: float = 0.9
+    peso_kg: float | None = None
+    reparto: dict[str, int] = field(default_factory=lambda: dict(REPARTO_DEFECTO))
 
 
 @dataclass(frozen=True)
@@ -585,6 +613,36 @@ def borrar_comida(con: sqlite3.Connection, id_: int) -> bool:
         return cur.rowcount > 0
 
 
+def guardar_ajustes_comida(con: sqlite3.Connection, ajustes: AjustesComida) -> None:
+    """Guarda (upsert id=1) la configuración de objetivos de comida."""
+    momento = ahora()
+    reparto_json = json.dumps(ajustes.reparto, ensure_ascii=False)
+    with con:
+        con.execute(
+            """
+            INSERT INTO ajustes_comida (
+                id, deficit_kcal, proteinas_g_kg, grasas_g_kg, peso_kg, reparto, actualizado
+            )
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                deficit_kcal = excluded.deficit_kcal,
+                proteinas_g_kg = excluded.proteinas_g_kg,
+                grasas_g_kg = excluded.grasas_g_kg,
+                peso_kg = excluded.peso_kg,
+                reparto = excluded.reparto,
+                actualizado = excluded.actualizado
+            """,
+            (
+                ajustes.deficit_kcal,
+                ajustes.proteinas_g_kg,
+                ajustes.grasas_g_kg,
+                ajustes.peso_kg,
+                reparto_json,
+                momento,
+            ),
+        )
+
+
 # --- Lectura -----------------------------------------------------------------
 
 
@@ -822,6 +880,28 @@ def productos_recientes(con: sqlite3.Connection, limite: int = 8) -> list[sqlite
         """,
         (limite,),
     ).fetchall()
+
+
+def ajustes_comida(con: sqlite3.Connection) -> AjustesComida:
+    """Configuración de objetivos de comida o los valores por defecto si no hay fila."""
+    fila = con.execute("SELECT * FROM ajustes_comida WHERE id = 1").fetchone()
+    if fila is None:
+        return AjustesComida()
+    try:
+        reparto = json.loads(fila["reparto"])
+        if not isinstance(reparto, dict):
+            reparto = dict(REPARTO_DEFECTO)
+        else:
+            reparto = {str(k): int(v) for k, v in reparto.items()}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        reparto = dict(REPARTO_DEFECTO)
+    return AjustesComida(
+        deficit_kcal=int(fila["deficit_kcal"]),
+        proteinas_g_kg=float(fila["proteinas_g_kg"]),
+        grasas_g_kg=float(fila["grasas_g_kg"]),
+        peso_kg=float(fila["peso_kg"]) if fila["peso_kg"] is not None else None,
+        reparto=reparto,
+    )
 
 
 # --- Calendario y planificación ----------------------------------------------
