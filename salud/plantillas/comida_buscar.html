@@ -1,51 +1,97 @@
 {% extends "base.html" %}
-{% block titulo %}Buscar alimento · Salud{% endblock %}
+{% block titulo %}Añadir alimento · Salud{% endblock %}
 {% block contenido %}
-<p><a class="suave" href="/comida?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}">‹ Volver a Comida</a></p>
-
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
 {% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
 
-{% if momento %}
-<p class="suave">Añadiendo a: {{ momento | capitalize }}</p>
-{% endif %}
+{% include "_comida_cabecera.html" %}
 
-{% if productos_locales %}
-<section class="panel">
-  <h2>Tus productos</h2>
-  <div class="lista">
-    {% for prod in productos_locales %}
-    <div class="fila">
-      <div>
-        {% if prod.tipo == 'propio' and not prod.codigo %}
-        <a href="/comida/propio/{{ prod.id }}?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ prod.nombre }}</strong></a>
-        {% else %}
-        <a href="/comida/producto?codigo={{ prod.codigo }}&fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ prod.nombre }}</strong></a>
-        {% endif %}
-        {% if prod.marca %}<span class="suave">· {{ prod.marca }}</span>{% endif %}
-        {% if prod.kcal is not none %}<div class="suave">{{ prod.kcal | cifra }} kcal/100 g</div>{% endif %}
+<div class="fila-anadir-a" role="group" aria-label="Añadir a">
+  <span class="etiqueta-anadir-a">Añadir a</span>
+  {% for m in momentos_chips %}
+  <a href="/comida/buscar?fecha={{ fecha }}&momento={{ m | urlencode }}{% if q %}&q={{ q | urlencode }}{% endif %}" class="chip{% if m == momento_elegido %} activo{% endif %}"{% if m == momento_elegido %} aria-pressed="true"{% endif %}>{{ m | capitalize }}</a>
+  {% endfor %}
+</div>
+
+<form role="search" method="get" action="/comida/buscar" class="buscador-form">
+  <input type="hidden" name="fecha" value="{{ fecha }}">
+  {% if momento_elegido %}
+  <input type="hidden" name="momento" value="{{ momento_elegido }}">
+  {% endif %}
+  <label for="codigo" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Buscar alimento o código de barras</label>
+  <div class="buscador-caja">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="codigo" name="q" value="{{ q }}" placeholder="Buscar alimento o código de barras" autocomplete="off">
+  </div>
+  <button type="button" class="boton-cuadrado-icono" data-escanear aria-label="Escanear código de barras" hidden>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+  </button>
+</form>
+
+{% if not q %}
+<section aria-label="Recientes" class="grupo-resultados">
+  <h2>Recientes</h2>
+  {% if recientes %}
+  <div class="panel lista-resultados">
+    {% for r in recientes %}
+    <a href="/comida/producto?codigo={{ r.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="fila-resultado">
+      <div class="resultado-info">
+        <strong>{{ r.nombre or r.codigo }}</strong>
+        {% if r.marca %}<span class="suave">· {{ r.marca }}</span>{% endif %}
       </div>
-    </div>
+      <span class="suave">{{ r.unidad }}</span>
+    </a>
     {% endfor %}
   </div>
+  {% else %}
+  <p class="suave">Aún no hay productos recientes.</p>
+  {% endif %}
 </section>
-{% endif %}
 
-{% if comidas_anteriores %}
-<section class="panel">
-  <h2>Lo que has apuntado antes</h2>
-  <div class="lista">
+<section aria-label="Mis productos" id="mis-productos" class="grupo-resultados">
+  <h2>Mis productos</h2>
+  {% if productos_propios %}
+  <div class="panel lista-resultados">
+    {% for p in productos_propios %}
+    <a href="{% if p.codigo %}/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/propio/{{ p.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}" class="fila-resultado">
+      <div class="resultado-info">
+        <strong>{{ p.nombre }}</strong>
+        {% if p.marca %}<span class="suave">· {{ p.marca }}</span>{% endif %}
+      </div>
+      <span class="suave">{{ p.unidad }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="suave">Aún no hay productos propios.</p>
+  {% endif %}
+</section>
+
+{% else %}
+
+{% if productos_locales or comidas_anteriores %}
+<section aria-label="Lo que has apuntado antes" class="grupo-resultados">
+  <h2>Lo tuyo</h2>
+  <div class="panel lista-resultados">
+    {% for prod in productos_locales %}
+    <a href="{% if prod.tipo == 'propio' and not prod.codigo %}/comida/propio/{{ prod.id }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% else %}/comida/producto?codigo={{ prod.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}{% endif %}" class="fila-resultado">
+      <div class="resultado-info">
+        <strong>{{ prod.nombre }}</strong>
+        {% if prod.marca %}<span class="suave">· {{ prod.marca }}</span>{% endif %}
+      </div>
+      {% if prod.kcal is not none %}<span class="suave">{{ prod.kcal | cifra }} kcal/100 g</span>{% endif %}
+    </a>
+    {% endfor %}
     {% for c in comidas_anteriores %}
-    <div class="fila">
-      <div>
+    <div class="fila-resultado">
+      <div class="resultado-info">
         <strong>{{ c.nombre }}</strong>
-        <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
-        {% if c.kcal is not none %}<div class="suave">{{ c.kcal | cifra }} kcal</div>{% endif %}
+        <span class="suave">{{ c.cantidad | cifra }} {{ c.unidad }}{% if c.kcal is not none %} · {{ c.kcal | cifra }} kcal{% endif %}</span>
       </div>
       <form method="post" action="/comida/repetir">
         <input type="hidden" name="id" value="{{ c.id }}">
         <input type="hidden" name="fecha" value="{{ fecha }}">
-        {% if momento %}<input type="hidden" name="momento" value="{{ momento }}">{% endif %}
+        {% if momento_elegido %}<input type="hidden" name="momento" value="{{ momento_elegido }}">{% endif %}
         <button type="submit" class="boton secundario pequeno">Repetir</button>
       </form>
     </div>
@@ -55,39 +101,42 @@
 {% endif %}
 
 {% if genericos %}
-<section class="panel">
-  <h2>Alimentos genéricos</h2>
-  <div class="lista">
+<section aria-label="Alimentos genéricos" class="grupo-resultados">
+  <h2>Genéricos</h2>
+  <div class="panel lista-resultados">
     {% for g in genericos %}
-    <div class="fila">
-      <div>
-        <a href="/comida/generico/{{ g.codigo }}?fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ g.nombre }}</strong></a>
-        {% if g.kcal is not none %}<div class="suave">{{ g.kcal | cifra }} kcal/100 g</div>{% endif %}
-      </div>
-    </div>
+    <a href="/comida/generico/{{ g.codigo }}?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="fila-resultado">
+      <span class="icono-cq">CQ</span>
+      <span class="resultado-nombre-generico">{{ g.nombre }}</span>
+      {% if g.kcal is not none %}<span class="suave">{{ g.kcal | cifra }} kcal</span>{% endif %}
+    </a>
     {% endfor %}
   </div>
-  <p class="suave">Fuente: {{ ciqual_fuente }}</p>
+  <span class="pie-fuente suave">Fuente: {{ ciqual_fuente }}</span>
 </section>
 {% endif %}
 
 {% if off_productos or off_error %}
-<section class="panel">
-  <h2>Open Food Facts (España)</h2>
+<section aria-label="Supermercado" class="grupo-resultados">
+  <h2>Supermercado</h2>
   {% if off_error %}
   <p class="suave">{{ off_error }}</p>
   {% else %}
-  <div class="lista">
+  <div class="panel lista-resultados">
     {% for p in off_productos %}
-    <div class="fila">
-      <div>
-        <a href="/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento %}&momento={{ momento | urlencode }}{% endif %}"><strong>{{ p.nombre }}</strong></a>
-        {% if p.marca %}<span class="suave">· {{ p.marca }}</span>{% endif %}
-        {% if p.kcal is not none %}<div class="suave">{{ p.kcal | cifra }} kcal/100 g</div>{% endif %}
+    <a href="/comida/producto?codigo={{ p.codigo }}&fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="fila-resultado">
+      <span class="icono-cuadro verde" style="width: 36px; height: 36px; border-radius: 11px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9 5 4h14l2 5"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>
+      </span>
+      <div class="resultado-info">
+        <strong>{{ p.nombre }}</strong>
+        {% if p.marca %}<span class="suave" style="font-size: 12px;">{{ p.marca }}</span>{% endif %}
       </div>
-    </div>
+      {% if p.kcal is not none %}<span class="suave">{{ p.kcal | cifra }} kcal</span>{% endif %}
+    </a>
     {% endfor %}
   </div>
+  <span class="pie-fuente suave">Open Food Facts España · valores por 100 g</span>
   {% endif %}
 </section>
 {% endif %}
@@ -97,15 +146,34 @@
 <p class="aviso">No hay resultados para «{{ q }}»</p>
 {% endif %}
 
-<section class="panel">
-  <h2>¿No lo encuentras?</h2>
-  <form class="formulario" method="post" action="/comida/estimar">
+{% endif %}
+
+<section aria-label="Otras formas de añadir" class="accesos-anadir">
+  {% if q %}
+  <form method="post" action="/comida/estimar" class="acceso-form">
     <input type="hidden" name="q" value="{{ q }}">
     <input type="hidden" name="fecha" value="{{ fecha }}">
-    {% if momento %}<input type="hidden" name="momento" value="{{ momento }}">{% endif %}
-    <div class="acciones">
-      <button type="submit" class="boton">Estimar con IA (unos 10 s)</button>
-    </div>
+    {% if momento_elegido %}<input type="hidden" name="momento" value="{{ momento_elegido }}">{% endif %}
+    <button type="submit" class="panel tarjeta-acceso">
+      <span class="icono-cuadro violeta"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
+      <span>Estimar con IA</span>
+    </button>
   </form>
+  {% else %}
+  <button type="button" class="panel tarjeta-acceso" onclick="const input = document.getElementById('codigo'); if (input) { input.focus(); input.scrollIntoView({behavior: 'smooth', block: 'center'}); }">
+    <span class="icono-cuadro violeta"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.8L20 10l-5 3.6L16.5 20 12 16.5 7.5 20 9 13.6 4 10l6.1-1.2z"/></svg></span>
+    <span>Estimar con IA</span>
+  </button>
+  {% endif %}
+
+  <a href="/comida/nuevo?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" class="panel tarjeta-acceso">
+    <span class="icono-cuadro marca"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+    <span>Foto de etiqueta</span>
+  </a>
+
+  <a href="{% if not q %}#mis-productos{% else %}/comida/buscar?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}#mis-productos{% endif %}" class="panel tarjeta-acceso">
+    <span class="icono-cuadro verde"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg></span>
+    <span>Mis productos</span>
+  </a>
 </section>
 {% endblock %}

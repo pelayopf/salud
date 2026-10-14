@@ -202,7 +202,7 @@ def test_recientes_y_propios_con_momento_elegido(settings, con):
     )
     db.anadir_comida(con, "2026-01-10", "desayuno", "Avena crunchy", 50.0, "g", codigo=EAN13)
     c = cliente_web(settings)
-    r = c.get("/comida?fecha=2026-01-10&momento=media%20ma%C3%B1ana")
+    r = c.get("/comida/buscar?fecha=2026-01-10&momento=media%20ma%C3%B1ana")
     assert r.status_code == 200
     assert f"/comida/producto?codigo={EAN13}&fecha=2026-01-10&momento=media%20ma%C3%B1ana" in r.text
     assert f"/comida/propio/{id_propio}?fecha=2026-01-10&momento=media%20ma%C3%B1ana" in r.text
@@ -245,7 +245,7 @@ def test_dia_con_entradas_en_dos_momentos_y_su_total(settings, con):
     assert "330 kcal" in r.text
 
     # Total del día: 90 + 330 = 420 kcal
-    assert "Total del día" in r.text
+    assert "Resumen del día" in r.text
     assert "420 kcal" in r.text
     # Proteínas totales: 1.0 + 62.0 = 63.0 g
     assert "63 g" in r.text
@@ -478,10 +478,10 @@ def test_recientes(settings, con):
     db.anadir_comida(con, "2026-01-10", "desayuno", "Avena crunchy", 50.0, "g", codigo=EAN13)
 
     c = cliente_web(settings)
-    r = c.get("/comida?fecha=2026-01-10")
+    r = c.get("/comida/buscar?fecha=2026-01-10")
     assert r.status_code == 200
     assert "Recientes" in r.text
-    assert f'href="/comida/producto?codigo={EAN13}&fecha=2026-01-10"' in r.text
+    assert f'href="/comida/producto?codigo={EAN13}&fecha=2026-01-10' in r.text
 
 
 def test_post_csrf_cross_site_rechazado(settings):
@@ -1189,8 +1189,10 @@ def test_buscar_comida_codigo_barras(settings):
 def test_buscar_comida_vacio(settings):
     c = cliente_web(settings)
     r = c.get("/comida/buscar?q=&fecha=2026-01-10&momento=comida")
-    assert r.status_code == 303
-    assert r.headers["location"] == "/comida?fecha=2026-01-10&momento=comida"
+    assert r.status_code == 200
+    assert "Añadir a" in r.text
+    assert "Recientes" in r.text
+    assert "Mis productos" in r.text
 
 
 def test_buscar_comida_cuatro_grupos(settings, con, monkeypatch):
@@ -1258,11 +1260,13 @@ def test_buscar_comida_cuatro_grupos(settings, con, monkeypatch):
     r = c.get("/comida/buscar?q=platano&fecha=2026-01-10&momento=comida")
     assert r.status_code == 200
 
-    # Aparecen los cuatro títulos
-    assert "Tus productos" in r.text
-    assert "Lo que has apuntado antes" in r.text
-    assert "Alimentos genéricos" in r.text
-    assert "Open Food Facts (España)" in r.text
+    # Aparecen los grupos con los títulos de la maqueta
+    assert "Lo tuyo" in r.text
+    assert "Genéricos" in r.text
+    assert "Supermercado" in r.text
+
+    # El chip conserva q
+    assert "momento=desayuno&q=platano" in r.text or "momento=desayuno&amp;q=platano" in r.text
 
     # Aparece el botón / sección "Estimar con IA"
     assert "Estimar con IA" in r.text
@@ -1290,7 +1294,7 @@ def test_buscar_comida_off_caido(settings, con):
     c = cliente_web(settings, cliente_off=cliente_off)
     r = c.get("/comida/buscar?q=centeno&fecha=2026-01-10")
     assert r.status_code == 200
-    assert "Tus productos" in r.text
+    assert "Lo tuyo" in r.text
     assert "no responde ahora" in r.text
 
 

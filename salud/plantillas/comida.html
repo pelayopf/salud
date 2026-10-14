@@ -39,7 +39,7 @@
         <span class="suave">{% if objetivo %}{{ totales.total.hidratos | gramos }} / {{ objetivo.total.hidratos | gramos }} g{% else %}{{ totales.total.hidratos | gramos }} g{% endif %}</span>
       </div>
       {% if objetivo %}
-      <div class="barra-macro hidratos"><div class="barra-macro-llena" style="width: {{ prog_hidratos }}%"></div></div>
+      <div class="barra-macro hidratos"><div class="barra-macro-llena progreso-barra" style="width: {{ prog_hidratos }}%"></div></div>
       {% endif %}
     </div>
     <div class="comida-macro">
@@ -48,10 +48,15 @@
         <span class="suave">{% if objetivo %}{{ totales.total.grasas | gramos }} / {{ objetivo.total.grasas | gramos }} g{% else %}{{ totales.total.grasas | gramos }} g{% endif %}</span>
       </div>
       {% if objetivo %}
-      <div class="barra-macro grasas"><div class="barra-macro-llena" style="width: {{ prog_grasas }}%"></div></div>
+      <div class="barra-macro grasas"><div class="barra-macro-llena progreso-barra" style="width: {{ prog_grasas }}%"></div></div>
       {% endif %}
     </div>
   </div>
+  {% if objetivo %}
+  <p class="suave" style="margin: 4px 0 0; font-size: 13px;">Objetivo dinámico: basal + actividad − déficit · <a href="/comida/objetivos">Ajustar</a></p>
+  {% else %}
+  <p class="suave" style="margin: 4px 0 0; font-size: 13px;">Sin objetivo: faltan datos de Garmin · <a href="/comida/objetivos">Ajustar</a></p>
+  {% endif %}
   {% if bajo_minimo %}
   <p class="aviso">Por debajo del mínimo: {{ totales.total.kcal | cifra }} de {{ objetivo.kcal_minimo | cifra }} kcal. Con poco apetito, prioriza proteína y algo denso.</p>
   {% endif %}
@@ -105,7 +110,7 @@
           <span class="suave">· {{ c.cantidad | cifra }} {{ c.unidad }}</span>
         </div>
         <div class="item-derecha">
-          <span class="item-kcal suave">{% if c.kcal is not none %}{{ c.kcal | cifra }}{% else %}—{% endif %}</span>
+          <span class="item-kcal suave">{% if c.kcal is not none %}{{ c.kcal | cifra }} kcal{% else %}—{% endif %}</span>
           <form method="post" action="/comida/{{ c.id }}/borrar?fecha={{ fecha }}" onsubmit="return confirm('¿Borrar esta entrada?')">
             <button type="submit" class="boton-borrar" aria-label="Borrar">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>

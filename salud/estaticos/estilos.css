@@ -1162,5 +1162,167 @@ th { color: var(--suave); font-weight: 500; }
   background: var(--marca-hover);
 }
 
+/* --- Rediseño Comida: Añadir --- */
+
+.fila-anadir-a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.etiqueta-anadir-a {
+  flex: none;
+  font-size: 13px;
+  color: var(--suave);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.buscador-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.buscador-caja {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1.5px solid var(--marca);
+  border-radius: 16px;
+  padding: 0 14px;
+  height: 52px;
+}
+.buscador-caja svg {
+  flex: none;
+  stroke: var(--suave);
+}
+.buscador-caja input {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  height: auto !important;
+  padding: 0 !important;
+  font: inherit;
+  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  color: var(--texto);
+}
+.boton-cuadrado-icono {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  border: 0;
+  background: var(--marca);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+.boton-cuadrado-icono:hover {
+  background: var(--marca-hover);
+}
+
+.grupo-resultados {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.grupo-resultados h2 {
+  margin: 12px 4px 4px;
+}
+.lista-resultados {
+  padding: 0;
+  overflow: hidden;
+}
+.fila-resultado {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--borde);
+  color: inherit;
+  text-decoration: none;
+}
+.fila-resultado:last-child {
+  border-bottom: 0;
+}
+.fila-resultado:hover strong {
+  color: var(--marca);
+}
+.resultado-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.resultado-info strong {
+  font-size: 15px;
+}
+.icono-cq {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: #eef1f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--suave);
+}
+.resultado-nombre-generico {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+}
+.pie-fuente {
+  font-size: 12px;
+  margin: 2px 4px;
+}
+
+.accesos-anadir {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.tarjeta-acceso {
+  text-decoration: none;
+  color: var(--texto);
+  background: var(--panel);
+  border-radius: 18px;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  border: 0;
+  cursor: pointer;
+  box-shadow: var(--sombra);
+  width: 100%;
+}
+.tarjeta-acceso:hover {
+  box-shadow: 0 2px 8px rgb(14 74 92 / 12%);
+}
+.acceso-form {
+  margin: 0;
+  display: contents;
+}
+
 
 
