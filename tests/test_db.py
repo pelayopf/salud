@@ -326,3 +326,162 @@ def test_productos_recientes(con):
     recientes_limite = db.productos_recientes(con, limite=2)
     assert len(recientes_limite) == 2
     assert [r["codigo"] for r in recientes_limite] == ["333", "111"]
+
+
+def test_guardar_y_leer_producto_propio(con):
+    import pytest
+
+    # 1. Alta sin código y con código
+    id_sin = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo=None,
+        nombre="Tortilla casera",
+        marca=None,
+        unidad="g",
+        kcal=150.0,
+        proteinas=10.0,
+        hidratos=2.0,
+        grasas=11.0,
+        origen="manual",
+    )
+    assert id_sin > 0
+    fila_sin = db.leer_producto_propio(con, id_sin)
+    assert fila_sin is not None
+    assert fila_sin["nombre"] == "Tortilla casera"
+    assert fila_sin["codigo"] is None
+    assert fila_sin["origen"] == "manual"
+    creado_sin = fila_sin["creado"]
+    assert creado_sin is not None
+
+    id_con = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="8410000000001",
+        nombre="Galletas de avena",
+        marca="MiMarca",
+        unidad="g",
+        kcal=450.0,
+        proteinas=8.0,
+        hidratos=65.0,
+        grasas=16.0,
+        origen="etiqueta-ia",
+    )
+    assert id_con > 0
+    fila_con = db.producto_propio_por_codigo(con, "8410000000001")
+    assert fila_con is not None
+    assert fila_con["id"] == id_con
+    assert fila_con["nombre"] == "Galletas de avena"
+    assert fila_con["marca"] == "MiMarca"
+    assert fila_con["origen"] == "etiqueta-ia"
+    creado_con = fila_con["creado"]
+
+    # Segunda alta con el mismo código actualiza (mismo id, creado igual)
+    id_actualizado = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="8410000000001",
+        nombre="Galletas de avena y miel",
+        marca="MiMarca",
+        unidad="g",
+        kcal=460.0,
+        proteinas=7.5,
+        hidratos=68.0,
+        grasas=15.0,
+        origen="manual",
+    )
+    assert id_actualizado == id_con
+    fila_act = db.leer_producto_propio(con, id_con)
+    assert fila_act is not None
+    assert fila_act["nombre"] == "Galletas de avena y miel"
+    assert fila_act["kcal"] == 460.0
+    assert fila_act["origen"] == "manual"
+    assert fila_act["creado"] == creado_con
+
+    # 2. id_ inexistente → ValueError; origen no válido → ValueError
+    with pytest.raises(ValueError, match="Producto no encontrado"):
+        db.guardar_producto_propio(
+            con,
+            id_=99999,
+            codigo=None,
+            nombre="Fantasma",
+            marca=None,
+            unidad="g",
+            kcal=100.0,
+            proteinas=1.0,
+            hidratos=1.0,
+            grasas=1.0,
+            origen="manual",
+        )
+
+    with pytest.raises(ValueError, match="origen no válido"):
+        db.guardar_producto_propio(
+            con,
+            id_=None,
+            codigo=None,
+            nombre="Invalido",
+            marca=None,
+            unidad="g",
+            kcal=100.0,
+            proteinas=1.0,
+            hidratos=1.0,
+            grasas=1.0,
+            origen="inventado",
+        )
+
+
+def test_productos_propios_ordenados_por_actualizado_desc(con):
+    id1 = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="1000000000001",
+        nombre="Primero",
+        marca=None,
+        unidad="g",
+        kcal=100.0,
+        proteinas=1.0,
+        hidratos=1.0,
+        grasas=1.0,
+        origen="manual",
+    )
+    # Forzar actualizado diferente modificando en BD
+    con.execute(
+        "UPDATE productos_propios SET actualizado = '2026-01-01T10:00:00Z' WHERE id = ?", (id1,)
+    )
+
+    id2 = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="1000000000002",
+        nombre="Segundo",
+        marca=None,
+        unidad="g",
+        kcal=200.0,
+        proteinas=2.0,
+        hidratos=2.0,
+        grasas=2.0,
+        origen="manual",
+    )
+    con.execute(
+        "UPDATE productos_propios SET actualizado = '2026-01-02T10:00:00Z' WHERE id = ?", (id2,)
+    )
+
+    id3 = db.guardar_producto_propio(
+        con,
+        id_=None,
+        codigo="1000000000003",
+        nombre="Tercero",
+        marca=None,
+        unidad="g",
+        kcal=300.0,
+        proteinas=3.0,
+        hidratos=3.0,
+        grasas=3.0,
+        origen="manual",
+    )
+    con.execute(
+        "UPDATE productos_propios SET actualizado = '2026-01-03T10:00:00Z' WHERE id = ?", (id3,)
+    )
+
+    lista = db.productos_propios(con)
+    assert [p["id"] for p in lista] == [id3, id2, id1]

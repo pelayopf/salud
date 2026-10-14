@@ -7,6 +7,7 @@
 - `actividades`: entrenos y partidos, uno por actividad de cada fuente.
 - `lecturas`: la lectura diaria hecha con Claude (una por día).
 - `productos`: caché de Open Food Facts por código de barras.
+- `productos_propios`: productos creados o corregidos (manual o por etiqueta con IA).
 - `comidas`: diario de alimentos por fecha y momento del día.
 """
 
@@ -98,6 +99,20 @@ CREATE TABLE IF NOT EXISTS productos (
     grasas REAL,
     datos TEXT NOT NULL,
     consultado TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS productos_propios (
+    id INTEGER PRIMARY KEY,
+    codigo TEXT UNIQUE,
+    nombre TEXT NOT NULL,
+    marca TEXT,
+    unidad TEXT NOT NULL,
+    kcal REAL,
+    proteinas REAL,
+    hidratos REAL,
+    grasas REAL,
+    origen TEXT NOT NULL,
+    creado TEXT NOT NULL,
+    actualizado TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS comidas (
     id INTEGER PRIMARY KEY,
@@ -351,6 +366,103 @@ def guardar_producto(
         )
 
 
+ORIGENES_PROPIOS = ("manual", "etiqueta-ia")
+
+
+def guardar_producto_propio(
+    con: sqlite3.Connection,
+    *,
+    id_: int | None,
+    codigo: str | None,
+    nombre: str,
+    marca: str | None,
+    unidad: str,
+    kcal: float | None,
+    proteinas: float | None,
+    hidratos: float | None,
+    grasas: float | None,
+    origen: str,
+) -> int:
+    """Guarda o actualiza un producto propio o corregido."""
+    if origen not in ORIGENES_PROPIOS:
+        raise ValueError(f"origen no válido: {origen!r} (debe ser uno de {ORIGENES_PROPIOS})")
+
+    momento = ahora()
+    with con:
+        if id_ is not None:
+            cur = con.execute(
+                "UPDATE productos_propios SET"
+                " codigo = ?, nombre = ?, marca = ?, unidad = ?,"
+                " kcal = ?, proteinas = ?, hidratos = ?, grasas = ?,"
+                " origen = ?, actualizado = ?"
+                " WHERE id = ?",
+                (
+                    codigo,
+                    nombre,
+                    marca,
+                    unidad,
+                    kcal,
+                    proteinas,
+                    hidratos,
+                    grasas,
+                    origen,
+                    momento,
+                    id_,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("Producto no encontrado")
+            return id_
+
+        if codigo is not None:
+            existente = con.execute(
+                "SELECT id FROM productos_propios WHERE codigo = ?", (codigo,)
+            ).fetchone()
+            if existente is not None:
+                existente_id = int(existente["id"])
+                con.execute(
+                    "UPDATE productos_propios SET"
+                    " nombre = ?, marca = ?, unidad = ?,"
+                    " kcal = ?, proteinas = ?, hidratos = ?, grasas = ?,"
+                    " origen = ?, actualizado = ?"
+                    " WHERE id = ?",
+                    (
+                        nombre,
+                        marca,
+                        unidad,
+                        kcal,
+                        proteinas,
+                        hidratos,
+                        grasas,
+                        origen,
+                        momento,
+                        existente_id,
+                    ),
+                )
+                return existente_id
+
+        cur = con.execute(
+            "INSERT INTO productos_propios"
+            " (codigo, nombre, marca, unidad, kcal, proteinas, hidratos,"
+            " grasas, origen, creado, actualizado)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                codigo,
+                nombre,
+                marca,
+                unidad,
+                kcal,
+                proteinas,
+                hidratos,
+                grasas,
+                origen,
+                momento,
+                momento,
+            ),
+        )
+        return int(cur.lastrowid or 0)
+
+
 def anadir_comida(
     con: sqlite3.Connection,
     fecha: str,
@@ -517,6 +629,23 @@ def lecturas(con: sqlite3.Connection, limite: int = 60) -> list[dict[str, Any]]:
 def leer_producto(con: sqlite3.Connection, codigo: str) -> sqlite3.Row | None:
     """Lee la fila de un producto de la caché por su código, o None si no está."""
     return con.execute("SELECT * FROM productos WHERE codigo = ?", (codigo,)).fetchone()
+
+
+def leer_producto_propio(con: sqlite3.Connection, id_: int) -> sqlite3.Row | None:
+    """Lee un producto propio por su identificador, o None si no existe."""
+    return con.execute("SELECT * FROM productos_propios WHERE id = ?", (id_,)).fetchone()
+
+
+def producto_propio_por_codigo(con: sqlite3.Connection, codigo: str) -> sqlite3.Row | None:
+    """Lee un producto propio por su código de barras, o None si no existe."""
+    return con.execute("SELECT * FROM productos_propios WHERE codigo = ?", (codigo,)).fetchone()
+
+
+def productos_propios(con: sqlite3.Connection, limite: int = 50) -> list[sqlite3.Row]:
+    """Lista los productos propios ordenados por fecha de actualización descendente."""
+    return con.execute(
+        "SELECT * FROM productos_propios ORDER BY actualizado DESC LIMIT ?", (limite,)
+    ).fetchall()
 
 
 def _fila_a_comida(f: sqlite3.Row) -> Comida:
