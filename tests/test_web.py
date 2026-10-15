@@ -281,6 +281,17 @@ def test_salud_rediseno_completo(cliente, settings):
     # Dosis 2 de 8
     assert "dosis 2 de 8" in r.text
 
+    # La tarjeta de tratamiento está en un <details> sin open y summary neutro
+    assert '<details class="panel tarjeta-tratamiento-salud"' in r.text
+    assert '<details class="panel tarjeta-tratamiento-salud" open' not in r.text
+    idx_sum = r.text.find('<summary class="tratamiento-resumen">')
+    assert idx_sum != -1
+    idx_sum_fin = r.text.find("</summary>", idx_sum)
+    summary_html = r.text[idx_sum:idx_sum_fin]
+    assert "Mounjaro" not in summary_html
+    assert "Tratamiento" in summary_html
+    assert "Ver" in summary_html
+
     # Objetivo 85 kg
     assert "Objetivo 85 kg" in r.text
 
@@ -603,3 +614,31 @@ def test_comida_consejo_sin_deporte_con_pauta_no_muestra_cabecera_proximo(settin
     assert "FarmacoSecreto" not in r.text
     assert "pinchazo" not in r.text
     assert "inyecc" not in r.text
+
+
+def test_salud_tarjeta_tratamiento_plegada_y_neutra(settings):
+    """En Salud la tarjeta está en details sin open y summary no contiene el fármaco."""
+    s = settings
+    con = db.conectar(s.db_path)
+    db.guardar_pauta(con, db.Pauta(farmaco="FarmacoSecreto", dosis_mg=5.0))
+    db.anadir_dosis(
+        con, farmaco="FarmacoSecreto", fecha=HOY.isoformat(), dosis_mg=5.0, zona="muslo derecho"
+    )
+    con.close()
+    c = TestClient(_app(s))
+    r = c.get("/salud")
+    assert r.status_code == 200
+    assert '<details class="panel tarjeta-tratamiento-salud"' in r.text
+    assert '<details class="panel tarjeta-tratamiento-salud" open' not in r.text
+    # El summary es neutro y no nombra el fármaco
+    idx_sum = r.text.find('<summary class="tratamiento-resumen">')
+    assert idx_sum != -1
+    idx_sum_fin = r.text.find("</summary>", idx_sum)
+    summary_html = r.text[idx_sum:idx_sum_fin]
+    assert "FarmacoSecreto" not in summary_html
+    assert "Tratamiento" in summary_html
+    assert "Ver" in summary_html
+    # /tratamiento sigue mostrando el nombre del fármaco
+    r_trat = c.get("/tratamiento")
+    assert r_trat.status_code == 200
+    assert "FarmacoSecreto" in r_trat.text

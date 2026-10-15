@@ -386,9 +386,9 @@ def linea(
                 xm = x(idx_m)
                 partes.append(
                     f'<line class="marca-linea" x1="{xm:.1f}" x2="{xm:.1f}"'
-                    f' y1="{arriba}" y2="{base_y:.1f}"/>'
+                    f' y1="{arriba}" y2="{base_y:.1f}"><title>Tratamiento</title></line>'
                     f'<line class="marca-eje" x1="{xm:.1f}" x2="{xm:.1f}"'
-                    f' y1="{base_y:.1f}" y2="{base_y + 4:.1f}"/>'
+                    f' y1="{base_y:.1f}" y2="{base_y + 4:.1f}"><title>Tratamiento</title></line>'
                 )
     # Etiquetas del eje X: el día 1 de cada mes (o cada semana si el periodo es corto).
     for i, (f, _) in enumerate(puntos):

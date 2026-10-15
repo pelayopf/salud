@@ -614,9 +614,42 @@ th { color: var(--suave); font-weight: 500; }
 }
 
 .tarjeta-tratamiento-salud {
+  margin: 16px 0;
+}
+.tarjeta-tratamiento-salud summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.tarjeta-tratamiento-salud summary::-webkit-details-marker {
+  display: none;
+}
+.tarjeta-tratamiento-salud summary::marker {
+  display: none;
+}
+.tratamiento-resumen-izq {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tratamiento-resumen-titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--texto);
+}
+.tratamiento-resumen-ver {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--marca);
+}
+.tarjeta-tratamiento-salud .tratamiento-cuerpo {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-top: 14px;
 }
 .tratamiento-cabecera {
   display: flex;

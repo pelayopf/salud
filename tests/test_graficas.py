@@ -137,6 +137,7 @@ def test_linea_con_referencia_y_marcas():
     # El SVG contiene marcas para la fecha dentro del periodo (2026-10-02)
     assert 'class="marca-linea"' in g.svg
     assert 'class="marca-eje"' in g.svg
+    assert "<title>Tratamiento</title>" in g.svg
 
     # La fecha fuera de periodo (2026-10-15) no genera marcas adicionales
     assert g.svg.count('class="marca-linea"') == 1

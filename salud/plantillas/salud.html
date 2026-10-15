@@ -5,37 +5,49 @@
 
 {% if tratamiento and tratamiento.ultima %}
 {% set t = tratamiento %}
-<section class="panel tarjeta-tratamiento-salud" aria-label="Tratamiento">
-  <div class="tratamiento-cabecera">
-    <span class="icono-cuadro violeta">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3a1 1 0 0 1-1.4 0l-2.6-2.6a1 1 0 0 1 0-1.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/></svg>
+<details class="panel tarjeta-tratamiento-salud" aria-label="Tratamiento">
+  <summary class="tratamiento-resumen">
+    <span class="tratamiento-resumen-izq">
+      <span class="icono-cuadro violeta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </span>
+      <span class="tratamiento-resumen-titulo">Tratamiento</span>
     </span>
-    <div class="tratamiento-titulos">
-      <strong>{{ t.pauta.farmaco }} {{ t.pauta.dosis_mg | gramos }} mg</strong>
-      <span class="suave">Cada {{ t.pauta.intervalo_dias }} días · dosis {{ t.dosis_hechas }}{% if t.pauta.dosis_previstas %} de {{ t.pauta.dosis_previstas }}{% endif %}</span>
+    <span class="tratamiento-resumen-ver">Ver</span>
+  </summary>
+
+  <div class="tratamiento-cuerpo">
+    <div class="tratamiento-cabecera">
+      <span class="icono-cuadro violeta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3a1 1 0 0 1-1.4 0l-2.6-2.6a1 1 0 0 1 0-1.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/></svg>
+      </span>
+      <div class="tratamiento-titulos">
+        <strong>{{ t.pauta.farmaco }} {{ t.pauta.dosis_mg | gramos }} mg</strong>
+        <span class="suave">Cada {{ t.pauta.intervalo_dias }} días · dosis {{ t.dosis_hechas }}{% if t.pauta.dosis_previstas %} de {{ t.pauta.dosis_previstas }}{% endif %}</span>
+      </div>
+      <a href="/tratamiento" class="tratamiento-enlace-pauta">Pauta</a>
     </div>
-    <a href="/tratamiento" class="tratamiento-enlace-pauta">Pauta</a>
-  </div>
 
-  <div class="ciclo-tira" role="img" aria-label="Semana del ciclo de tratamiento">
-    {% for dia in t.dias_ciclo %}
-    <div class="ciclo-columna">
-      <span class="ciclo-letra{% if dia.es_hoy %} hoy{% endif %}">{{ dia.letra }}</span>
-      <span class="ciclo-numero {{ dia.estado }}{% if dia.es_hoy %} hoy{% endif %}">{{ dia.numero }}</span>
+    <div class="ciclo-tira" role="img" aria-label="Semana del ciclo de tratamiento">
+      {% for dia in t.dias_ciclo %}
+      <div class="ciclo-columna">
+        <span class="ciclo-letra{% if dia.es_hoy %} hoy{% endif %}">{{ dia.letra }}</span>
+        <span class="ciclo-numero {{ dia.estado }}{% if dia.es_hoy %} hoy{% endif %}">{{ dia.numero }}</span>
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
+
+    <div class="ciclo-leyenda suave">
+      <span class="ciclo-leyenda-item"><span class="ciclo-punto puesta"></span>Puesta</span>
+      <span class="ciclo-leyenda-item"><span class="ciclo-punto puede"></span>Puedes ponerla</span>
+      <span class="ciclo-leyenda-item"><span class="ciclo-punto toca"></span>Toca</span>
+    </div>
+
+    {% include "_zonas_inyeccion.html" %}
+
+    <a href="/tratamiento" class="boton boton-violeta">Apuntar dosis</a>
   </div>
-
-  <div class="ciclo-leyenda suave">
-    <span class="ciclo-leyenda-item"><span class="ciclo-punto puesta"></span>Puesta</span>
-    <span class="ciclo-leyenda-item"><span class="ciclo-punto puede"></span>Puedes ponerla</span>
-    <span class="ciclo-leyenda-item"><span class="ciclo-punto toca"></span>Toca</span>
-  </div>
-
-  {% include "_zonas_inyeccion.html" %}
-
-  <a href="/tratamiento" class="boton boton-violeta">Apuntar dosis</a>
-</section>
+</details>
 {% else %}
 <section class="panel" aria-label="Tratamiento">
   <div class="cabecera">
