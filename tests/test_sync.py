@@ -51,3 +51,69 @@ def test_repetir_la_sincronizacion_no_duplica(con, garmin):
         "SELECT COUNT(*) FROM metricas WHERE clave = 'pasos' AND fecha = '2026-01-10'"
     ).fetchone()[0]
     assert filas == 1
+
+
+def test_cmd_sync_comprueba_modelos_agy_y_guarda(monkeypatch, tmp_path, caplog):
+    import argparse
+    import json
+    import logging
+
+    from salud import cli, ia
+    from salud.config import Settings
+
+    settings = Settings(db_path=tmp_path / "salud.db")
+    con = db.conectar(settings.db_path)
+    con.close()
+
+    llamadas = 0
+
+    def fake_modelos_agy(_s):
+        nonlocal llamadas
+        llamadas += 1
+        return [("gemini-3.8-flash-low", "Flash Low"), ("gemini-3.1-pro", "Gemini Pro")]
+
+    monkeypatch.setattr(cli, "_sincronizar", lambda _s, _d, _h: 0)
+    monkeypatch.setattr(ia, "modelos_agy", fake_modelos_agy)
+
+    args = argparse.Namespace(desde=None, dias=1)
+    with caplog.at_level(logging.INFO):
+        codigo = cli.cmd_sync(settings, args)
+
+    assert codigo == 0
+    assert llamadas == 1
+    assert "Modelos Pro disponibles en agy: gemini-3.1-pro" in caplog.text
+
+    con = db.conectar(settings.db_path)
+    assert db.leer_estado_ia(con, "modelos_pro_agy") == json.dumps(["gemini-3.1-pro"])
+    assert db.leer_estado_ia(con, "modelos_agy_comprobado") == cli._hoy().isoformat()
+
+    # Segunda ejecución el mismo día: no repite
+    codigo2 = cli.cmd_sync(settings, args)
+    assert codigo2 == 0
+    assert llamadas == 1
+    con.close()
+
+
+def test_cmd_sync_error_en_modelos_agy_no_rompe_sync(monkeypatch, tmp_path, caplog):
+    import argparse
+    import logging
+
+    from salud import cli, ia
+    from salud.config import Settings
+
+    settings = Settings(db_path=tmp_path / "salud.db")
+    con = db.conectar(settings.db_path)
+    con.close()
+
+    def fake_error(_s):
+        raise ia.ErrorIA("Fallo de red agy")
+
+    monkeypatch.setattr(cli, "_sincronizar", lambda _s, _d, _h: 0)
+    monkeypatch.setattr(ia, "modelos_agy", fake_error)
+
+    args = argparse.Namespace(desde=None, dias=1)
+    with caplog.at_level(logging.WARNING):
+        codigo = cli.cmd_sync(settings, args)
+
+    assert codigo == 0
+    assert "No se pudieron comprobar los modelos de agy: Fallo de red agy" in caplog.text

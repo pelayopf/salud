@@ -1188,3 +1188,14 @@ def test_registrar_uso_ia_y_resumen(con):
     assert r_argon["entrada"] == 0
     assert r_argon["coste_usd"] == 0.0
     assert r_argon["fallos"] == 1
+
+
+def test_estado_ia_guardar_y_leer(con):
+    assert db.leer_estado_ia(con, "clave_inexistente") is None
+
+    db.guardar_estado_ia(con, "modelos_pro_agy", '["gemini-3.1-pro"]')
+    assert db.leer_estado_ia(con, "modelos_pro_agy") == '["gemini-3.1-pro"]'
+
+    # Actualizar la misma clave
+    db.guardar_estado_ia(con, "modelos_pro_agy", '["gemini-4-argon"]')
+    assert db.leer_estado_ia(con, "modelos_pro_agy") == '["gemini-4-argon"]'

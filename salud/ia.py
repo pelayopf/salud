@@ -24,11 +24,12 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
@@ -266,6 +267,83 @@ def _extraer_uso_agy(salida: str) -> UsoIA | None:
     return None
 
 
+def _preparar_home_agy(base: Path, settings: Settings) -> Path:
+    """Prepara un HOME aislado para agy con el token y permisos denegados."""
+    home = base / "home"
+    gemini_dir = home / ".gemini" / "antigravity-cli"
+    gemini_dir.mkdir(parents=True, exist_ok=True)
+
+    if not settings.agy_token.exists():
+        raise ErrorIA("agy no tiene sesión iniciada en calamar")
+
+    (gemini_dir / "antigravity-oauth-token").symlink_to(settings.agy_token)
+    (gemini_dir / "settings.json").write_text(
+        json.dumps({"permissions": {"allow": [], "deny": ["command(regex:.*)"]}})
+    )
+    return home
+
+
+def modelos_agy(settings: Settings) -> list[tuple[str, str]]:
+    """Consulta los modelos disponibles en agy ejecutando `agy models`.
+
+    Devuelve las líneas id<TAB>nombre (ignora las que no tengan tabulador).
+    Si falla, ErrorIA.
+    """
+    with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:
+        tmp_path = Path(tmp)
+        home = _preparar_home_agy(tmp_path, settings)
+        orden = [settings.agy, "models"]
+        entorno = {
+            "HOME": str(home),
+            "PATH": os.environ.get("PATH", ""),
+            "LANG": "C.UTF-8",
+        }
+        try:
+            proceso = subprocess.run(
+                orden,
+                cwd=tmp_path,
+                env=entorno,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ErrorIA("agy tardó más de 60 s") from exc
+        except OSError as exc:
+            raise ErrorIA("No se pudo lanzar agy") from exc
+
+        if proceso.returncode != 0:
+            err = proceso.stderr.strip() or proceso.stdout.strip()
+            raise ErrorIA(f"agy models falló: {err[:200]}")
+
+        modelos: list[tuple[str, str]] = []
+        for linea in proceso.stdout.splitlines():
+            partes = linea.split("\t", 1)
+            if len(partes) == 2:
+                modelos.append((partes[0].strip(), partes[1].strip()))
+        return modelos
+
+
+MODELO_PRO = re.compile(r"gemini.*(pro|argon|ultra)", re.I)
+
+
+def modelos_pro(modelos: Iterable[tuple[str, str] | str]) -> list[str]:
+    """Ids de modelos que casan con Gemini Pro, Argon o Ultra."""
+    pro: list[str] = []
+    for item in modelos:
+        if isinstance(item, tuple):
+            mid, nombre = item
+            if MODELO_PRO.search(mid) or MODELO_PRO.search(nombre):
+                if mid not in pro:
+                    pro.append(mid)
+        elif isinstance(item, str):
+            if MODELO_PRO.search(item):
+                if item not in pro:
+                    pro.append(item)
+    return pro
+
+
 def motor_agy(tarea: Tarea, settings: Settings) -> RespuestaIA:
     """Ejecuta una tarea usando agy en un entorno aislado con órdenes denegadas."""
     with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:
@@ -277,17 +355,7 @@ def motor_agy(tarea: Tarea, settings: Settings) -> RespuestaIA:
             ext = EXTENSIONES.get(adjunto.tipo, "jpg")
             (trabajo / f"adjunto-{i}.{ext}").write_bytes(adjunto.datos)
 
-        home = tmp_path / "home"
-        gemini_dir = home / ".gemini" / "antigravity-cli"
-        gemini_dir.mkdir(parents=True, exist_ok=True)
-
-        if not settings.agy_token.exists():
-            raise ErrorIA("agy no tiene sesión iniciada en calamar")
-
-        (gemini_dir / "antigravity-oauth-token").symlink_to(settings.agy_token)
-        (gemini_dir / "settings.json").write_text(
-            json.dumps({"permissions": {"allow": [], "deny": ["command(regex:.*)"]}})
-        )
+        home = _preparar_home_agy(tmp_path, settings)
 
         # La mención va al principio: al final, el modelo busca el fichero con
         # otras herramientas y tarda más de un minuto en vez de unos 10 s.

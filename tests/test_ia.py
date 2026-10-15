@@ -1782,3 +1782,68 @@ def test_comprobar_tope_corta_con_8_euros_despues_y_no_antes(tmp_path):
     # El día 15 (prueba caducada, tope 7,92 €): 8 € corta
     with pytest.raises(TopeGasto, match="Tope mensual de 7.92 € en Vertex"):
         comprobar_tope(settings, date(2027, 1, 15))
+
+
+def test_modelos_agy(tmp_path, monkeypatch):
+    from salud.ia import modelos_agy
+
+    token_file = tmp_path / "antigravity-oauth-token"
+    token_file.write_text("token-falso")
+
+    settings = Settings(db_path=tmp_path / "s.db", agy_token=token_file)
+
+    def fake_run(orden, **_kwargs):
+        assert "models" in orden
+        salida = (
+            "Fetching models…\n"
+            "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+            "gemini-3.1-pro-preview\tGemini 3.1 Pro Preview\n"
+            "otra línea sin tabulador\n"
+        )
+        return subprocess.CompletedProcess(orden, 0, stdout=salida, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    res = modelos_agy(settings)
+    assert res == [
+        ("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview"),
+    ]
+
+
+def test_modelos_agy_error(tmp_path, monkeypatch):
+    from salud.ia import ErrorIA, modelos_agy
+
+    token_file = tmp_path / "antigravity-oauth-token"
+    token_file.write_text("token-falso")
+
+    settings = Settings(db_path=tmp_path / "s.db", agy_token=token_file)
+
+    def fake_run(orden, **_kwargs):
+        return subprocess.CompletedProcess(orden, 1, stdout="", stderr="Error de red")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(ErrorIA, match="agy models falló"):
+        modelos_agy(settings)
+
+
+def test_modelos_pro():
+    from salud.ia import MODELO_PRO, modelos_pro
+
+    assert MODELO_PRO.search("gemini-3.1-pro-preview")
+    assert MODELO_PRO.search("gemini-4-argon")
+    assert MODELO_PRO.search("gemini-ultra")
+    assert not MODELO_PRO.search("gemini-3.8-flash-low")
+    assert not MODELO_PRO.search("claude-sonnet-4-6")
+
+    lista = [
+        ("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
+        ("gemini-4-argon", "Gemini 4 Argon"),
+        ("gemini-ultra", "Gemini Ultra"),
+        ("claude-sonnet-4-6", "Claude Sonnet"),
+    ]
+    assert modelos_pro(lista) == [
+        "gemini-3.1-pro-preview",
+        "gemini-4-argon",
+        "gemini-ultra",
+    ]

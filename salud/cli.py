@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
+import logging
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import alimentos, calendario, db, garmin, lectura, sync
+from . import alimentos, calendario, db, garmin, ia, lectura, sync
 from .config import ConfigError, Settings, load_settings
 from .garmin import GarminNoConectado
+
+log = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8791
@@ -101,6 +105,21 @@ def cmd_sync(settings: Settings, args: argparse.Namespace) -> int:
             print(f"Calendario: fallo: {exc}", file=sys.stderr)
         finally:
             con.close()
+    try:
+        con = db.conectar(settings.db_path)
+        try:
+            ultimo = db.leer_estado_ia(con, "modelos_agy_comprobado")
+            if ultimo != hasta.isoformat():
+                modelos = ia.modelos_agy(settings)
+                pros = ia.modelos_pro(modelos)
+                db.guardar_estado_ia(con, "modelos_pro_agy", json.dumps(pros))
+                db.guardar_estado_ia(con, "modelos_agy_comprobado", hasta.isoformat())
+                if pros:
+                    log.info("Modelos Pro disponibles en agy: %s", ", ".join(pros))
+        finally:
+            con.close()
+    except Exception as exc:
+        log.warning("No se pudieron comprobar los modelos de agy: %s", exc)
     return codigo
 
 

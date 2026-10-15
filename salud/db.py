@@ -248,6 +248,11 @@ CREATE TABLE IF NOT EXISTS uso_ia (
     coste_usd REAL
 );
 CREATE INDEX IF NOT EXISTS uso_ia_cuando ON uso_ia (cuando);
+CREATE TABLE IF NOT EXISTS estado_ia (
+    clave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL,
+    actualizado TEXT NOT NULL
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -985,6 +990,24 @@ def borrar_borrador_comida(con: sqlite3.Connection, id_: int) -> bool:
     with con:
         cur = con.execute("DELETE FROM borradores_comida WHERE id = ?", (id_,))
         return cur.rowcount > 0
+
+
+def guardar_estado_ia(con: sqlite3.Connection, clave: str, valor: str) -> None:
+    """Guarda o actualiza un valor de estado de la IA con la marca de tiempo actual."""
+    with con:
+        con.execute(
+            "INSERT INTO estado_ia (clave, valor, actualizado)"
+            " VALUES (?, ?, ?)"
+            " ON CONFLICT(clave) DO UPDATE SET"
+            " valor = excluded.valor, actualizado = excluded.actualizado",
+            (clave, valor, ahora()),
+        )
+
+
+def leer_estado_ia(con: sqlite3.Connection, clave: str) -> str | None:
+    """Lee el valor de una clave en estado_ia, o None si no existe."""
+    fila = con.execute("SELECT valor FROM estado_ia WHERE clave = ?", (clave,)).fetchone()
+    return str(fila["valor"]) if fila is not None else None
 
 
 # --- Lectura -----------------------------------------------------------------
