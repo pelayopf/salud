@@ -31,7 +31,7 @@
 
 <section class="panel grafica-panel" aria-labelledby="titulo-grafica-30d">
   <div class="cabecera">
-    <h2 id="titulo-grafica-30d">Gasto diario últimos 30 días</h2>
+    <h2 id="titulo-grafica-30d">Gasto diario (céntimos)</h2>
   </div>
   {% if grafica_30d %}
   <div class="lienzo">{{ grafica_30d.svg }}</div>
@@ -45,32 +45,21 @@
     <h2 id="titulo-modelos">Detalle por modelo este mes</h2>
   </div>
   {% if tabla_modelos %}
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">Modelo</th>
-        <th scope="col" class="cifra-tabla">Llamadas</th>
-        <th scope="col" class="cifra-tabla">Entrada</th>
-        <th scope="col" class="cifra-tabla">Salida</th>
-        <th scope="col" class="cifra-tabla">Razonamiento</th>
-        <th scope="col" class="cifra-tabla">Coste</th>
-        <th scope="col" class="cifra-tabla">Al respaldo</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for m in tabla_modelos %}
-      <tr>
-        <td><strong>{{ m.modelo }}</strong> <span class="suave">({{ m.motor }})</span></td>
-        <td class="cifra-tabla">{{ m.llamadas }}</td>
-        <td class="cifra-tabla">{{ m.entrada | cifra }}</td>
-        <td class="cifra-tabla">{{ m.salida | cifra }}</td>
-        <td class="cifra-tabla">{{ m.razonamiento | cifra }}</td>
-        <td class="cifra-tabla">{{ m.coste_eur | cifra(4) }} €</td>
-        <td class="cifra-tabla">{{ m.fallos }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <ul class="lista-modelos-ia">
+    {% for m in tabla_modelos %}
+    <li>
+      <div class="modelo-ia-fila">
+        <strong>{{ m.modelo }}</strong>
+        <span>{{ m.coste_eur | cifra(3) }} €</span>
+      </div>
+      <p class="suave">
+        {{ m.llamadas }} llamada{{ 's' if m.llamadas != 1 }} · {{ m.entrada | cifra }} tokens de entrada,
+        {{ m.salida | cifra }} de salida y {{ m.razonamiento | cifra }} de razonamiento
+        {%- if m.fallos %} · <span class="texto-aviso">{{ m.fallos }} sin respuesta (pasó al respaldo)</span>{% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
   {% else %}
   <p class="suave">Sin llamadas este mes.</p>
   {% endif %}

@@ -1687,14 +1687,16 @@ def crear_app(
         gasto_por_dia: dict[str, float] = defaultdict(float)
         for r in filas_30d:
             gasto_por_dia[r["fecha"]] += float(r["coste_usd"]) * settings.ia_usd_eur
+        # En céntimos: en euros, el eje y las etiquetas salían todos a 0.
         barras = [
-            (graficas.fecha_corta(d.isoformat()), round(gasto_por_dia[d.isoformat()], 4))
+            (graficas.fecha_corta(d.isoformat()), round(gasto_por_dia[d.isoformat()] * 100, 1))
             for d in dias_30
         ]
         grafica_30d = graficas.columnas(
             barras,
-            unidad="€",
-            titulo="Gasto diario últimos 30 días",
+            unidad="cént.",
+            titulo="Gasto diario últimos 30 días, en céntimos",
+            etiquetas_cada=7,
         )
 
         # 6. Tabla por modelo este mes

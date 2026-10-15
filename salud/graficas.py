@@ -450,8 +450,12 @@ def columnas(
     ancho: int = 400,
     alto: int = 180,
     titulo: str = "",
+    etiquetas_cada: int = 2,
 ) -> Grafica | None:
-    """Columnas de una serie (la carga de cada semana), con el valor en la última y la mayor."""
+    """Columnas de una serie (la carga de cada semana), con el valor en la última y la mayor.
+
+    En el eje X sale una etiqueta cada `etiquetas_cada` columnas, contando desde la última.
+    """
     if not barras or not any(v for _, v in barras):
         return None
     izq, der, arriba, abajo = 40, 12, 18, 26
@@ -491,7 +495,7 @@ def columnas(
                 f'<text class="valor-final" x="{cx:.1f}" y="{top - 5:.1f}" text-anchor="middle">'
                 f"{cifra(v)}</text>"
             )
-        if i % 2 == (len(barras) - 1) % 2:
+        if (len(barras) - 1 - i) % etiquetas_cada == 0:
             partes.append(
                 f'<text class="eje" x="{cx:.1f}" y="{alto - 8}" text-anchor="middle">'
                 f"{escape(etiqueta)}</text>"

@@ -380,7 +380,7 @@ def test_conexiones_y_pagina_ia_uso(settings):
     assert "gemini-3.8-flash" in r_ia.text
     assert "gemini-4-argon" in r_ia.text
     assert "gemini-3.1-pro-preview" in r_ia.text
-    assert "Al respaldo" in r_ia.text
+    assert "sin respuesta (pasó al respaldo)" in r_ia.text
 
     # Enlace oficial
     assert "https://console.cloud.google.com/billing" in r_ia.text
