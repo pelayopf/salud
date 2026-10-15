@@ -461,14 +461,17 @@ def test_ejecutar_concurrencia_y_motor_por_defecto(tmp_path, monkeypatch):
     monkeypatch.setitem(
         MOTORES,
         "agy",
-        lambda _t, _s: llamadas.append("agy")
-        or RespuestaIA(datos={"motor": "agy"}, motor="agy", modelo="m"),
+        lambda _t, _s: (
+            llamadas.append("agy") or RespuestaIA(datos={"motor": "agy"}, motor="agy", modelo="m")
+        ),
     )
     monkeypatch.setitem(
         MOTORES,
         "claude",
-        lambda _t, _s: llamadas.append("claude")
-        or RespuestaIA(datos={"motor": "claude"}, motor="claude", modelo="m"),
+        lambda _t, _s: (
+            llamadas.append("claude")
+            or RespuestaIA(datos={"motor": "claude"}, motor="claude", modelo="m")
+        ),
     )
 
     res_agy = ejecutar(tarea, settings_agy)
@@ -1078,6 +1081,7 @@ def test_motor_vertex_peticion_url_headers_y_cuerpo(tmp_path):
 
 def test_motor_vertex_ignora_thought(tmp_path):
     """Las partes con thought: true se ignoran y el resto se une y parsea."""
+
     def handler(_req: httpx.Request) -> httpx.Response:
         cuerpo = {
             "candidates": [
@@ -1312,6 +1316,3 @@ def test_ejecutar_vertex_otro_error_no_repite(tmp_path, monkeypatch):
 
     with pytest.raises(ErrorIA, match="Petición incorrecta 400"):
         ejecutar(tarea, settings)
-
-
-

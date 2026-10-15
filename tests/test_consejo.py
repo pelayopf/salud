@@ -439,4 +439,3 @@ def test_pedir_consejo_guarda_modelo_vertex(con, settings: Settings):
 
     res = consejo.pedir_consejo(con, settings, ahora, ejecutar=fake_ejecutar)
     assert res["modelo"] == "vertex:gemini-3.1-pro"
-

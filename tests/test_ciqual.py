@@ -22,7 +22,6 @@ from salud.ia import RespuestaIA, Tarea
 
 
 def test_valor_teneur() -> None:
-
     """1. Comprueba la conversión de teneur."""
     assert valor_teneur("3,6") == 3.6
     assert valor_teneur(" traces ") == 0.0

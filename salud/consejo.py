@@ -237,7 +237,7 @@ def pedir_consejo(
     try:
         resp = ejecutar(tarea, settings)
     except ia.CupoAgotado:
-        if settings.ia_motor != "agy":
+        if settings.ia_motor == "claude":  # con agy o con vertex (que cae a agy) hay respaldo
             raise
         log.warning(
             "Sin cupo para %s; el consejo va con %s",

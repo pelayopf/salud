@@ -135,4 +135,3 @@ def load_settings() -> Settings:
             os.environ.get("SALUD_GOOGLE_OAUTH", "~/.config/salud/google-oauth.json")
         ),
     )
-
