@@ -642,3 +642,15 @@ def test_salud_tarjeta_tratamiento_plegada_y_neutra(settings):
     r_trat = c.get("/tratamiento")
     assert r_trat.status_code == 200
     assert "FarmacoSecreto" in r_trat.text
+
+
+def test_nombre_modelo_de_la_lectura():
+    from salud.web import nombre_modelo
+
+    assert nombre_modelo("vertex:gemini-4-argon") == "Gemini 4 Argon"
+    assert nombre_modelo("vertex:gemini-3.1-pro-preview") == "Gemini 3.1 Pro"
+    assert nombre_modelo("gemini-3.8-flash-low") == "Gemini 3.8 Flash Low"
+    assert nombre_modelo("sonnet") == "Claude"
+    assert nombre_modelo("claude-sonnet-5-5-medium") == "Claude"
+    assert nombre_modelo("") == "IA"
+    assert nombre_modelo(None) == "IA"

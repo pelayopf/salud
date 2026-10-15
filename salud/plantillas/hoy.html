@@ -91,7 +91,7 @@
       <ul>{% for a in c.alertas %}<li>{{ a }}</li>{% endfor %}</ul>
     </div>
     {% endif %}
-    <p class="suave pie-lectura">Lectura hecha con Claude {{ lectura.generada | hace }}. No sustituye a un médico.</p>
+    <p class="suave pie-lectura">Lectura hecha con {{ lectura.modelo | nombre_modelo }} {{ lectura.generada | hace }}. No sustituye a un médico.</p>
     {% if es_hoy and not generando %}
     <form method="post" action="/lectura">
       <button class="boton secundario">Rehacer la lectura</button>

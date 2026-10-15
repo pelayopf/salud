@@ -212,6 +212,22 @@ def _avisos_ia(con: sqlite3.Connection, settings: Settings, hoy_d: date) -> list
 
 
 PLANTILLAS.filters["horas"] = horas_y_minutos
+
+
+def nombre_modelo(modelo: str | None) -> str:
+    """Nombre legible del modelo que hizo un texto: "vertex:gemini-4-argon" → "Gemini 4 Argon"."""
+    nombre = (modelo or "").split(":", 1)[-1]
+    if not nombre:
+        return "IA"
+    if nombre.startswith("gemini-"):
+        partes = nombre.removeprefix("gemini-").removesuffix("-preview").split("-")
+        return "Gemini " + " ".join(p.capitalize() if p.isalpha() else p for p in partes)
+    if nombre.startswith("claude") or nombre in ("sonnet", "opus", "haiku"):
+        return "Claude"
+    return nombre
+
+
+PLANTILLAS.filters["nombre_modelo"] = nombre_modelo
 PLANTILLAS.filters["fecha_larga"] = fecha_larga
 PLANTILLAS.filters["fecha_corta"] = lambda f: graficas.fecha_corta(f)
 PLANTILLAS.filters["dia_corto"] = dia_corto
