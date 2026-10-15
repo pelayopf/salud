@@ -14,7 +14,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import alimentos, calendario, db, garmin, ia, lectura, sync
+import httpx
+
+from . import alimentos, artema, calendario, db, garmin, ia, lectura, sync
 from .config import ConfigError, Settings, load_settings
 from .garmin import GarminNoConectado
 
@@ -120,6 +122,25 @@ def cmd_sync(settings: Settings, args: argparse.Namespace) -> int:
             con.close()
     except Exception as exc:
         log.warning("No se pudieron comprobar los modelos de agy: %s", exc)
+    try:
+        con = db.conectar(settings.db_path)
+        try:
+            ultimo_artema = db.leer_estado_ia(con, "artema_actualizado")
+            if ultimo_artema != hasta.isoformat():
+                with httpx.Client(headers=artema.HEADERS, timeout=20.0) as http:
+                    r_art = artema.actualizar(con, http)
+                db.guardar_estado_ia(con, "artema_actualizado", hasta.isoformat())
+                log.info(
+                    "Catálogo de Artema actualizado: %d platos (%d nuevos)",
+                    r_art.platos,
+                    r_art.nuevos,
+                )
+                for e in r_art.errores:
+                    log.warning("Fallo al actualizar plato de Artema: %s", e)
+        finally:
+            con.close()
+    except Exception as exc:
+        log.warning("No se pudo actualizar el catálogo de Artema: %s", exc)
     return codigo
 
 
@@ -258,6 +279,23 @@ def cmd_ciqual(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_artema(settings: Settings, args: argparse.Namespace) -> int:
+    """Actualiza el catálogo de platos de Artema."""
+    con = db.conectar(settings.db_path)
+    try:
+        with httpx.Client(headers=artema.HEADERS, timeout=20.0) as cliente:
+            r = artema.actualizar(con, cliente, completo=args.completo)
+    except Exception as exc:
+        print(f"Error al actualizar Artema: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        con.close()
+    print(f"Artema: {r.platos} platos ({r.nuevos} nuevos)")
+    for err in r.errores:
+        print(f"  fallo: {err}", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Punto de entrada."""
     parser = argparse.ArgumentParser(prog="salud")
@@ -302,6 +340,13 @@ def main(argv: list[str] | None = None) -> int:
         help="fichero JSON de caché de traducciones",
     )
     ciq.set_defaults(func=cmd_ciqual)
+    art = sub.add_parser("artema", help="actualiza el catálogo de platos de Artema")
+    art.add_argument(
+        "--completo",
+        action="store_true",
+        help="relee todas las fichas aunque ya tengan macros",
+    )
+    art.set_defaults(func=cmd_artema)
     args = parser.parse_args(argv)
     try:
         settings = load_settings()

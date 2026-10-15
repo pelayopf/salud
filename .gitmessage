@@ -20,6 +20,7 @@ tipo(scope): resumen en imperativo, minúsculas, sin punto final
 #   consejo  - consejo de comida con IA (consejo.py)
 #   ciqual   - alimentos genéricos de CIQUAL (ciqual.py)
 #   tratamiento - registro de dosis y pauta farmacológica (tratamiento.py)
+#   artema   - catálogo y recomendación de platos de Artema (artema.py)
 #   repo     - scaffolding del repositorio (gitignore, readme, config de herramientas)
 #
 # Si ninguno encaja, propón uno nuevo explícitamente y añádelo aquí.

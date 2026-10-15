@@ -1,0 +1,86 @@
+{
+  "products": [
+    {
+      "id": 10040146592090,
+      "title": "Merluza a la gallega",
+      "handle": "merluza-a-la-gallega",
+      "product_type": "Principal",
+      "tags": [
+        "Principal",
+        "top-ventas"
+      ],
+      "updated_at": "2026-09-28T09:42:12+02:00",
+      "variants": [
+        {
+          "id": 50534896566618,
+          "price": "5.99",
+          "compare_at_price": null,
+          "available": true,
+          "grams": 280,
+          "requires_shipping": true
+        }
+      ]
+    },
+    {
+      "id": 10475524260186,
+      "title": "Macarrones boloñesa",
+      "handle": "macarrones-bolonesa",
+      "product_type": "Principal",
+      "tags": [
+        "Principal",
+        "top-ventas"
+      ],
+      "updated_at": "2026-09-28T09:42:12+02:00",
+      "variants": [
+        {
+          "id": 52503080501594,
+          "price": "5.99",
+          "compare_at_price": null,
+          "available": true,
+          "grams": 300,
+          "requires_shipping": true
+        }
+      ]
+    },
+    {
+      "id": 10495345557850,
+      "title": "Albóndigas en salsa",
+      "handle": "albongas-salsa",
+      "product_type": "Principal",
+      "tags": [
+        "Principal"
+      ],
+      "updated_at": "2026-09-28T09:42:12+02:00",
+      "variants": [
+        {
+          "id": 52585504244058,
+          "price": "5.99",
+          "compare_at_price": null,
+          "available": true,
+          "grams": 300,
+          "requires_shipping": true
+        }
+      ]
+    },
+    {
+      "id": 9934280786266,
+      "title": "Tarjeta Regalo ¡Regala comida casera!",
+      "handle": "tarjetaregalo",
+      "product_type": "Principal",
+      "tags": [
+        "Postre"
+      ],
+      "updated_at": "2026-09-28T09:42:12+02:00",
+      "variants": [
+        {
+          "id": 50085400838490,
+          "price": "25.00",
+          "compare_at_price": null,
+          "available": true,
+          "grams": 0,
+          "requires_shipping": false
+        }
+      ]
+    }
+  ]
+}

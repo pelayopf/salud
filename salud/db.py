@@ -253,6 +253,27 @@ CREATE TABLE IF NOT EXISTS estado_ia (
     valor TEXT NOT NULL,
     actualizado TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS artema_platos (
+    handle TEXT PRIMARY KEY,
+    variant_id INTEGER NOT NULL,
+    nombre TEXT NOT NULL,
+    url TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    precio REAL NOT NULL,
+    en_oferta INTEGER NOT NULL,
+    precio_original REAL,
+    peso_g REAL,
+    kcal REAL,
+    proteinas REAL,
+    hidratos REAL,
+    grasas REAL,
+    azucares REAL,
+    saturadas REAL,
+    sal REAL,
+    ingredientes TEXT,
+    disponible INTEGER NOT NULL,
+    actualizado TEXT NOT NULL
+);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -771,6 +792,116 @@ def guardar_producto_propio(
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def guardar_platos_artema(con: sqlite3.Connection, platos: Iterable[Any]) -> None:
+    """Guarda o actualiza platos del catálogo de Artema."""
+    with con:
+        for p in platos:
+            if isinstance(p, dict):
+                handle = p["handle"]
+                variant_id = p["variant_id"]
+                nombre = p["nombre"]
+                url = p["url"]
+                categoria = p["categoria"]
+                precio = p["precio"]
+                en_oferta = int(p["en_oferta"])
+                precio_original = p.get("precio_original")
+                peso_g = p.get("peso_g")
+                kcal = p.get("kcal")
+                proteinas = p.get("proteinas")
+                hidratos = p.get("hidratos")
+                grasas = p.get("grasas")
+                azucares = p.get("azucares")
+                saturadas = p.get("saturadas")
+                sal = p.get("sal")
+                ingredientes = p.get("ingredientes")
+                disponible = int(p["disponible"])
+                actualizado = p["actualizado"]
+            else:
+                handle = p.handle
+                variant_id = p.variant_id
+                nombre = p.nombre
+                url = p.url
+                categoria = p.categoria
+                precio = p.precio
+                en_oferta = int(p.en_oferta)
+                precio_original = p.precio_original
+                peso_g = p.peso_g
+                kcal = p.kcal
+                proteinas = p.proteinas
+                hidratos = p.hidratos
+                grasas = p.grasas
+                azucares = p.azucares
+                saturadas = p.saturadas
+                sal = p.sal
+                ingredientes = p.ingredientes
+                disponible = int(p.disponible)
+                actualizado = p.actualizado
+
+            con.execute(
+                """
+                INSERT INTO artema_platos (
+                    handle, variant_id, nombre, url, categoria, precio, en_oferta,
+                    precio_original, peso_g, kcal, proteinas, hidratos, grasas,
+                    azucares, saturadas, sal, ingredientes, disponible, actualizado
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(handle) DO UPDATE SET
+                    variant_id = excluded.variant_id,
+                    nombre = excluded.nombre,
+                    url = excluded.url,
+                    categoria = excluded.categoria,
+                    precio = excluded.precio,
+                    en_oferta = excluded.en_oferta,
+                    precio_original = excluded.precio_original,
+                    peso_g = excluded.peso_g,
+                    kcal = excluded.kcal,
+                    proteinas = excluded.proteinas,
+                    hidratos = excluded.hidratos,
+                    grasas = excluded.grasas,
+                    azucares = excluded.azucares,
+                    saturadas = excluded.saturadas,
+                    sal = excluded.sal,
+                    ingredientes = excluded.ingredientes,
+                    disponible = excluded.disponible,
+                    actualizado = excluded.actualizado
+                """,
+                (
+                    handle,
+                    variant_id,
+                    nombre,
+                    url,
+                    categoria,
+                    precio,
+                    en_oferta,
+                    precio_original,
+                    peso_g,
+                    kcal,
+                    proteinas,
+                    hidratos,
+                    grasas,
+                    azucares,
+                    saturadas,
+                    sal,
+                    ingredientes,
+                    disponible,
+                    actualizado,
+                ),
+            )
+
+
+def platos_artema(con: sqlite3.Connection, solo_disponibles: bool = True) -> list[sqlite3.Row]:
+    """Lista los platos de Artema en la base de datos."""
+    if solo_disponibles:
+        return con.execute(
+            "SELECT * FROM artema_platos WHERE disponible = 1 ORDER BY nombre COLLATE NOCASE ASC"
+        ).fetchall()
+    return con.execute("SELECT * FROM artema_platos ORDER BY nombre COLLATE NOCASE ASC").fetchall()
+
+
+def plato_artema(con: sqlite3.Connection, handle: str) -> sqlite3.Row | None:
+    """Obtiene un plato de Artema por su handle, o None si no existe."""
+    return con.execute("SELECT * FROM artema_platos WHERE handle = ?", (handle,)).fetchone()
 
 
 def anadir_comida(
