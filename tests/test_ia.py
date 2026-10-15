@@ -1,5 +1,6 @@
 import base64
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from salud import db
 from salud.config import ConfigError, Settings, load_settings
 from salud.ia import (
     MAX_BYTES_IMAGEN,
@@ -1515,3 +1517,126 @@ def test_coste_usd():
 
     # Motor desconocido -> None
     assert coste_usd("desconocido", "m", uso) is None
+
+
+def test_ejecutar_registra_uso_ia_vertex(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+        vertex_modelo="gemini-3.8-flash",
+    )
+    tarea = Tarea(nombre="etiqueta", instrucciones="instrucciones", esquema={})
+
+    uso = UsoIA(entrada=1000, salida=200, razonamiento=50)
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"ok": True}, motor="vertex", modelo="gemini-3.8-flash", uso=uso)
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    res = ejecutar(tarea, settings)
+    assert res.datos == {"ok": True}
+
+    con = db.conectar(settings.db_path)
+    filas = con.execute("SELECT * FROM uso_ia").fetchall()
+    con.close()
+    assert len(filas) == 1
+    f = filas[0]
+    assert f["tarea"] == "etiqueta"
+    assert f["motor"] == "vertex"
+    assert f["modelo"] == "gemini-3.8-flash"
+    assert f["estado"] == "ok"
+    assert f["entrada"] == 1000
+    assert f["salida"] == 200
+    assert f["razonamiento"] == 50
+    # (1000 * 0.75 + 250 * 3.75) / 1e6 = (750 + 937.5) / 1e6 = 1687.5 / 1e6 = 0.0016875
+    assert pytest.approx(f["coste_usd"]) == 0.0016875
+
+
+def test_ejecutar_registra_uso_ia_respaldo_dos_filas(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+        vertex_modelo="gemini-4-argon",
+    )
+    tarea = Tarea(
+        nombre="consejo",
+        instrucciones="instrucciones",
+        esquema={},
+        modelo_vertex="gemini-4-argon",
+        modelo_vertex_respaldo="gemini-3.1-pro-preview",
+    )
+
+    def fake_vertex(t: Tarea, _s: Settings) -> RespuestaIA:
+        if t.modelo_vertex == "gemini-4-argon":
+            raise VertexNoDisponible("429 Too Many Requests")
+        return RespuestaIA(
+            datos={"ok": True},
+            motor="vertex",
+            modelo="gemini-3.1-pro-preview",
+            uso=UsoIA(entrada=500, salida=100, razonamiento=0),
+        )
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    res = ejecutar(tarea, settings)
+    assert res.modelo == "gemini-3.1-pro-preview"
+
+    con = db.conectar(settings.db_path)
+    filas = con.execute("SELECT * FROM uso_ia ORDER BY id ASC").fetchall()
+    con.close()
+    assert len(filas) == 2
+
+    # Primera fila: falló Argon
+    assert filas[0]["modelo"] == "gemini-4-argon"
+    assert filas[0]["estado"] == "VertexNoDisponible"
+    assert filas[0]["entrada"] is None
+    assert filas[0]["coste_usd"] is None
+
+    # Segunda fila: tuvo éxito 3.1 Pro
+    assert filas[1]["modelo"] == "gemini-3.1-pro-preview"
+    assert filas[1]["estado"] == "ok"
+    assert filas[1]["entrada"] == 500
+    assert filas[1]["salida"] == 100
+    assert filas[1]["coste_usd"] is not None
+
+
+def test_ejecutar_registra_uso_ia_agy_coste_cero(tmp_path, monkeypatch):
+    settings = Settings(db_path=tmp_path / "s.db", ia_motor="agy")
+    tarea = Tarea(nombre="comida", instrucciones="instrucciones", esquema={})
+
+    uso = UsoIA(entrada=300, salida=80, razonamiento=0)
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"ok": True}, motor="agy", modelo="gemini-3.8-flash-low", uso=uso)
+
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+    res = ejecutar(tarea, settings)
+    assert res.motor == "agy"
+
+    con = db.conectar(settings.db_path)
+    filas = con.execute("SELECT * FROM uso_ia").fetchall()
+    con.close()
+    assert len(filas) == 1
+    assert filas[0]["motor"] == "agy"
+    assert filas[0]["coste_usd"] == 0.0
+
+
+def test_ejecutar_db_falla_no_rompe_tarea(tmp_path, monkeypatch):
+    settings = Settings(db_path=tmp_path / "salud.db", ia_motor="agy")
+    tarea = Tarea(nombre="t", instrucciones="instrucciones", esquema={})
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"ok": True}, motor="agy", modelo="m")
+
+    def fake_conectar(_ruta):
+        raise sqlite3.OperationalError("base de datos bloqueada o corrupta")
+
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+    monkeypatch.setattr(db, "conectar", fake_conectar)
+
+    # Debe ejecutarse sin lanzar excepción aunque falle la base
+    res = ejecutar(tarea, settings)
+    assert res.datos == {"ok": True}

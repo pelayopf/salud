@@ -234,6 +234,20 @@ CREATE TABLE IF NOT EXISTS borradores_comida (
     error TEXT,
     alimentos TEXT
 );
+CREATE TABLE IF NOT EXISTS uso_ia (
+    id INTEGER PRIMARY KEY,
+    cuando TEXT NOT NULL,
+    tarea TEXT NOT NULL,
+    motor TEXT NOT NULL,
+    modelo TEXT NOT NULL,
+    estado TEXT NOT NULL,
+    segundos REAL NOT NULL,
+    entrada INTEGER,
+    salida INTEGER,
+    razonamiento INTEGER,
+    coste_usd REAL
+);
+CREATE INDEX IF NOT EXISTS uso_ia_cuando ON uso_ia (cuando);
 """
 
 _CAMPOS_ACTIVIDAD = (
@@ -441,6 +455,21 @@ def hora_local(momento_utc: str | None) -> str:
         return ""
 
 
+def fecha_local(momento_utc: str | None) -> str:
+    """Convierte una marca de tiempo UTC a fecha local de Madrid YYYY-MM-DD."""
+    if not momento_utc:
+        return ""
+    if len(momento_utc) == 10 and momento_utc[4] == "-" and momento_utc[7] == "-":
+        return momento_utc
+    try:
+        dt = datetime.fromisoformat(momento_utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(ZONA).strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
 def _añadir_columnas(con: sqlite3.Connection, tabla: str, columnas: dict[str, str]) -> None:
     """Añade columnas a una tabla si no existen (migración idempotente)."""
     filas = con.execute(f"PRAGMA table_info({tabla})").fetchall()
@@ -456,6 +485,7 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
         Path(ruta).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(ruta)
     con.row_factory = sqlite3.Row
+    con.create_function("fecha_local_madrid", 1, fecha_local)
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
     _añadir_columnas(con, "productos_propios", {"racion_g": "REAL", "racion_nombre": "TEXT"})
@@ -465,6 +495,43 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
 
 
 # --- Escritura ---------------------------------------------------------------
+
+
+def registrar_uso_ia(
+    con: sqlite3.Connection,
+    *,
+    tarea: str,
+    motor: str,
+    modelo: str,
+    estado: str,
+    segundos: float,
+    uso: tuple[int, int, int] | None,
+    coste_usd: float | None,
+    cuando: str | None = None,
+) -> int:
+    """Registra una llamada (o intento) a un motor de IA."""
+    momento = cuando or ahora()
+    entrada, salida, razonamiento = uso if uso is not None else (None, None, None)
+    with con:
+        cur = con.execute(
+            "INSERT INTO uso_ia ("
+            " cuando, tarea, motor, modelo, estado, segundos,"
+            " entrada, salida, razonamiento, coste_usd"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                momento,
+                tarea,
+                motor,
+                modelo,
+                estado,
+                segundos,
+                entrada,
+                salida,
+                razonamiento,
+                coste_usd,
+            ),
+        )
+    return int(cur.lastrowid or 0)
 
 
 def guardar_crudo(con: sqlite3.Connection, fuente: str, tipo: str, fecha: str, datos: Any) -> None:
@@ -921,6 +988,38 @@ def borrar_borrador_comida(con: sqlite3.Connection, id_: int) -> bool:
 
 
 # --- Lectura -----------------------------------------------------------------
+
+
+def uso_ia_resumen(con: sqlite3.Connection, desde: str, hasta: str) -> list[sqlite3.Row]:
+    """Resumen de uso de la IA agrupado por día (fecha local Madrid), motor y modelo.
+
+    Suma llamadas, tokens y coste para el rango de fechas [desde, hasta].
+    """
+    try:
+        con.create_function("fecha_local_madrid", 1, fecha_local)
+    except sqlite3.OperationalError:
+        pass
+    return list(
+        con.execute(
+            """
+            SELECT
+                fecha_local_madrid(cuando) AS fecha,
+                motor,
+                modelo,
+                COUNT(*) AS llamadas,
+                COALESCE(SUM(entrada), 0) AS entrada,
+                COALESCE(SUM(salida), 0) AS salida,
+                COALESCE(SUM(razonamiento), 0) AS razonamiento,
+                COALESCE(SUM(coste_usd), 0.0) AS coste_usd,
+                SUM(CASE WHEN estado != 'ok' THEN 1 ELSE 0 END) AS fallos
+            FROM uso_ia
+            WHERE fecha_local_madrid(cuando) BETWEEN ? AND ?
+            GROUP BY fecha_local_madrid(cuando), motor, modelo
+            ORDER BY fecha_local_madrid(cuando) ASC, motor ASC, modelo ASC
+            """,
+            (desde, hasta),
+        ).fetchall()
+    )
 
 
 def _prioridad(fuente: str) -> int:

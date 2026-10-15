@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from conftest import hay
 
 from salud import db, metricas
@@ -1106,3 +1107,84 @@ def test_borradores_comida_limpieza_antiguos(con):
     assert db.leer_borrador_comida(con, id_viejo) is None
     assert db.leer_borrador_comida(con, id_reciente) is not None
     assert db.leer_borrador_comida(con, id_nuevo) is not None
+
+
+def test_registrar_uso_ia_y_resumen(con):
+    # Inserta llamadas en UTC:
+    # 2026-10-15 23:30 UTC -> en Madrid (CEST +2) es 2026-10-16 01:30
+    id1 = db.registrar_uso_ia(
+        con,
+        tarea="etiqueta",
+        motor="vertex",
+        modelo="gemini-3.8-flash",
+        estado="ok",
+        segundos=1.5,
+        uso=(1000, 200, 50),
+        coste_usd=0.0015,
+        cuando="2026-10-15T23:30:00+00:00",
+    )
+    assert id1 > 0
+
+    # Misma fecha local 2026-10-16, segundo intento del mismo modelo
+    db.registrar_uso_ia(
+        con,
+        tarea="comida",
+        motor="vertex",
+        modelo="gemini-3.8-flash",
+        estado="ok",
+        segundos=2.0,
+        uso=(500, 100, 0),
+        coste_usd=0.00075,
+        cuando="2026-10-16T10:00:00+00:00",
+    )
+
+    # Intento fallido que cayó al respaldo
+    db.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-4-argon",
+        estado="VertexNoDisponible",
+        segundos=0.8,
+        uso=None,
+        coste_usd=None,
+        cuando="2026-10-16T12:00:00+00:00",
+    )
+
+    # Llamada en fecha local 2026-10-14 (antes del rango)
+    db.registrar_uso_ia(
+        con,
+        tarea="etiqueta",
+        motor="agy",
+        modelo="gemini-3.8-flash-low",
+        estado="ok",
+        segundos=5.0,
+        uso=(200, 50, 0),
+        coste_usd=0.0,
+        cuando="2026-10-14T10:00:00+00:00",
+    )
+
+    # Consulta resumen para 2026-10-15 a 2026-10-16
+    resumen = db.uso_ia_resumen(con, "2026-10-15", "2026-10-16")
+    # Solo deben estar las de 2026-10-16
+    assert len(resumen) == 2
+
+    # Fila 1: gemini-3.8-flash (2 llamadas ok)
+    r_flash = next(r for r in resumen if r["modelo"] == "gemini-3.8-flash")
+    assert r_flash["fecha"] == "2026-10-16"
+    assert r_flash["motor"] == "vertex"
+    assert r_flash["llamadas"] == 2
+    assert r_flash["entrada"] == 1500
+    assert r_flash["salida"] == 300
+    assert r_flash["razonamiento"] == 50
+    assert pytest.approx(r_flash["coste_usd"]) == 0.00225
+    assert r_flash["fallos"] == 0
+
+    # Fila 2: gemini-4-argon (1 llamada con fallo)
+    r_argon = next(r for r in resumen if r["modelo"] == "gemini-4-argon")
+    assert r_argon["fecha"] == "2026-10-16"
+    assert r_argon["motor"] == "vertex"
+    assert r_argon["llamadas"] == 1
+    assert r_argon["entrada"] == 0
+    assert r_argon["coste_usd"] == 0.0
+    assert r_argon["fallos"] == 1

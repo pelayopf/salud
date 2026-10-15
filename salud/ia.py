@@ -597,6 +597,47 @@ MOTORES: dict[str, Motor] = {
 _en_marcha = threading.Lock()
 
 
+def _modelo_para_motor(tarea: Tarea, settings: Settings, motor: str) -> str:
+    """Modelo por defecto según el motor y la tarea."""
+    if "vertex" in motor:
+        return tarea.modelo_vertex or settings.vertex_modelo
+    if "claude" in motor:
+        return tarea.modelo_claude or settings.ia_modelo_claude
+    return tarea.modelo_agy or settings.ia_modelo_agy
+
+
+def _registrar(
+    settings: Settings,
+    tarea: Tarea,
+    motor: str,
+    modelo: str,
+    estado: str,
+    segundos: float,
+    resp: RespuestaIA | None,
+) -> None:
+    """Registra un intento de llamada a la IA en la base de datos sin fallar si hay error."""
+    try:
+        uso = resp.uso if resp is not None else None
+        tokens = (uso.entrada, uso.salida, uso.razonamiento) if uso is not None else None
+        coste = coste_usd(motor, modelo, uso)
+        con = db.conectar(settings.db_path)
+        try:
+            db.registrar_uso_ia(
+                con,
+                tarea=tarea.nombre,
+                motor=motor,
+                modelo=modelo,
+                estado=estado,
+                segundos=segundos,
+                uso=tokens,
+                coste_usd=coste,
+            )
+        finally:
+            con.close()
+    except Exception:
+        log.exception("Error al registrar uso de IA en base de datos")
+
+
 def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
     """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy."""
     intentos = [tarea]
@@ -605,16 +646,39 @@ def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
             replace(tarea, modelo_vertex=tarea.modelo_vertex_respaldo, modelo_vertex_respaldo=None)
         )
     for intento in intentos:
+        modelo = intento.modelo_vertex or settings.vertex_modelo
+        t0 = time.monotonic()
         try:
-            return MOTORES["vertex"](intento, settings)
+            resp = MOTORES["vertex"](intento, settings)
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "vertex", modelo, "ok", segundos, resp)
+            return resp
         except VertexNoDisponible as exc:
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
             log.warning("Vertex no disponible en tarea %s (%s)", tarea.nombre, exc)
         except SinDatos as exc:
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
             # Sin datos no se arregla cambiando de modelo de Vertex: directo a agy.
             log.warning("Vertex sin datos en tarea %s (%s)", tarea.nombre, exc)
             break
+        except Exception as exc:
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
+            raise
     log.warning("La tarea %s se repite con agy", tarea.nombre)
-    return MOTORES["agy"](tarea, settings)
+    modelo_agy = tarea.modelo_agy or settings.ia_modelo_agy
+    t0 = time.monotonic()
+    try:
+        resp = MOTORES["agy"](tarea, settings)
+        segundos = round(time.monotonic() - t0, 1)
+        _registrar(settings, tarea, "agy", modelo_agy, "ok", segundos, resp)
+        return resp
+    except Exception as exc:
+        segundos = round(time.monotonic() - t0, 1)
+        _registrar(settings, tarea, "agy", modelo_agy, type(exc).__name__, segundos, None)
+        raise
 
 
 def ejecutar(
@@ -636,9 +700,31 @@ def ejecutar(
             return resp
         else:
             motor_fn = motor or MOTORES[settings.ia_motor]
-            resp = motor_fn(tarea, settings)
-            motor_usado = resp.motor
-            return resp
+            nombre_motor = (
+                settings.ia_motor
+                if motor is None
+                else getattr(motor, "__name__", "custom").removeprefix("motor_")
+            )
+            modelo_previsto = _modelo_para_motor(tarea, settings, nombre_motor)
+            t0 = time.monotonic()
+            try:
+                resp = motor_fn(tarea, settings)
+                segundos = round(time.monotonic() - t0, 1)
+                motor_usado = resp.motor
+                _registrar(settings, tarea, resp.motor, resp.modelo, "ok", segundos, resp)
+                return resp
+            except Exception as exc:
+                segundos = round(time.monotonic() - t0, 1)
+                _registrar(
+                    settings,
+                    tarea,
+                    nombre_motor,
+                    modelo_previsto,
+                    type(exc).__name__,
+                    segundos,
+                    None,
+                )
+                raise
     except Exception as exc:
         estado = type(exc).__name__
         raise
