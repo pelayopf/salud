@@ -11,7 +11,7 @@ import sqlite3
 import time
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import httpx
@@ -28,7 +28,11 @@ HEADERS = {
 # Productos de la tienda que no son platos.
 EXCLUDED_HANDLES = frozenset({"tarjetaregalo"})
 
-REQUEST_DELAY_S = 0.2
+# Artema responde 429 si se le piden las fichas seguidas: pausa entre
+# peticiones y, si aun así corta, reintento esperando lo que pida.
+REQUEST_DELAY_S = 1.0
+REINTENTOS_429 = 4
+ESPERA_429_S = 5.0
 
 _NUM = r"([\d]+(?:[.,]\d+)?)"
 _LABEL_FIELDS: dict[str, re.Pattern[str]] = {
@@ -209,17 +213,32 @@ def build_plato(product: dict[str, Any], page: dict[str, Any] | None, actualizad
     )
 
 
+def _espera_reintento(resp: httpx.Response, intento: int) -> float:
+    """Segundos a esperar tras un 429: el Retry-After si lo trae, si no, backoff."""
+    retry_after = resp.headers.get("Retry-After", "")
+    try:
+        return max(float(retry_after), 1.0)
+    except ValueError:
+        return ESPERA_429_S * 2**intento
+
+
+def _get(cliente: httpx.Client, url: str) -> httpx.Response:
+    """GET a la tienda que reintenta ante 429 y lanza en cualquier otro error HTTP."""
+    for intento in range(REINTENTOS_429 + 1):
+        resp = cliente.get(url, headers=HEADERS, timeout=20.0)
+        if resp.status_code != 429 or intento == REINTENTOS_429:
+            break
+        time.sleep(_espera_reintento(resp, intento))
+    resp.raise_for_status()
+    return resp
+
+
 def list_products(cliente: httpx.Client, pausa_s: float = REQUEST_DELAY_S) -> list[dict[str, Any]]:
     """Descarga todos los productos de `/products.json` que son platos preparados."""
     products: list[dict[str, Any]] = []
     page = 1
     while True:
-        resp = cliente.get(
-            f"{BASE_URL}/products.json?limit=250&page={page}",
-            headers=HEADERS,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
+        resp = _get(cliente, f"{BASE_URL}/products.json?limit=250&page={page}")
         batch = resp.json().get("products", [])
         if not batch:
             break
@@ -238,9 +257,24 @@ def list_products(cliente: httpx.Client, pausa_s: float = REQUEST_DELAY_S) -> li
 
 def fetch_product_page(handle: str, cliente: httpx.Client) -> dict[str, Any]:
     """Descarga y parsea la ficha HTML de un producto."""
-    resp = cliente.get(f"{BASE_URL}/products/{handle}", headers=HEADERS, timeout=20.0)
-    resp.raise_for_status()
-    return parse_product_page(resp.text)
+    return parse_product_page(_get(cliente, f"{BASE_URL}/products/{handle}").text)
+
+
+def _plato_con_macros_guardados(prod: dict[str, Any], viejo: Any, actualizado: str) -> Plato:
+    """Plato con precio y disponibilidad de la tienda y la etiqueta ya guardada en la BD."""
+    plato = build_plato(prod, None, actualizado)
+    return replace(
+        plato,
+        peso_g=viejo["peso_g"],
+        kcal=viejo["kcal"],
+        proteinas=viejo["proteinas"],
+        hidratos=viejo["hidratos"],
+        grasas=viejo["grasas"],
+        azucares=viejo["azucares"],
+        saturadas=viejo["saturadas"],
+        sal=viejo["sal"],
+        ingredientes=viejo["ingredientes"],
+    )
 
 
 def actualizar(
@@ -264,6 +298,7 @@ def actualizar(
     platos_a_guardar: list[Plato] = []
     errores: list[str] = []
     nuevos = 0
+    pidio_ficha = False
 
     for prod in products:
         handle = prod["handle"]
@@ -271,74 +306,25 @@ def actualizar(
         if handle not in platos_viejos:
             nuevos += 1
 
-        if not completo and viejo is not None and viejo["kcal"] is not None:
-            variant = prod["variants"][0]
-            price = float(variant["price"])
-            compare_at = variant.get("compare_at_price")
-            on_sale = bool(compare_at) and float(compare_at) > price
-            plato = Plato(
-                handle=handle,
-                variant_id=int(variant["id"]),
-                nombre=prod["title"],
-                url=f"{BASE_URL}/products/{handle}",
-                categoria=prod.get("product_type") or "Principal",
-                precio=price,
-                en_oferta=on_sale,
-                precio_original=float(compare_at) if on_sale else None,
-                peso_g=viejo["peso_g"],
-                kcal=viejo["kcal"],
-                proteinas=viejo["proteinas"],
-                hidratos=viejo["hidratos"],
-                grasas=viejo["grasas"],
-                azucares=viejo["azucares"],
-                saturadas=viejo["saturadas"],
-                sal=viejo["sal"],
-                ingredientes=viejo["ingredientes"],
-                disponible=any(v.get("available", True) for v in prod["variants"]),
-                actualizado=ahora_str,
-            )
-            platos_a_guardar.append(plato)
+        con_macros = viejo is not None and viejo["kcal"] is not None
+        if not completo and con_macros:
+            platos_a_guardar.append(_plato_con_macros_guardados(prod, viejo, ahora_str))
             continue
 
+        if pausa_s > 0 and pidio_ficha:
+            time.sleep(pausa_s)
+        pidio_ficha = True
         try:
             page = fetch_product_page(handle, cliente)
-        except (httpx.HTTPError, Exception) as exc:
+        except Exception as exc:
             errores.append(f"{prod['title']}: {exc}")
-            if viejo is not None and viejo["kcal"] is not None:
-                variant = prod["variants"][0]
-                price = float(variant["price"])
-                compare_at = variant.get("compare_at_price")
-                on_sale = bool(compare_at) and float(compare_at) > price
-                plato = Plato(
-                    handle=handle,
-                    variant_id=int(variant["id"]),
-                    nombre=prod["title"],
-                    url=f"{BASE_URL}/products/{handle}",
-                    categoria=prod.get("product_type") or "Principal",
-                    precio=price,
-                    en_oferta=on_sale,
-                    precio_original=float(compare_at) if on_sale else None,
-                    peso_g=viejo["peso_g"],
-                    kcal=viejo["kcal"],
-                    proteinas=viejo["proteinas"],
-                    hidratos=viejo["hidratos"],
-                    grasas=viejo["grasas"],
-                    azucares=viejo["azucares"],
-                    saturadas=viejo["saturadas"],
-                    sal=viejo["sal"],
-                    ingredientes=viejo["ingredientes"],
-                    disponible=any(v.get("available", True) for v in prod["variants"]),
-                    actualizado=ahora_str,
-                )
+            if con_macros:
+                platos_a_guardar.append(_plato_con_macros_guardados(prod, viejo, ahora_str))
             else:
-                plato = build_plato(prod, None, ahora_str)
-            platos_a_guardar.append(plato)
+                platos_a_guardar.append(build_plato(prod, None, ahora_str))
             continue
 
-        plato = build_plato(prod, page, ahora_str)
-        platos_a_guardar.append(plato)
-        if pausa_s > 0:
-            time.sleep(pausa_s)
+        platos_a_guardar.append(build_plato(prod, page, ahora_str))
 
     handles_actuales = {p["handle"] for p in products}
     for viejo in platos_viejos.values():
@@ -410,18 +396,23 @@ GRUPOS_PROTEINA: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def detectar_proteina(nombre: str, ingredientes: str | None) -> str:
-    """Identifica el grupo de proteína principal en nombre e ingredientes.
-
-    El orden de comprobación es: pescado, pollo, ternera, cerdo, legumbre, otro.
-    """
-    texto = db.normalizar_titulo(f"{nombre} {ingredientes or ''}")
+def _grupo_en(texto: str) -> str | None:
+    texto = db.normalizar_titulo(texto)
     for grupo, palabras in GRUPOS_PROTEINA:
         for palabra in palabras:
-            palabra_norm = db.normalizar_titulo(palabra)
-            if palabra_norm in texto:
+            if re.search(r"\b" + re.escape(db.normalizar_titulo(palabra)), texto):
                 return grupo
-    return "otro"
+    return None
+
+
+def detectar_proteina(nombre: str, ingredientes: str | None) -> str:
+    """Identifica el grupo de proteína principal del plato.
+
+    Manda el nombre ("Lentejas a la burgalesa" es legumbre aunque lleve
+    chorizo); los ingredientes solo deciden si el nombre no dice nada. En cada
+    texto se comprueba en orden: pescado, pollo, ternera, cerdo, legumbre.
+    """
+    return _grupo_en(nombre) or _grupo_en(ingredientes or "") or "otro"
 
 
 def puntuacion_plato(plato: Plato) -> float:

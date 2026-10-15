@@ -341,6 +341,56 @@ def test_detectar_proteina_orden_y_grupos():
     assert artema.detectar_proteina("Mar y montaña", "Merluza con pollo") == "pescado"
 
 
+def test_detectar_proteina_manda_el_nombre():
+    lentejas = "Lentejas, chorizo de cerdo, panceta, cebolla"
+    assert artema.detectar_proteina("Lentejas a la burgalesa", lentejas) == "legumbre"
+    # Sin pista en el nombre, deciden los ingredientes
+    assert artema.detectar_proteina("Guiso de la abuela", "Garbanzos, espinacas") == "legumbre"
+    # Solo cuenta el principio de palabra: "presa" no está en "expresado"
+    assert artema.detectar_proteina("Arroz", "Aceite de oliva expresado en frío") == "otro"
+
+
+def test_actualizar_reintenta_tras_429(con, monkeypatch):
+    esperas: list[float] = []
+    monkeypatch.setattr(artema.time, "sleep", esperas.append)
+    mock = ArtemaMock()
+    servir = mock.handler
+    cortes = {"merluza-a-la-gallega": 2}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        handle = request.url.path.rsplit("/", 1)[-1]
+        if cortes.get(handle, 0) > 0:
+            cortes[handle] -= 1
+            headers = {"Retry-After": "7"} if cortes[handle] == 0 else {}
+            return httpx.Response(429, headers=headers, text="Too Many Requests")
+        return servir(request)
+
+    cliente = _RealClient(transport=httpx.MockTransport(handler))
+    res = artema.actualizar(con, cliente, pausa_s=0)
+    assert res.errores == []
+    merluza = db.plato_artema(con, "merluza-a-la-gallega")
+    assert merluza is not None
+    assert merluza["kcal"] is not None
+    # Primer corte sin Retry-After: backoff; el segundo trae Retry-After
+    assert esperas == [artema.ESPERA_429_S, 7.0]
+
+
+def test_actualizar_429_persistente_es_error_de_la_ficha(con, monkeypatch):
+    monkeypatch.setattr(artema.time, "sleep", lambda _s: None)
+    mock = ArtemaMock()
+    servir = mock.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/merluza-a-la-gallega"):
+            return httpx.Response(429, text="Too Many Requests")
+        return servir(request)
+
+    cliente = _RealClient(transport=httpx.MockTransport(handler))
+    res = artema.actualizar(con, cliente, pausa_s=0)
+    assert len(res.errores) == 1
+    assert "429" in res.errores[0]
+
+
 def test_recomendar_puntuacion_y_penalizaciones():
     p_limpio = plato_test("p1", "Pollo plancha", kcal=450.0, proteinas=30.0, sal=1.0)
     # 30.0
