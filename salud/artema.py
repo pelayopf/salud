@@ -9,6 +9,8 @@ import html as html_lib
 import re
 import sqlite3
 import time
+from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -370,3 +372,101 @@ def actualizar(
 
     db.guardar_platos_artema(con, platos_a_guardar)
     return ResultadoArtema(platos=len(products), nuevos=nuevos, errores=errores)
+
+
+# ── Recomendación de platos ───────────────────────────────────────────────────
+
+GRUPOS_PROTEINA: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "pescado",
+        (
+            "bacalao",
+            "merluza",
+            "salmon",
+            "atun",
+            "calamar",
+            "gamba",
+            "marisco",
+            "sepia",
+            "pescado",
+        ),
+    ),
+    ("pollo", ("pollo", "pavo")),
+    ("ternera", ("ternera", "morcillo", "buey", "vacuno")),
+    (
+        "cerdo",
+        (
+            "cerdo",
+            "secreto",
+            "solomillo de cerdo",
+            "carrillera",
+            "panceta",
+            "lomo",
+            "presa",
+            "iberico",
+        ),
+    ),
+    ("legumbre", ("lenteja", "garbanzo", "alubia", "fabada")),
+)
+
+
+def detectar_proteina(nombre: str, ingredientes: str | None) -> str:
+    """Identifica el grupo de proteína principal en nombre e ingredientes.
+
+    El orden de comprobación es: pescado, pollo, ternera, cerdo, legumbre, otro.
+    """
+    texto = db.normalizar_titulo(f"{nombre} {ingredientes or ''}")
+    for grupo, palabras in GRUPOS_PROTEINA:
+        for palabra in palabras:
+            palabra_norm = db.normalizar_titulo(palabra)
+            if palabra_norm in texto:
+                return grupo
+    return "otro"
+
+
+def puntuacion_plato(plato: Plato) -> float:
+    """Calcula la puntuación nutricional de un plato.
+
+    Puntuación = proteinas − 0,1 × (kcal por encima de 500) − 5 × (1 si sal > 2,5).
+    """
+    proteinas = plato.proteinas or 0.0
+    kcal = plato.kcal or 0.0
+    sal = plato.sal or 0.0
+
+    kcal_exceso = max(0.0, kcal - 500.0)
+    penalizacion_sal = 5.0 if sal > 2.5 else 0.0
+    return proteinas - 0.1 * kcal_exceso - penalizacion_sal
+
+
+def recomendar(platos: Iterable[Any], n: int = 8, max_por_proteina: int = 3) -> list[Plato]:
+    """Propone hasta `n` platos según objetivos y variedad proteica.
+
+    - Solo platos de categoría 'Principal', disponibles y con proteína y kcal.
+    - Ordenados de forma codiciosa por puntuación nutricional.
+    - Como máximo `max_por_proteina` platos del mismo grupo de proteína.
+    """
+    candidatos: list[Plato] = []
+    for item in platos:
+        p = item if isinstance(item, Plato) else Plato.desde_fila(item)
+        if (
+            p.categoria.strip().lower() == "principal"
+            and p.disponible
+            and p.proteinas is not None
+            and p.kcal is not None
+        ):
+            candidatos.append(p)
+
+    candidatos.sort(key=puntuacion_plato, reverse=True)
+
+    cuenta_por_grupo: dict[str, int] = defaultdict(int)
+    seleccionados: list[Plato] = []
+
+    for plato in candidatos:
+        grupo = detectar_proteina(plato.nombre, plato.ingredientes)
+        if cuenta_por_grupo[grupo] < max_por_proteina:
+            cuenta_por_grupo[grupo] += 1
+            seleccionados.append(plato)
+            if len(seleccionados) >= n:
+                break
+
+    return seleccionados

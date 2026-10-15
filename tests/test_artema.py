@@ -287,3 +287,123 @@ def test_cmd_sync_artema_diario(monkeypatch, tmp_path, caplog):
     assert codigo2 == 0
     assert mock.peticiones == []
     con.close()
+
+
+# ── Recomendación de platos ───────────────────────────────────────────────────
+
+
+def plato_test(
+    handle: str,
+    nombre: str,
+    categoria: str = "Principal",
+    kcal: float | None = 400.0,
+    proteinas: float | None = 25.0,
+    sal: float | None = 1.0,
+    disponible: bool = True,
+    ingredientes: str | None = None,
+    precio: float = 5.99,
+) -> artema.Plato:
+    return artema.Plato(
+        handle=handle,
+        variant_id=1000,
+        nombre=nombre,
+        url=f"https://artema.club/products/{handle}",
+        categoria=categoria,
+        precio=precio,
+        en_oferta=False,
+        precio_original=None,
+        peso_g=300.0,
+        kcal=kcal,
+        proteinas=proteinas,
+        hidratos=20.0,
+        grasas=10.0,
+        azucares=2.0,
+        saturadas=1.0,
+        sal=sal,
+        ingredientes=ingredientes,
+        disponible=disponible,
+        actualizado="2026-09-01T10:00:00",
+    )
+
+
+def test_detectar_proteina_orden_y_grupos():
+    assert artema.detectar_proteina("Bacalao al pil-pil", None) == "pescado"
+    assert artema.detectar_proteina("Pechuga de pavo", None) == "pollo"
+    assert artema.detectar_proteina("Morcillo estofado", None) == "ternera"
+    assert artema.detectar_proteina("Carrillera ibérica", None) == "cerdo"
+    assert artema.detectar_proteina("Fabada asturiana", None) == "legumbre"
+    assert artema.detectar_proteina("Arroz tres delicias", "Arroz, tortilla, guisante") == "otro"
+
+    # Orden: pescado antes que pollo si ambos aparecen en el texto
+    assert artema.detectar_proteina("Mar y montaña", "Merluza con pollo") == "pescado"
+
+
+def test_recomendar_puntuacion_y_penalizaciones():
+    p_limpio = plato_test("p1", "Pollo plancha", kcal=450.0, proteinas=30.0, sal=1.0)
+    # 30.0
+    p_sal = plato_test("p2", "Pavo al horno", kcal=450.0, proteinas=30.0, sal=3.0)
+    # 30.0 - 5.0 = 25.0
+    p_calorias = plato_test("p3", "Pollo asado", kcal=600.0, proteinas=30.0, sal=1.0)
+    # 30.0 - 0.1*(100) = 20.0
+    p_ambas = plato_test("p4", "Pollo frito", kcal=700.0, proteinas=30.0, sal=3.0)
+    # 30.0 - 0.1*(200) - 5.0 = 5.0
+
+    platos = [p_ambas, p_calorias, p_sal, p_limpio]
+    rec = artema.recomendar(platos, n=4, max_por_proteina=4)
+    assert [p.handle for p in rec] == ["p1", "p2", "p3", "p4"]
+
+
+def test_recomendar_respeta_maximo_por_proteina():
+    pollos = [
+        plato_test(f"pollo-{i}", f"Pollo {i}", proteinas=50.0 - i, kcal=400.0) for i in range(5)
+    ]
+    pescados = [
+        plato_test(f"pescado-{i}", f"Merluza {i}", proteinas=20.0 - i, kcal=400.0) for i in range(3)
+    ]
+
+    rec = artema.recomendar(pollos + pescados, n=8, max_por_proteina=3)
+    handles = [p.handle for p in rec]
+    # Solo 3 pollos aunque tengan más puntuación que los pescados
+    assert handles[:3] == ["pollo-0", "pollo-1", "pollo-2"]
+    assert "pollo-3" not in handles
+    assert "pollo-4" not in handles
+    assert "pescado-0" in handles
+    assert "pescado-1" in handles
+    assert "pescado-2" in handles
+    assert len(rec) == 6
+
+
+def test_recomendar_deja_fuera_no_principales_no_disponibles_y_sin_macros():
+    valido = plato_test("valido", "Pollo rico", categoria="Principal", disponible=True)
+    entrante = plato_test("entrante", "Pollo entrante", categoria="Entrante", disponible=True)
+    no_disp = plato_test("no-disp", "Pollo agotado", categoria="Principal", disponible=False)
+    sin_kcal = plato_test("sin-kcal", "Pollo sin kcal", kcal=None)
+    sin_prot = plato_test("sin-prot", "Pollo sin proteina", proteinas=None)
+
+    platos = [valido, entrante, no_disp, sin_kcal, sin_prot]
+    rec = artema.recomendar(platos, n=8)
+    assert [p.handle for p in rec] == ["valido"]
+
+
+def test_recomendar_devuelve_menos_de_n_si_no_hay_mas():
+    p1 = plato_test("p1", "Merluza", proteinas=30.0)
+    p2 = plato_test("p2", "Pollo", proteinas=25.0)
+
+    rec = artema.recomendar([p1, p2], n=8)
+    assert len(rec) == 2
+    assert [p.handle for p in rec] == ["p1", "p2"]
+
+
+def test_recomendar_con_fixtures_reales(con):
+    mock = ArtemaMock()
+    artema.actualizar(con, mock.client, pausa_s=0)
+
+    platos_db = db.platos_artema(con, solo_disponibles=True)
+    rec = artema.recomendar(platos_db, n=8)
+    assert len(rec) == 3
+    # Puntuaciones: Merluza (22.8) > Albóndigas (21.1, sal 3.09 penalizada) > Macarrones (6.0)
+    assert [p.handle for p in rec] == [
+        "merluza-a-la-gallega",
+        "albongas-salsa",
+        "macarrones-bolonesa",
+    ]
