@@ -218,7 +218,7 @@ def pedir_consejo(
     settings: Settings,
     ahora: datetime,
     nota: str = "",
-    ejecutar: Callable[[ia.Tarea, Settings], dict[str, Any]] = ia.ejecutar,
+    ejecutar: Callable[[ia.Tarea, Settings], ia.RespuestaIA] = ia.ejecutar,
 ) -> dict[str, Any]:
     """Pide un consejo de comida a la IA, lo valida, lo persiste y lo devuelve."""
     nota_limpia = nota.strip()[:MAX_NOTA]
@@ -229,11 +229,13 @@ def pedir_consejo(
         prompt,
         ESQUEMA,
         modelo_agy=settings.ia_modelo_consejo,
+        modelo_vertex=settings.vertex_modelo_consejo,
+        razonamiento="high",
         tiempo_maximo_s=TIEMPO_CONSEJO_S,
     )
     inicio = time.monotonic()
     try:
-        datos = ejecutar(tarea, settings)
+        resp = ejecutar(tarea, settings)
     except ia.CupoAgotado:
         if settings.ia_motor != "agy":
             raise
@@ -243,16 +245,12 @@ def pedir_consejo(
             settings.ia_modelo_consejo_respaldo,
         )
         tarea = replace(tarea, modelo_agy=settings.ia_modelo_consejo_respaldo)
-        datos = ejecutar(tarea, settings)
+        resp = ejecutar(tarea, settings)
     segundos = round(time.monotonic() - inicio, 1)
 
-    contenido = interpretar(datos)
+    contenido = interpretar(resp.datos)
 
-    modelo = (
-        tarea.modelo_agy or settings.ia_modelo_agy
-        if settings.ia_motor == "agy"
-        else tarea.modelo_claude or settings.ia_modelo_claude
-    )
+    modelo = f"vertex:{resp.modelo}" if resp.motor == "vertex" else resp.modelo
     hoy_str = ahora.date().isoformat()
     db.guardar_consejo(
         con,

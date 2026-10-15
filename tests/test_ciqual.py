@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -19,10 +18,11 @@ from salud.ciqual import (
     valor_teneur,
 )
 from salud.config import Settings
-from salud.ia import Tarea
+from salud.ia import RespuestaIA, Tarea
 
 
 def test_valor_teneur() -> None:
+
     """1. Comprueba la conversión de teneur."""
     assert valor_teneur("3,6") == 3.6
     assert valor_teneur(" traces ") == 0.0
@@ -242,7 +242,7 @@ def test_traducir(tmp_path: Path) -> None:
     """3. Comprueba la traducción por lotes, uso de caché e ignorar traducciones vacías."""
     llamadas = 0
 
-    def fake_ejecutar(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+    def fake_ejecutar(tarea: Tarea, _settings: Settings) -> RespuestaIA:
         nonlocal llamadas
         llamadas += 1
         lineas = tarea.instrucciones.split("\n")
@@ -261,7 +261,7 @@ def test_traducir(tmp_path: Path) -> None:
                 trads.append({"original": n, "es": "Pan"})
             else:
                 trads.append({"original": n, "es": f"Trad_{n}"})
-        return {"traducciones": trads}
+        return RespuestaIA(datos={"traducciones": trads}, motor="agy", modelo="m")
 
     settings = Settings(
         db_path=tmp_path / "test.db",
@@ -308,10 +308,15 @@ def test_generar_csv_y_cargar(xml_ciqual_dir: Path, tmp_path: Path) -> None:
         "cereals": "Cereales",
     }
 
-    def fake_ejecutar(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+    def fake_ejecutar(tarea: Tarea, _settings: Settings) -> RespuestaIA:
         lineas = tarea.instrucciones.split("\n")
         nombres = [linea[2:].strip() for linea in lineas if linea.startswith("- ")]
-        return {"traducciones": [{"original": n, "es": diccionario_es.get(n, n)} for n in nombres]}
+        trads = [{"original": n, "es": diccionario_es.get(n, n)} for n in nombres]
+        return RespuestaIA(
+            datos={"traducciones": trads},
+            motor="agy",
+            modelo="m",
+        )
 
     settings = Settings(
         db_path=tmp_path / "test.db",

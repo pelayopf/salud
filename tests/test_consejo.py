@@ -194,16 +194,20 @@ def test_pedir_consejo(con, settings: Settings):
     ahora = datetime(2026, 1, 10, 18, 0, tzinfo=ZONA)
     llamadas: list[ia.Tarea] = []
 
-    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> dict[str, Any]:
+    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> ia.RespuestaIA:
         llamadas.append(tarea)
-        return {
-            "resumen": "Resumen de prueba",
-            "ahora": "Toma algo ligero",
-            "antes": "Agua",
-            "durante": "",
-            "despues": "Cena completa",
-            "avisos": ["Aviso 1"],
-        }
+        return ia.RespuestaIA(
+            datos={
+                "resumen": "Resumen de prueba",
+                "ahora": "Toma algo ligero",
+                "antes": "Agua",
+                "durante": "",
+                "despues": "Cena completa",
+                "avisos": ["Aviso 1"],
+            },
+            motor="agy",
+            modelo=tarea.modelo_agy or "m",
+        )
 
     res = consejo.pedir_consejo(
         con,
@@ -215,6 +219,8 @@ def test_pedir_consejo(con, settings: Settings):
     assert len(llamadas) == 1
     tarea = llamadas[0]
     assert tarea.modelo_agy == settings.ia_modelo_consejo
+    assert tarea.modelo_vertex == settings.vertex_modelo_consejo
+    assert tarea.razonamiento == "high"
     assert tarea.esquema == consejo.ESQUEMA
 
     assert res["resumen"] == "Resumen de prueba"
@@ -226,7 +232,7 @@ def test_pedir_consejo(con, settings: Settings):
     assert guardado["resumen"] == "Resumen de prueba"
 
     # Si lanza ErrorIA, no guarda nada
-    def fake_error(_tarea: ia.Tarea, _settings: Settings) -> dict[str, Any]:
+    def fake_error(_tarea: ia.Tarea, _settings: Settings) -> ia.RespuestaIA:
         raise ia.ErrorIA("Fallo del modelo")
 
     with pytest.raises(ia.ErrorIA, match="Fallo del modelo"):
@@ -388,20 +394,49 @@ def test_sin_cupo_de_sonnet_el_consejo_va_con_el_respaldo(con, settings):
     """Si se agota el cupo del modelo del consejo, se repite con el de respaldo."""
     modelos: list[str | None] = []
 
-    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> dict[str, Any]:
+    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> ia.RespuestaIA:
         modelos.append(tarea.modelo_agy)
         if tarea.modelo_agy == settings.ia_modelo_consejo:
             raise ia.CupoAgotado("sin cupo")
-        return {
-            "resumen": "Resumen",
-            "ahora": "Ahora",
-            "antes": "",
-            "durante": "",
-            "despues": "",
-            "avisos": [],
-        }
+        return ia.RespuestaIA(
+            datos={
+                "resumen": "Resumen",
+                "ahora": "Ahora",
+                "antes": "",
+                "durante": "",
+                "despues": "",
+                "avisos": [],
+            },
+            motor="agy",
+            modelo=tarea.modelo_agy or "m",
+        )
 
     ahora = datetime(2026, 1, 10, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))
     res = consejo.pedir_consejo(con, settings, ahora, nota="", ejecutar=fake_ejecutar)
     assert modelos == [settings.ia_modelo_consejo, settings.ia_modelo_consejo_respaldo]
     assert res["modelo"] == settings.ia_modelo_consejo_respaldo
+
+
+def test_pedir_consejo_guarda_modelo_vertex(con, settings: Settings):
+    """El consejo guarda modelo='vertex:gemini-3.1-pro' con un motor falso."""
+    ahora = datetime(2026, 1, 10, 18, 0, tzinfo=ZONA)
+
+    def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> ia.RespuestaIA:
+        assert tarea.modelo_vertex == settings.vertex_modelo_consejo
+        assert tarea.razonamiento == "high"
+        return ia.RespuestaIA(
+            datos={
+                "resumen": "Resumen",
+                "ahora": "Ahora",
+                "antes": "",
+                "durante": "",
+                "despues": "",
+                "avisos": [],
+            },
+            motor="vertex",
+            modelo=tarea.modelo_vertex or "gemini-3.1-pro",
+        )
+
+    res = consejo.pedir_consejo(con, settings, ahora, ejecutar=fake_ejecutar)
+    assert res["modelo"] == "vertex:gemini-3.1-pro"
+

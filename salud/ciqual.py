@@ -229,7 +229,7 @@ def leer_xml(directorio: Path) -> list[Generico]:
 def traducir(
     nombres: list[str],
     settings: Settings,
-    ejecutar: Callable[..., dict[str, Any]] = ia.ejecutar,
+    ejecutar: Callable[..., ia.RespuestaIA] = ia.ejecutar,
     lote: int = 150,
     cache: Path | None = None,
 ) -> dict[str, str]:
@@ -272,7 +272,7 @@ def traducir(
             esquema=ESQUEMA_TRADUCCION,
         )
         resultado = ejecutar(tarea, settings)
-        items = resultado.get("traducciones", [])
+        items = resultado.datos.get("traducciones", [])
         trozo_set = set(trozo)
         if isinstance(items, list):
             for item in items:
@@ -297,7 +297,7 @@ def generar_csv(
     settings: Settings,
     destino: Path = CSV,
     cache: Path | None = None,
-    ejecutar: Callable[..., dict[str, Any]] = ia.ejecutar,
+    ejecutar: Callable[..., ia.RespuestaIA] = ia.ejecutar,
 ) -> int:
     """Genera el CSV de alimentos de CIQUAL traducidos y ordenados por código.
 

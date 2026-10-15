@@ -87,6 +87,15 @@ class Adjunto:
 
 
 @dataclass(frozen=True)
+class RespuestaIA:
+    """Respuesta devuelta por un motor de IA."""
+
+    datos: dict[str, Any]
+    motor: str
+    modelo: str
+
+
+@dataclass(frozen=True)
 class Tarea:
     """Lo que se pide a la IA: instrucciones, esquema de la respuesta y adjuntos."""
 
@@ -96,6 +105,8 @@ class Tarea:
     adjuntos: tuple[Adjunto, ...] = ()
     modelo_agy: str | None = None
     modelo_claude: str | None = None
+    modelo_vertex: str | None = None
+    razonamiento: Literal["low", "medium", "high"] | None = None
     # Lo que se espera a la IA. 90 s para lo que se espera delante de la
     # pantalla; más para lo que va en segundo plano (el consejo).
     tiempo_maximo_s: int = TIEMPO_MAXIMO_S
@@ -143,7 +154,7 @@ def tipo_imagen(datos: bytes) -> str | None:
     return None
 
 
-Motor = Callable[[Tarea, Settings], dict[str, Any]]
+Motor = Callable[[Tarea, Settings], RespuestaIA]
 
 
 def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
@@ -182,7 +193,7 @@ def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
     return structured
 
 
-def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
+def motor_agy(tarea: Tarea, settings: Settings) -> RespuestaIA:
     """Ejecuta una tarea usando agy en un entorno aislado con órdenes denegadas."""
     with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:
         tmp_path = Path(tmp)
@@ -216,12 +227,13 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
         else:
             prompt = f"{SIN_HERRAMIENTAS}\n\n{tarea.instrucciones}"
 
+        modelo = tarea.modelo_agy or settings.ia_modelo_agy
         orden = [
             settings.agy,
             "-p",
             prompt,
             "--model",
-            tarea.modelo_agy or settings.ia_modelo_agy,
+            modelo,
             "--output-format",
             "json",
             "--json-schema",
@@ -254,7 +266,8 @@ def motor_agy(tarea: Tarea, settings: Settings) -> dict[str, Any]:
             except OSError as exc:
                 raise ErrorIA("No se pudo lanzar agy") from exc
             try:
-                return interpretar_agy(proceso.stdout, proceso.stderr)
+                datos = interpretar_agy(proceso.stdout, proceso.stderr)
+                return RespuestaIA(datos=datos, motor="agy", modelo=modelo)
             except SinDatos:
                 # Un solo reintento, y solo si da tiempo dentro de lo que espera la web.
                 if intento == 2 or time.monotonic() - inicio > tarea.tiempo_maximo_s / 2:
@@ -291,7 +304,7 @@ def interpretar_claude(salida: str) -> dict[str, Any]:
     return structured
 
 
-def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
+def motor_claude(tarea: Tarea, settings: Settings) -> RespuestaIA:
     """Ejecuta una tarea usando Claude Code (`claude -p`)."""
     bloques: list[dict[str, Any]] = []
     for adjunto in tarea.adjuntos:
@@ -309,6 +322,7 @@ def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
     bloques.append({"type": "text", "text": tarea.instrucciones})
     mensaje = json.dumps({"type": "user", "message": {"role": "user", "content": bloques}}) + "\n"
 
+    modelo = tarea.modelo_claude or settings.ia_modelo_claude
     orden = [
         settings.claude,
         "-p",
@@ -326,7 +340,7 @@ def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
         "--json-schema",
         json.dumps(tarea.esquema),
         "--model",
-        tarea.modelo_claude or settings.ia_modelo_claude,
+        modelo,
     ]
 
     with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:
@@ -344,7 +358,8 @@ def motor_claude(tarea: Tarea, settings: Settings) -> dict[str, Any]:
         except OSError as exc:
             raise ErrorIA("No se pudo lanzar Claude Code") from exc
 
-        return interpretar_claude(proceso.stdout)
+        datos = interpretar_claude(proceso.stdout)
+        return RespuestaIA(datos=datos, motor="claude", modelo=modelo)
 
 
 MOTORES: dict[str, Motor] = {
@@ -359,16 +374,19 @@ def ejecutar(
     tarea: Tarea,
     settings: Settings,
     motor: Motor | None = None,
-) -> dict[str, Any]:
+) -> RespuestaIA:
     """Ejecuta una tarea de IA asegurando que solo haya una petición en marcha."""
     if not _en_marcha.acquire(blocking=False):
         raise IAOcupada("Ya hay otra petición a la IA en marcha")
 
     inicio = time.monotonic()
     estado = "ok"
+    motor_usado = settings.ia_motor
     try:
         motor_fn = motor or MOTORES[settings.ia_motor]
-        return motor_fn(tarea, settings)
+        resp = motor_fn(tarea, settings)
+        motor_usado = resp.motor
+        return resp
     except Exception as exc:
         estado = type(exc).__name__
         raise
@@ -377,7 +395,7 @@ def ejecutar(
         log.info(
             "Tarea IA %s con motor %s terminada en %.1f s: %s",
             tarea.nombre,
-            settings.ia_motor,
+            motor_usado,
             segundos,
             estado,
         )
@@ -576,9 +594,10 @@ def leer_etiqueta(
         instrucciones=INSTRUCCIONES_ETIQUETA,
         esquema=ESQUEMA_ETIQUETA,
         adjuntos=(Adjunto(tipo, imagen),),
+        razonamiento="low",
     )
-    datos = ejecutar(tarea, settings, motor=motor)
-    return etiqueta_desde_respuesta(datos)
+    resp = ejecutar(tarea, settings, motor=motor)
+    return etiqueta_desde_respuesta(resp.datos)
 
 
 INSTRUCCIONES_COMIDA = """\
@@ -682,10 +701,11 @@ def analizar_comida(
         esquema=ESQUEMA_COMIDA,
         adjuntos=adjuntos,
         modelo_agy=settings.ia_modelo_comida,
+        razonamiento="low",
         tiempo_maximo_s=TIEMPO_COMIDA_S,
     )
     try:
-        datos = ejecutar(tarea, settings, motor=motor)
+        resp = ejecutar(tarea, settings, motor=motor)
     except CupoAgotado:
         log.warning(
             "Sin cupo para %s; la comida va con %s",
@@ -693,9 +713,9 @@ def analizar_comida(
             settings.ia_modelo_comida_respaldo,
         )
         tarea = replace(tarea, modelo_agy=settings.ia_modelo_comida_respaldo)
-        datos = ejecutar(tarea, settings, motor=motor)
+        resp = ejecutar(tarea, settings, motor=motor)
 
-    alimentos_raw = datos.get("alimentos")
+    alimentos_raw = resp.datos.get("alimentos")
     if not isinstance(alimentos_raw, list):
         alimentos_raw = []
 

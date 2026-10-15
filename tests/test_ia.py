@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from salud.config import Settings
+from salud.config import ConfigError, Settings, load_settings
 from salud.ia import (
     MAX_BYTES_IMAGEN,
     MOTORES,
@@ -19,6 +19,7 @@ from salud.ia import (
     ErrorIA,
     Etiqueta,
     IAOcupada,
+    RespuestaIA,
     Tarea,
     analizar_comida,
     ejecutar,
@@ -334,7 +335,9 @@ def test_motor_agy_subprocess(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     resultado = motor_agy(tarea, settings)
-    assert resultado == {"kcal_100": 75}
+    assert resultado == RespuestaIA(
+        datos={"kcal_100": 75}, motor="agy", modelo="gemini-3.8-flash-medium"
+    )
 
     assert len(carpetas_temporales) == 1
     assert not carpetas_temporales[0].exists()
@@ -423,7 +426,7 @@ def test_motor_claude_subprocess(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     resultado = motor_claude(tarea, settings)
-    assert resultado == {"grasas_100": 8.0}
+    assert resultado == RespuestaIA(datos={"grasas_100": 8.0}, motor="claude", modelo="haiku")
 
 
 # 7. ejecutar: concurrencia y motor por defecto
@@ -436,28 +439,40 @@ def test_ejecutar_concurrencia_y_motor_por_defecto(tmp_path, monkeypatch):
     def motor_falso(t, s):
         with pytest.raises(IAOcupada, match="Ya hay otra petición a la IA en marcha"):
             ejecutar(t, s, motor=motor_falso)
-        return {"resultado": "primera"}
+        return RespuestaIA(datos={"resultado": "primera"}, motor="agy", modelo="m")
 
     res = ejecutar(tarea, settings_agy, motor=motor_falso)
-    assert res == {"resultado": "primera"}
+    assert res.datos == {"resultado": "primera"}
 
     # Tras terminar, el lock está libre
-    res2 = ejecutar(tarea, settings_agy, motor=lambda _t, _s: {"resultado": "segunda"})
-    assert res2 == {"resultado": "segunda"}
+    res2 = ejecutar(
+        tarea,
+        settings_agy,
+        motor=lambda _t, _s: RespuestaIA(datos={"resultado": "segunda"}, motor="agy", modelo="m"),
+    )
+    assert res2.datos == {"resultado": "segunda"}
 
     # Motor por defecto sale de settings.ia_motor
     llamadas = []
-    monkeypatch.setitem(MOTORES, "agy", lambda _t, _s: llamadas.append("agy") or {"motor": "agy"})
     monkeypatch.setitem(
-        MOTORES, "claude", lambda _t, _s: llamadas.append("claude") or {"motor": "claude"}
+        MOTORES,
+        "agy",
+        lambda _t, _s: llamadas.append("agy")
+        or RespuestaIA(datos={"motor": "agy"}, motor="agy", modelo="m"),
+    )
+    monkeypatch.setitem(
+        MOTORES,
+        "claude",
+        lambda _t, _s: llamadas.append("claude")
+        or RespuestaIA(datos={"motor": "claude"}, motor="claude", modelo="m"),
     )
 
     res_agy = ejecutar(tarea, settings_agy)
-    assert res_agy == {"motor": "agy"}
+    assert res_agy.datos == {"motor": "agy"}
     assert llamadas == ["agy"]
 
     res_claude = ejecutar(tarea, settings_claude)
-    assert res_claude == {"motor": "claude"}
+    assert res_claude.datos == {"motor": "claude"}
     assert llamadas == ["agy", "claude"]
 
 
@@ -468,24 +483,28 @@ def test_leer_etiqueta_con_motor_falso(tmp_path):
 
     def motor_falso(tarea, _settings):
         llamadas_motor.append(tarea)
-        return {
-            "legible": True,
-            "nombre": "Yogur Natural",
-            "marca": "Danone",
-            "unidad": "g",
-            "kcal_100": 60.0,
-            "kj_100": None,
-            "proteinas_100": 3.5,
-            "hidratos_100": 4.5,
-            "grasas_100": 3.0,
-            "racion_cantidad": None,
-            "racion_kcal": None,
-            "racion_kj": None,
-            "racion_proteinas": None,
-            "racion_hidratos": None,
-            "racion_grasas": None,
-            "aviso": None,
-        }
+        return RespuestaIA(
+            datos={
+                "legible": True,
+                "nombre": "Yogur Natural",
+                "marca": "Danone",
+                "unidad": "g",
+                "kcal_100": 60.0,
+                "kj_100": None,
+                "proteinas_100": 3.5,
+                "hidratos_100": 4.5,
+                "grasas_100": 3.0,
+                "racion_cantidad": None,
+                "racion_kcal": None,
+                "racion_kj": None,
+                "racion_proteinas": None,
+                "racion_hidratos": None,
+                "racion_grasas": None,
+                "aviso": None,
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     # Imagen no válida: ErrorIA sin llamar al motor
     with pytest.raises(ErrorIA, match="El fichero no es una imagen JPEG, PNG o WebP"):
@@ -507,6 +526,7 @@ def test_leer_etiqueta_con_motor_falso(tmp_path):
     assert len(llamadas_motor) == 1
     tarea_recibida = llamadas_motor[0]
     assert tarea_recibida.nombre == "etiqueta"
+    assert tarea_recibida.razonamiento == "low"
     assert len(tarea_recibida.adjuntos) == 1
     assert tarea_recibida.adjuntos[0].tipo == "image/jpeg"
     assert tarea_recibida.adjuntos[0].datos == img_valida
@@ -536,7 +556,8 @@ def test_motor_agy_modelo_override(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     resultado = motor_agy(tarea, settings)
-    assert resultado == {"ok": True}
+    assert resultado.datos == {"ok": True}
+    assert resultado.modelo == "gemini-3.8-flash-high"
 
 
 def test_motor_claude_modelo_override(tmp_path, monkeypatch):
@@ -562,7 +583,8 @@ def test_motor_claude_modelo_override(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     resultado = motor_claude(tarea, settings)
-    assert resultado == {"ok": True}
+    assert resultado.datos == {"ok": True}
+    assert resultado.modelo == "sonnet"
 
 
 def test_motor_agy_reintenta_una_vez_sin_datos(tmp_path, monkeypatch):
@@ -581,7 +603,7 @@ def test_motor_agy_reintenta_una_vez_sin_datos(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(orden, 0, stdout=respuestas.pop(0), stderr="")
 
     monkeypatch.setattr(subprocess, "run", falso)
-    assert motor_agy(tarea, settings) == {"ok": 1}
+    assert motor_agy(tarea, settings).datos == {"ok": 1}
     assert len(prompts) == 2
     assert prompts[0].startswith("Responde directamente")
 
@@ -618,30 +640,34 @@ def test_el_tiempo_maximo_es_el_de_la_tarea(monkeypatch, tmp_path):
 
     monkeypatch.setattr(subprocess, "run", falso_run)
     tarea = Tarea("consejo", "hola", {"type": "object"}, tiempo_maximo_s=300)
-    assert motor_agy(tarea, settings) == {"ok": True}
-    assert motor_agy(Tarea("etiqueta", "hola", {"type": "object"}), settings) == {"ok": True}
+    assert motor_agy(tarea, settings).datos == {"ok": True}
+    assert motor_agy(Tarea("etiqueta", "hola", {"type": "object"}), settings).datos == {"ok": True}
     assert llamadas == [("300s", 315), (f"{TIEMPO_MAXIMO_S}s", TIEMPO_MAXIMO_S + 15)]
 
 
 def test_analizar_comida_exito(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
-        return {
-            "alimentos": [
-                {
-                    "nombre": "Sopa de fideos",
-                    "cantidad": 150.0,
-                    "unidad": "g",
-                    "kcal": 95.0,
-                    "proteinas": 3.5,
-                    "hidratos": 14.0,
-                    "grasas": 2.5,
-                    "momento": "comida",
-                    "aviso": "Valores estimados",
-                }
-            ]
-        }
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": "Sopa de fideos",
+                        "cantidad": 150.0,
+                        "unidad": "g",
+                        "kcal": 95.0,
+                        "proteinas": 3.5,
+                        "hidratos": 14.0,
+                        "grasas": 2.5,
+                        "momento": "comida",
+                        "aviso": "Valores estimados",
+                    }
+                ]
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     resultado = analizar_comida(settings, "150 g de sopa de fideos", None, motor=motor_falso)
     assert len(resultado) == 1
@@ -661,66 +687,70 @@ def test_analizar_comida_exito(tmp_path):
 def test_analizar_comida_descarte_invalidos(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
-        return {
-            "alimentos": [
-                {
-                    "nombre": "Válido",
-                    "cantidad": 100.0,
-                    "unidad": "g",
-                    "kcal": 100.0,
-                    "proteinas": 5.0,
-                    "hidratos": 10.0,
-                    "grasas": 2.0,
-                    "momento": None,
-                    "aviso": None,
-                },
-                {
-                    "nombre": "   ",
-                    "cantidad": 50.0,
-                    "unidad": "g",
-                    "kcal": 50.0,
-                    "proteinas": 1.0,
-                    "hidratos": 5.0,
-                    "grasas": 1.0,
-                    "momento": None,
-                    "aviso": None,
-                },
-                {
-                    "nombre": "Cantidad cero",
-                    "cantidad": 0.0,
-                    "unidad": "g",
-                    "kcal": 50.0,
-                    "proteinas": 1.0,
-                    "hidratos": 5.0,
-                    "grasas": 1.0,
-                    "momento": None,
-                    "aviso": None,
-                },
-                {
-                    "nombre": "Cantidad gigante",
-                    "cantidad": 9000.0,
-                    "unidad": "g",
-                    "kcal": 50.0,
-                    "proteinas": 1.0,
-                    "hidratos": 5.0,
-                    "grasas": 1.0,
-                    "momento": None,
-                    "aviso": None,
-                },
-                {
-                    "nombre": "Unidad incorrecta",
-                    "cantidad": 1.0,
-                    "unidad": "kg",
-                    "kcal": 50.0,
-                    "proteinas": 1.0,
-                    "hidratos": 5.0,
-                    "grasas": 1.0,
-                    "momento": None,
-                    "aviso": None,
-                },
-            ]
-        }
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": "Válido",
+                        "cantidad": 100.0,
+                        "unidad": "g",
+                        "kcal": 100.0,
+                        "proteinas": 5.0,
+                        "hidratos": 10.0,
+                        "grasas": 2.0,
+                        "momento": None,
+                        "aviso": None,
+                    },
+                    {
+                        "nombre": "   ",
+                        "cantidad": 50.0,
+                        "unidad": "g",
+                        "kcal": 50.0,
+                        "proteinas": 1.0,
+                        "hidratos": 5.0,
+                        "grasas": 1.0,
+                        "momento": None,
+                        "aviso": None,
+                    },
+                    {
+                        "nombre": "Cantidad cero",
+                        "cantidad": 0.0,
+                        "unidad": "g",
+                        "kcal": 50.0,
+                        "proteinas": 1.0,
+                        "hidratos": 5.0,
+                        "grasas": 1.0,
+                        "momento": None,
+                        "aviso": None,
+                    },
+                    {
+                        "nombre": "Cantidad gigante",
+                        "cantidad": 9000.0,
+                        "unidad": "g",
+                        "kcal": 50.0,
+                        "proteinas": 1.0,
+                        "hidratos": 5.0,
+                        "grasas": 1.0,
+                        "momento": None,
+                        "aviso": None,
+                    },
+                    {
+                        "nombre": "Unidad incorrecta",
+                        "cantidad": 1.0,
+                        "unidad": "kg",
+                        "kcal": 50.0,
+                        "proteinas": 1.0,
+                        "hidratos": 5.0,
+                        "grasas": 1.0,
+                        "momento": None,
+                        "aviso": None,
+                    },
+                ]
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     resultado = analizar_comida(settings, "plato variado", None, motor=motor_falso)
     assert len(resultado) == 1
@@ -730,22 +760,26 @@ def test_analizar_comida_descarte_invalidos(tmp_path):
 def test_analizar_comida_rangos_kcal_macros_y_momento(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_falso(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
-        return {
-            "alimentos": [
-                {
-                    "nombre": "Extremo",
-                    "cantidad": 100.0,
-                    "unidad": "g",
-                    "kcal": 6000.0,  # fuera de rango (>5000) -> None
-                    "proteinas": 1500.0,  # fuera de rango (>1000) -> None
-                    "hidratos": 50.0,
-                    "grasas": -5.0,  # negativo -> None
-                    "momento": "medianoche",  # no válido -> None
-                    "aviso": None,
-                }
-            ]
-        }
+    def motor_falso(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": "Extremo",
+                        "cantidad": 100.0,
+                        "unidad": "g",
+                        "kcal": 6000.0,  # fuera de rango (>5000) -> None
+                        "proteinas": 1500.0,  # fuera de rango (>1000) -> None
+                        "hidratos": 50.0,
+                        "grasas": -5.0,  # negativo -> None
+                        "momento": "medianoche",  # no válido -> None
+                        "aviso": None,
+                    }
+                ]
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     resultado = analizar_comida(settings, "comida rara", None, motor=motor_falso)
     assert len(resultado) == 1
@@ -760,8 +794,8 @@ def test_analizar_comida_rangos_kcal_macros_y_momento(tmp_path):
 def test_analizar_comida_lista_vacia_error(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_vacio(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
-        return {"alimentos": []}
+    def motor_vacio(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"alimentos": []}, motor="agy", modelo="m")
 
     with pytest.raises(ErrorIA, match="No he reconocido nada que se coma o se beba"):
         analizar_comida(settings, "un ratón de ordenador", None, motor=motor_vacio)
@@ -770,7 +804,7 @@ def test_analizar_comida_lista_vacia_error(tmp_path):
 def test_analizar_comida_validaciones_entrada(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_no_llamar(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+    def motor_no_llamar(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
         pytest.fail("No debería llamarse al motor")
 
     # Sin texto ni imagen
@@ -805,23 +839,27 @@ def test_analizar_comida_tarea_atributos_y_foto(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
     tarea_capturada: list[Tarea] = []
 
-    def motor_capturador(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+    def motor_capturador(tarea: Tarea, _settings: Settings) -> RespuestaIA:
         tarea_capturada.append(tarea)
-        return {
-            "alimentos": [
-                {
-                    "nombre": "Foto alimento",
-                    "cantidad": 100.0,
-                    "unidad": "g",
-                    "kcal": 100.0,
-                    "proteinas": 5.0,
-                    "hidratos": 10.0,
-                    "grasas": 2.0,
-                    "momento": None,
-                    "aviso": None,
-                }
-            ]
-        }
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": "Foto alimento",
+                        "cantidad": 100.0,
+                        "unidad": "g",
+                        "kcal": 100.0,
+                        "proteinas": 5.0,
+                        "hidratos": 10.0,
+                        "grasas": 2.0,
+                        "momento": None,
+                        "aviso": None,
+                    }
+                ]
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     foto_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF"
     analizar_comida(settings, "", foto_bytes, motor=motor_capturador)
@@ -829,6 +867,7 @@ def test_analizar_comida_tarea_atributos_y_foto(tmp_path):
     t = tarea_capturada[0]
     assert t.nombre == "comida"
     assert t.modelo_agy == settings.ia_modelo_comida
+    assert t.razonamiento == "low"
     assert t.tiempo_maximo_s == TIEMPO_COMIDA_S
     assert len(t.adjuntos) == 1
     assert t.adjuntos[0].tipo == "image/jpeg"
@@ -839,23 +878,27 @@ def test_analizar_comida_tarea_atributos_y_foto(tmp_path):
 def test_analizar_comida_maximo_20_alimentos(tmp_path):
     settings = Settings(db_path=tmp_path / "s.db")
 
-    def motor_muchos(_tarea: Tarea, _settings: Settings) -> dict[str, Any]:
-        return {
-            "alimentos": [
-                {
-                    "nombre": f"Alimento {i}",
-                    "cantidad": 10.0,
-                    "unidad": "g",
-                    "kcal": 10.0,
-                    "proteinas": 1.0,
-                    "hidratos": 1.0,
-                    "grasas": 1.0,
-                    "momento": None,
-                    "aviso": None,
-                }
-                for i in range(25)
-            ]
-        }
+    def motor_muchos(_tarea: Tarea, _settings: Settings) -> RespuestaIA:
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": f"Alimento {i}",
+                        "cantidad": 10.0,
+                        "unidad": "g",
+                        "kcal": 10.0,
+                        "proteinas": 1.0,
+                        "hidratos": 1.0,
+                        "grasas": 1.0,
+                        "momento": None,
+                        "aviso": None,
+                    }
+                    for i in range(25)
+                ]
+            },
+            motor="agy",
+            modelo="m",
+        )
 
     resultado = analizar_comida(settings, "buffet libre", None, motor=motor_muchos)
     assert len(resultado) == 20
@@ -864,26 +907,71 @@ def test_analizar_comida_maximo_20_alimentos(tmp_path):
 def test_analizar_comida_sin_cupo_pasa_al_respaldo(settings):
     modelos: list[str | None] = []
 
-    def motor(tarea: Tarea, _settings: Settings) -> dict[str, Any]:
+    def motor(tarea: Tarea, _settings: Settings) -> RespuestaIA:
         modelos.append(tarea.modelo_agy)
         if tarea.modelo_agy == settings.ia_modelo_comida:
             raise CupoAgotado("sin cupo")
-        return {
-            "alimentos": [
-                {
-                    "nombre": "Cerveza (5 tercios)",
-                    "cantidad": 1650,
-                    "unidad": "ml",
-                    "kcal": 700,
-                    "proteinas": 5,
-                    "hidratos": 51,
-                    "grasas": 0,
-                    "momento": "cena",
-                    "aviso": None,
-                }
-            ]
-        }
+        return RespuestaIA(
+            datos={
+                "alimentos": [
+                    {
+                        "nombre": "Cerveza (5 tercios)",
+                        "cantidad": 1650,
+                        "unidad": "ml",
+                        "kcal": 700,
+                        "proteinas": 5,
+                        "hidratos": 51,
+                        "grasas": 0,
+                        "momento": "cena",
+                        "aviso": None,
+                    }
+                ]
+            },
+            motor="agy",
+            modelo=tarea.modelo_agy or "m",
+        )
 
     [cerveza] = analizar_comida(settings, "5 cervezas", None, motor=motor)
     assert cerveza.cantidad == 1650
     assert modelos == [settings.ia_modelo_comida, settings.ia_modelo_comida_respaldo]
+
+
+def test_settings_vertex_config_y_repr(tmp_path, monkeypatch):
+    """Comprueba campos vertex en load_settings, validación y repr sin clave."""
+    s = Settings(
+        db_path=tmp_path / "s.db",
+        vertex_api_key="super-secreto-key",
+        vertex_proyecto="mi-proyecto",
+    )
+    assert "super-secreto-key" not in repr(s)
+    assert "vertex_api_key" not in repr(s)
+
+    monkeypatch.setenv("SALUD_IA_MOTOR", "vertex")
+    monkeypatch.delenv("SALUD_VERTEX_API_KEY", raising=False)
+    monkeypatch.delenv("SALUD_VERTEX_PROYECTO", raising=False)
+    with pytest.raises(ConfigError, match="SALUD_IA_MOTOR=vertex requiere"):
+        load_settings()
+
+    monkeypatch.setenv("SALUD_VERTEX_API_KEY", "clave-123")
+    with pytest.raises(ConfigError, match="SALUD_IA_MOTOR=vertex requiere"):
+        load_settings()
+
+    monkeypatch.delenv("SALUD_VERTEX_API_KEY", raising=False)
+    monkeypatch.setenv("SALUD_VERTEX_PROYECTO", "proy-123")
+    with pytest.raises(ConfigError, match="SALUD_IA_MOTOR=vertex requiere"):
+        load_settings()
+
+    monkeypatch.setenv("SALUD_VERTEX_API_KEY", "clave-123")
+    monkeypatch.setenv("SALUD_VERTEX_PROYECTO", "proy-123")
+    monkeypatch.setenv("SALUD_VERTEX_REGION", "europe-west1")
+    monkeypatch.setenv("SALUD_VERTEX_MODELO", "gemini-test-flash")
+    monkeypatch.setenv("SALUD_VERTEX_MODELO_CONSEJO", "gemini-test-pro")
+
+    cfg = load_settings()
+    assert cfg.ia_motor == "vertex"
+    assert cfg.vertex_api_key == "clave-123"
+    assert cfg.vertex_proyecto == "proy-123"
+    assert cfg.vertex_region == "europe-west1"
+    assert cfg.vertex_modelo == "gemini-test-flash"
+    assert cfg.vertex_modelo_consejo == "gemini-test-pro"
+

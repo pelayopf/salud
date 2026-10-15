@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 # partir del directorio de trabajo, lo que falla si arranca desde systemd.
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
-MOTORES_IA = ("agy", "claude")
+MOTORES_IA = ("agy", "claude", "vertex")
 
 
 class ConfigError(Exception):
@@ -36,7 +36,7 @@ class Settings:
     # Repo de fitness-tracker, para usar su MCP en solo lectura (o None).
     fitness_tracker: Path | None = None
     uv: str = "uv"
-    # Funciones de IA bajo petición (salud/ia.py): "agy" (Gemini, por defecto) o "claude".
+    # Funciones de IA bajo petición (salud/ia.py): "agy" (Gemini, por defecto), "claude" o "vertex".
     ia_motor: str = "agy"
     agy: str = "agy"
     # Sesión de agy (Google): el HOME aislado de cada tarea solo enlaza este fichero.
@@ -57,6 +57,12 @@ class Settings:
     # se agota el cupo de Gemini.
     ia_modelo_comida: str = "gemini-3.8-flash-low"
     ia_modelo_comida_respaldo: str = "claude-sonnet-5-5-medium"
+    # Motor "vertex" (Gemini por Vertex AI con clave de API de cuenta de servicio).
+    vertex_api_key: str | None = field(default=None, repr=False)
+    vertex_proyecto: str | None = None
+    vertex_region: str = "global"
+    vertex_modelo: str = "gemini-3.8-flash"
+    vertex_modelo_consejo: str = "gemini-3.1-pro"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -80,6 +86,17 @@ def load_settings() -> Settings:
     ia_motor = os.environ.get("SALUD_IA_MOTOR", "").strip() or "agy"
     if ia_motor not in MOTORES_IA:
         raise ConfigError(f"SALUD_IA_MOTOR debe ser {' o '.join(MOTORES_IA)}: {ia_motor}")
+    vertex_api_key = os.environ.get("SALUD_VERTEX_API_KEY", "").strip() or None
+    vertex_proyecto = os.environ.get("SALUD_VERTEX_PROYECTO", "").strip() or None
+    vertex_region = os.environ.get("SALUD_VERTEX_REGION", "").strip() or "global"
+    vertex_modelo = os.environ.get("SALUD_VERTEX_MODELO", "").strip() or "gemini-3.8-flash"
+    vertex_modelo_consejo = (
+        os.environ.get("SALUD_VERTEX_MODELO_CONSEJO", "").strip() or "gemini-3.1-pro"
+    )
+    if ia_motor == "vertex" and (not vertex_api_key or not vertex_proyecto):
+        raise ConfigError(
+            "SALUD_IA_MOTOR=vertex requiere SALUD_VERTEX_API_KEY y SALUD_VERTEX_PROYECTO"
+        )
     return Settings(
         db_path=_ruta(os.environ.get("SALUD_DB_PATH", "~/.local/share/salud/salud.db")),
         usuarios=frozenset(u.strip().lower() for u in usuarios.split(",") if u.strip()),
@@ -106,6 +123,11 @@ def load_settings() -> Settings:
         or "gemini-3.8-flash-low",
         ia_modelo_comida_respaldo=os.environ.get("SALUD_IA_MODELO_COMIDA_RESPALDO", "").strip()
         or "claude-sonnet-5-5-medium",
+        vertex_api_key=vertex_api_key,
+        vertex_proyecto=vertex_proyecto,
+        vertex_region=vertex_region,
+        vertex_modelo=vertex_modelo,
+        vertex_modelo_consejo=vertex_modelo_consejo,
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
         url_publica=os.environ.get("SALUD_URL_PUBLICA", "").strip().rstrip("/"),
@@ -113,3 +135,4 @@ def load_settings() -> Settings:
             os.environ.get("SALUD_GOOGLE_OAUTH", "~/.config/salud/google-oauth.json")
         ),
     )
+
