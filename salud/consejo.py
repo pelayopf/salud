@@ -63,7 +63,7 @@ MAX_AVISO = 200
 MAX_AVISOS = 3
 MAX_NOTA = 300
 # El consejo se prepara en segundo plano y la web espera lo que haga falta:
-# prima la calidad (Flash High tarda de 35 s a más de 2 min según el día).
+# prima la calidad (con Sonnet, ~25 s; con Flash Medium de respaldo, ~1 min).
 TIEMPO_CONSEJO_S = 300
 
 

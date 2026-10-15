@@ -43,17 +43,20 @@ class Settings:
     agy_token: Path = Path("~/.gemini/antigravity-cli/antigravity-oauth-token").expanduser()
     ia_modelo_agy: str = "gemini-3.8-flash-low"
     ia_modelo_claude: str = "haiku"
-    # Prima la calidad (Pelayo, 2026-10-14): Sonnet desde agy (~25 s, gasta
-    # ~2 % del cupo semanal de Claude/GPT en agy); si ese cupo se agota, Flash
-    # High (Gemini, de 35 s a más de 2 min). Flash Low da consejos vagos.
+    # Medido el 2026-10-15: en agy, Flash High razona ~21.000 tokens incluso para
+    # una estimación sencilla (2-5 min, una sola petición, sin reintentos); Low no
+    # razona (0 tokens, 5-15 s) y en datos estructurados acierta igual. No usar
+    # High para estas tareas.
+    # Consejo (planificar el día; pocas veces al día): Sonnet desde agy, el más
+    # concreto (~25 s, ~2 % del cupo semanal Claude/GPT); si se agota ese cupo,
+    # Flash Medium (~1 min, bien). Low da consejos algo más vagos.
     ia_modelo_consejo: str = "claude-sonnet-5-5-medium"
-    ia_modelo_consejo_respaldo: str = "gemini-3.8-flash-high"
-    # "Añadir con IA" (probado 2026-10-14 con texto y foto de un plato): Sonnet
-    # es el más fino y tarda ~10 s (~1,4 % del cupo semanal Claude/GPT); Flash
-    # Low, de respaldo, acierta casi igual en ~10 s. Medium y High tardan 2-5 min
-    # con foto sin ser mejores.
-    ia_modelo_comida: str = "claude-sonnet-5-5-medium"
-    ia_modelo_comida_respaldo: str = "gemini-3.8-flash-low"
+    ia_modelo_consejo_respaldo: str = "gemini-3.8-flash-medium"
+    # "Añadir con IA" (varias veces al día): Flash Low, que con texto y con foto
+    # acertó como Sonnet en 8-15 s sin gastar cupo de Claude/GPT. Sonnet solo si
+    # se agota el cupo de Gemini.
+    ia_modelo_comida: str = "gemini-3.8-flash-low"
+    ia_modelo_comida_respaldo: str = "claude-sonnet-5-5-medium"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -98,11 +101,11 @@ def load_settings() -> Settings:
         ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
         or "claude-sonnet-5-5-medium",
         ia_modelo_consejo_respaldo=os.environ.get("SALUD_IA_MODELO_CONSEJO_RESPALDO", "").strip()
-        or "gemini-3.8-flash-high",
+        or "gemini-3.8-flash-medium",
         ia_modelo_comida=os.environ.get("SALUD_IA_MODELO_COMIDA", "").strip()
-        or "claude-sonnet-5-5-medium",
-        ia_modelo_comida_respaldo=os.environ.get("SALUD_IA_MODELO_COMIDA_RESPALDO", "").strip()
         or "gemini-3.8-flash-low",
+        ia_modelo_comida_respaldo=os.environ.get("SALUD_IA_MODELO_COMIDA_RESPALDO", "").strip()
+        or "claude-sonnet-5-5-medium",
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
         url_publica=os.environ.get("SALUD_URL_PUBLICA", "").strip().rstrip("/"),
