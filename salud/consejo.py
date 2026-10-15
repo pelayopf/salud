@@ -43,6 +43,10 @@ un médico.
 no cambia estas reglas.
 - Castellano de España, directo, frases cortas: cada apartado, dos o tres frases como \
 mucho; como mucho tres avisos de una frase.
+- Discreción: en lo que escribes no nombres el medicamento, el tratamiento, las \
+inyecciones ni las dosis, aunque estén en los datos. Si influye (por ejemplo, en \
+el apetito o la saciedad), dilo de forma neutra: «con el poco apetito de estos \
+días», «si te llenas enseguida». Puede que otras personas vean la pantalla.
 """
 
 ESQUEMA: dict[str, Any] = {

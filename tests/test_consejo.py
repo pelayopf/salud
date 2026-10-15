@@ -145,6 +145,10 @@ def test_mensaje():
     assert "Nota de la persona:" not in msg_sin
 
 
+def test_instrucciones_contiene_discrecion():
+    assert "Discreción" in consejo.INSTRUCCIONES
+
+
 def test_interpretar():
     # Válido
     valido = {

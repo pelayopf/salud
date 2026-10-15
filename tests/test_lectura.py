@@ -157,6 +157,10 @@ def test_sistema_menciona_plan_deporte():
     assert "Respeta su plan de deporte" in lectura.SISTEMA
 
 
+def test_sistema_contiene_discrecion():
+    assert "Discreción" in lectura.SISTEMA
+
+
 def test_comando_sin_herramientas_ni_configuracion(settings):
     orden = lectura.comando(settings, None)
     assert orden[:2] == ["claude", "-p"]

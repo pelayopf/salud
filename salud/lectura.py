@@ -161,6 +161,10 @@ ser un problema de salud, recomienda consultarlo con un médico.
 - Breve, que se lee en el móvil: el análisis, el detalle del entreno y la comida, tres frases \
 como mucho cada uno; como mucho tres alertas, de una frase cada una.
 - Castellano de España, directo y con frases cortas.
+- Discreción: en lo que escribes no nombres el medicamento, el tratamiento, las \
+inyecciones ni las dosis, aunque estén en los datos. Si influye (por ejemplo, en \
+el apetito o la saciedad), dilo de forma neutra: «con el poco apetito de estos \
+días», «si te llenas enseguida». Puede que otras personas vean la pantalla.
 """
 
 
