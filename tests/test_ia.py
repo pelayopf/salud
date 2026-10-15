@@ -1206,3 +1206,112 @@ def test_motor_vertex_sin_datos(tmp_path):
         motor_vertex(tarea, settings, cliente=c_json_roto)
 
 
+def test_ejecutar_vertex_falla_repite_con_agy(tmp_path, monkeypatch, caplog):
+    """Si motor_vertex lanza VertexNoDisponible, ejecutar repite con agy y lo avisa en log."""
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+    )
+    tarea = Tarea(nombre="etiqueta", instrucciones="instrucciones", esquema={})
+
+    llamadas_vertex = 0
+    llamadas_agy = 0
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        nonlocal llamadas_vertex
+        llamadas_vertex += 1
+        raise VertexNoDisponible("La clave de Vertex no vale o no tiene permiso")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        nonlocal llamadas_agy
+        llamadas_agy += 1
+        return RespuestaIA(datos={"desde": "agy"}, motor="agy", modelo="gemini-3.8-flash-low")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    with caplog.at_level("INFO"):
+        res = ejecutar(tarea, settings)
+
+    assert res.datos == {"desde": "agy"}
+    assert res.motor == "agy"
+    assert llamadas_vertex == 1
+    assert llamadas_agy == 1
+    assert "Vertex no disponible en tarea etiqueta" in caplog.text
+    assert "Tarea IA etiqueta con motor agy terminada" in caplog.text
+
+
+def test_ejecutar_vertex_sindatos_repite_con_agy(tmp_path, monkeypatch):
+    """Si motor_vertex lanza SinDatos, ejecutar repite con agy."""
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+    )
+    tarea = Tarea(nombre="comida", instrucciones="instrucciones", esquema={})
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        raise SinDatos("Vertex no devolvió los datos pedidos")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"desde": "agy_sindatos"}, motor="agy", modelo="gemini-low")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    res = ejecutar(tarea, settings)
+    assert res.datos == {"desde": "agy_sindatos"}
+    assert res.motor == "agy"
+
+
+def test_ejecutar_vertex_exito_no_llama_a_agy(tmp_path, monkeypatch):
+    """Si motor_vertex tiene éxito, no llama a agy."""
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+    )
+    tarea = Tarea(nombre="etiqueta", instrucciones="instrucciones", esquema={})
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        return RespuestaIA(datos={"desde": "vertex"}, motor="vertex", modelo="gemini-3.8-flash")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        pytest.fail("No debería llamarse a motor_agy")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    res = ejecutar(tarea, settings)
+    assert res.datos == {"desde": "vertex"}
+    assert res.motor == "vertex"
+
+
+def test_ejecutar_vertex_otro_error_no_repite(tmp_path, monkeypatch):
+    """Errores que no son VertexNoDisponible ni SinDatos no repiten con agy."""
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+    )
+    tarea = Tarea(nombre="etiqueta", instrucciones="instrucciones", esquema={})
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        raise ErrorIA("Petición incorrecta 400")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        pytest.fail("No debería llamarse a motor_agy")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    with pytest.raises(ErrorIA, match="Petición incorrecta 400"):
+        ejecutar(tarea, settings)
+
+
+

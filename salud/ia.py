@@ -521,10 +521,25 @@ def ejecutar(
     estado = "ok"
     motor_usado = settings.ia_motor
     try:
-        motor_fn = motor or MOTORES[settings.ia_motor]
-        resp = motor_fn(tarea, settings)
-        motor_usado = resp.motor
-        return resp
+        if motor is None and settings.ia_motor == "vertex":
+            try:
+                resp = MOTORES["vertex"](tarea, settings)
+                motor_usado = resp.motor
+                return resp
+            except (VertexNoDisponible, SinDatos) as exc:
+                log.warning(
+                    "Vertex no disponible en tarea %s (%s); se repite con agy",
+                    tarea.nombre,
+                    exc,
+                )
+                resp = MOTORES["agy"](tarea, settings)
+                motor_usado = resp.motor
+                return resp
+        else:
+            motor_fn = motor or MOTORES[settings.ia_motor]
+            resp = motor_fn(tarea, settings)
+            motor_usado = resp.motor
+            return resp
     except Exception as exc:
         estado = type(exc).__name__
         raise
