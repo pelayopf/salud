@@ -16,6 +16,7 @@ ningún CLAUDE.md ni ejecute hooks.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import subprocess
 import tempfile
@@ -26,9 +27,11 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from . import calendario, db, tratamiento
+from . import calendario, db, ia, tratamiento
 from .config import Settings
 from .metricas import CATALOGO, nombre_tipo, texto
+
+log = logging.getLogger(__name__)
 
 DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 MESES = (
@@ -352,6 +355,7 @@ def comando(settings: Settings, mcp: Path | None) -> list[str]:
 
 
 Ejecutor = Callable[[list[str], str, Path], str]
+EjecutorVertex = Callable[[ia.Tarea, Settings], ia.RespuestaIA]
 
 
 def ejecutar(orden: list[str], entrada: str, directorio: Path) -> str:
@@ -374,6 +378,18 @@ def ejecutar(orden: list[str], entrada: str, directorio: Path) -> str:
     return proceso.stdout
 
 
+def validar(contenido: Any) -> dict[str, Any]:
+    """Comprueba que la lectura traiga los campos requeridos y un estado válido."""
+    if not isinstance(contenido, dict):
+        raise LecturaError("La respuesta no trae la lectura")
+    faltan = [c for c in ESQUEMA["required"] if c not in contenido]
+    if faltan:
+        raise LecturaError(f"A la lectura le falta: {', '.join(faltan)}")
+    if contenido.get("estado") not in ESTADOS:
+        raise LecturaError(f"Estado desconocido: {contenido.get('estado')!r}")
+    return contenido
+
+
 def interpretar(salida: str) -> dict[str, Any]:
     """Saca la lectura de la respuesta de `claude -p --output-format json`."""
     try:
@@ -388,21 +404,59 @@ def interpretar(salida: str) -> dict[str, Any]:
             contenido = json.loads(respuesta.get("result") or "")
         except json.JSONDecodeError as exc:
             raise LecturaError("La respuesta no trae la lectura") from exc
-    faltan = [c for c in ESQUEMA["required"] if c not in contenido]
-    if faltan:
-        raise LecturaError(f"A la lectura le falta: {', '.join(faltan)}")
-    if contenido["estado"] not in ESTADOS:
-        raise LecturaError(f"Estado desconocido: {contenido['estado']!r}")
-    return contenido
+    return validar(contenido)
 
 
 def generar(
-    con: sqlite3.Connection, settings: Settings, fecha: date, ejecutor: Ejecutor = ejecutar
+    con: sqlite3.Connection,
+    settings: Settings,
+    fecha: date,
+    ejecutor: Ejecutor = ejecutar,
+    ejecutor_vertex: EjecutorVertex = ia.ejecutar_vertex,
 ) -> dict[str, Any]:
     """Pide la lectura de `fecha` y la guarda (también si falla, con el error)."""
-    mcp = configuracion_mcp(settings)
-    entrada = mensaje(contexto(con, fecha), perfil(settings.perfil_path), mcp is not None)
+    ctx = contexto(con, fecha)
+    txt_perfil = perfil(settings.perfil_path)
     inicio = time.monotonic()
+
+    if settings.lectura_motor == "vertex":
+        tarea = ia.Tarea(
+            nombre="lectura",
+            instrucciones=SISTEMA + "\n\n" + mensaje(ctx, txt_perfil, con_fitness=False),
+            esquema=ESQUEMA,
+            modelo_vertex=settings.vertex_modelo_consejo,
+            modelo_vertex_respaldo=settings.vertex_modelo_consejo_respaldo,
+            razonamiento="high",
+            tiempo_maximo_s=TIEMPO_MAXIMO_S,
+        )
+        try:
+            resp = ejecutor_vertex(tarea, settings)
+            try:
+                contenido = validar(resp.datos)
+            except LecturaError as exc:
+                previa = db.lectura(con, fecha.isoformat())
+                if previa is None or previa["estado"] != "ok":
+                    db.guardar_lectura(
+                        con,
+                        fecha.isoformat(),
+                        error=str(exc),
+                        modelo=f"vertex:{resp.modelo}",
+                        segundos=round(time.monotonic() - inicio, 1),
+                    )
+                raise
+            db.guardar_lectura(
+                con,
+                fecha.isoformat(),
+                contenido=contenido,
+                modelo=f"vertex:{resp.modelo}",
+                segundos=round(time.monotonic() - inicio, 1),
+            )
+            return contenido
+        except ia.ErrorIA as exc:
+            log.warning("Fallo en lectura por Vertex (%s); se intenta con Claude", exc)
+
+    mcp = configuracion_mcp(settings)
+    entrada = mensaje(ctx, txt_perfil, mcp is not None)
     # Fuera de la carpeta personal: así no hay ningún CLAUDE.md por encima.
     with tempfile.TemporaryDirectory(prefix="salud-lectura-", dir="/tmp") as tmp:
         directorio = Path(tmp)

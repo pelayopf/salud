@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conftest import hay
 
-from salud import db, lectura, metricas, sync
+from salud import db, ia, lectura, metricas, sync
 from salud.lectura import LecturaError
 
 BUENA = {
@@ -243,3 +243,120 @@ def test_si_falla_se_apunta_el_error_pero_no_pisa_una_buena(con, settings):
 def test_ejecutar_avisa_si_no_hay_claude(tmp_path):
     with pytest.raises(LecturaError, match="No se pudo lanzar"):
         lectura.ejecutar(["/no/existe/claude", "-p"], "hola", tmp_path)
+
+
+def test_generar_con_vertex_exito_no_llama_a_claude(con_datos, settings):
+    s = replace(settings, lectura_motor="vertex")
+    tareas_recibidas: list[ia.Tarea] = []
+
+    def fake_vertex(t: ia.Tarea, _s) -> ia.RespuestaIA:
+        tareas_recibidas.append(t)
+        return ia.RespuestaIA(datos=BUENA, motor="vertex", modelo="gemini-4-argon")
+
+    def fake_claude(*_args):
+        pytest.fail("No se debería llamar al ejecutor de Claude")
+
+    res = lectura.generar(
+        con_datos, s, date(2026, 1, 10), ejecutor=fake_claude, ejecutor_vertex=fake_vertex
+    )
+    assert res == BUENA
+    assert len(tareas_recibidas) == 1
+    t = tareas_recibidas[0]
+    assert t.nombre == "lectura"
+    assert t.modelo_vertex == settings.vertex_modelo_consejo
+    assert t.modelo_vertex_respaldo == settings.vertex_modelo_consejo_respaldo
+    assert t.razonamiento == "high"
+    assert t.tiempo_maximo_s == lectura.TIEMPO_MAXIMO_S
+    assert lectura.SISTEMA in t.instrucciones
+    assert "No tienes herramientas" in t.instrucciones
+
+    guardada = hay(db.lectura(con_datos, "2026-01-10"))
+    assert guardada["estado"] == "ok"
+    assert guardada["contenido"] == BUENA
+    assert guardada["modelo"] == "vertex:gemini-4-argon"
+
+
+def test_generar_con_vertex_falla_cae_a_claude(con_datos, settings, caplog):
+    s = replace(settings, lectura_motor="vertex")
+    llamadas_claude: list[str] = []
+
+    def fake_vertex(_t: ia.Tarea, _s) -> ia.RespuestaIA:
+        raise ia.VertexNoDisponible("Vertex sin cupo (429)")
+
+    def fake_claude(_orden, _entrada, _dir):
+        llamadas_claude.append("claude")
+        return _salida()
+
+    with caplog.at_level("WARNING"):
+        res = lectura.generar(
+            con_datos, s, date(2026, 1, 10), ejecutor=fake_claude, ejecutor_vertex=fake_vertex
+        )
+
+    assert res == BUENA
+    assert llamadas_claude == ["claude"]
+    assert "Fallo en lectura por Vertex" in caplog.text
+
+    guardada = hay(db.lectura(con_datos, "2026-01-10"))
+    assert guardada["estado"] == "ok"
+    assert guardada["contenido"] == BUENA
+    assert guardada["modelo"] == settings.lectura_modelo
+
+
+def test_generar_con_motor_claude_no_llama_a_vertex(con_datos, settings):
+    s = replace(settings, lectura_motor="claude")
+
+    def fake_vertex(_t, _s):
+        pytest.fail("No se debería llamar a Vertex con lectura_motor=claude")
+
+    def fake_claude(_orden, _entrada, _dir):
+        return _salida()
+
+    res = lectura.generar(
+        con_datos, s, date(2026, 1, 10), ejecutor=fake_claude, ejecutor_vertex=fake_vertex
+    )
+    assert res == BUENA
+
+    guardada = hay(db.lectura(con_datos, "2026-01-10"))
+    assert guardada["estado"] == "ok"
+    assert guardada["modelo"] == settings.lectura_modelo
+
+
+def test_validacion_comun_rechaza_estado_desconocido_y_campos_faltan(con, settings):
+    # Función directa validar()
+    with pytest.raises(LecturaError, match="falta: comida"):
+        lectura.validar({k: v for k, v in BUENA.items() if k != "comida"})
+    with pytest.raises(LecturaError, match="Estado desconocido: 'azul'"):
+        lectura.validar(BUENA | {"estado": "azul"})
+    with pytest.raises(LecturaError, match="La respuesta no trae la lectura"):
+        lectura.validar("no dict")
+
+    # Camino Claude (interpretar)
+    with pytest.raises(LecturaError, match="falta: comida"):
+        lectura.interpretar(_salida({k: v for k, v in BUENA.items() if k != "comida"}))
+    with pytest.raises(LecturaError, match="Estado desconocido: 'azul'"):
+        lectura.interpretar(_salida(BUENA | {"estado": "azul"}))
+
+    # Camino Vertex (generar)
+    s_vertex = replace(settings, lectura_motor="vertex")
+
+    # Vertex devuelve dict con campo faltante -> LecturaError
+    def vertex_incompleto(_t, _s):
+        return ia.RespuestaIA(
+            datos={k: v for k, v in BUENA.items() if k != "comida"},
+            motor="vertex",
+            modelo="gemini-4-argon",
+        )
+
+    with pytest.raises(LecturaError, match="falta: comida"):
+        lectura.generar(con, s_vertex, date(2026, 1, 10), ejecutor_vertex=vertex_incompleto)
+
+    # Vertex devuelve dict con estado desconocido -> LecturaError
+    def vertex_estado_malo(_t, _s):
+        return ia.RespuestaIA(
+            datos=BUENA | {"estado": "azul"},
+            motor="vertex",
+            modelo="gemini-4-argon",
+        )
+
+    with pytest.raises(LecturaError, match="Estado desconocido: 'azul'"):
+        lectura.generar(con, s_vertex, date(2026, 1, 10), ejecutor_vertex=vertex_estado_malo)

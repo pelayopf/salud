@@ -991,6 +991,32 @@ def test_settings_vertex_config_y_repr(tmp_path, monkeypatch):
     assert cfg.vertex_modelo_consejo == "gemini-test-pro"
 
 
+def test_settings_lectura_motor(monkeypatch):
+    """Comprueba SALUD_LECTURA_MOTOR: defecto claude, rechazo inválidos y exigencia vertex."""
+    # Por defecto claude
+    monkeypatch.delenv("SALUD_LECTURA_MOTOR", raising=False)
+    monkeypatch.delenv("SALUD_VERTEX_API_KEY", raising=False)
+    monkeypatch.delenv("SALUD_VERTEX_PROYECTO", raising=False)
+    cfg = load_settings()
+    assert cfg.lectura_motor == "claude"
+
+    # Valor inválido -> ConfigError
+    monkeypatch.setenv("SALUD_LECTURA_MOTOR", "otro")
+    with pytest.raises(ConfigError, match="SALUD_LECTURA_MOTOR debe ser claude o vertex"):
+        load_settings()
+
+    # vertex sin credenciales -> ConfigError
+    monkeypatch.setenv("SALUD_LECTURA_MOTOR", "vertex")
+    with pytest.raises(ConfigError, match="SALUD_LECTURA_MOTOR=vertex requiere"):
+        load_settings()
+
+    # vertex con credenciales -> ok
+    monkeypatch.setenv("SALUD_VERTEX_API_KEY", "k")
+    monkeypatch.setenv("SALUD_VERTEX_PROYECTO", "p")
+    cfg2 = load_settings()
+    assert cfg2.lectura_motor == "vertex"
+
+
 def test_motor_vertex_peticion_url_headers_y_cuerpo(tmp_path):
     """Comprueba URL (global y con región), x-goog-api-key, esquema, razonamiento e inlineData."""
     peticiones: list[httpx.Request] = []

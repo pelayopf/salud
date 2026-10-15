@@ -7,6 +7,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 MOTORES_IA = ("agy", "claude", "vertex")
+MOTORES_LECTURA = ("claude", "vertex")
 
 
 class ConfigError(Exception):
@@ -33,6 +35,7 @@ class Settings:
     perfil_path: Path = Path("~/.config/salud/perfil.toml").expanduser()
     # Lectura diaria con Claude Code (la suscripción de la sesión iniciada).
     claude: str = "claude"
+    lectura_motor: Literal["claude", "vertex"] = "claude"
     lectura_modelo: str = "sonnet"
     # Repo de fitness-tracker, para usar su MCP en solo lectura (o None).
     fitness_tracker: Path | None = None
@@ -109,6 +112,11 @@ def load_settings() -> Settings:
     ia_motor = os.environ.get("SALUD_IA_MOTOR", "").strip() or "agy"
     if ia_motor not in MOTORES_IA:
         raise ConfigError(f"SALUD_IA_MOTOR debe ser {' o '.join(MOTORES_IA)}: {ia_motor}")
+    lectura_motor = os.environ.get("SALUD_LECTURA_MOTOR", "").strip() or "claude"
+    if lectura_motor not in MOTORES_LECTURA:
+        raise ConfigError(
+            f"SALUD_LECTURA_MOTOR debe ser {' o '.join(MOTORES_LECTURA)}: {lectura_motor}"
+        )
     vertex_api_key = os.environ.get("SALUD_VERTEX_API_KEY", "").strip() or None
     vertex_proyecto = os.environ.get("SALUD_VERTEX_PROYECTO", "").strip() or None
     vertex_region = os.environ.get("SALUD_VERTEX_REGION", "").strip() or "global"
@@ -123,6 +131,10 @@ def load_settings() -> Settings:
     if ia_motor == "vertex" and (not vertex_api_key or not vertex_proyecto):
         raise ConfigError(
             "SALUD_IA_MOTOR=vertex requiere SALUD_VERTEX_API_KEY y SALUD_VERTEX_PROYECTO"
+        )
+    if lectura_motor == "vertex" and (not vertex_api_key or not vertex_proyecto):
+        raise ConfigError(
+            "SALUD_LECTURA_MOTOR=vertex requiere SALUD_VERTEX_API_KEY y SALUD_VERTEX_PROYECTO"
         )
     try:
         ia_usd_eur = float(os.environ.get("SALUD_IA_USD_EUR", "0.92").strip() or 0.92)
@@ -156,6 +168,7 @@ def load_settings() -> Settings:
         garmin_tokens=_ruta(os.environ.get("SALUD_GARMIN_TOKENS", "~/.local/share/salud/garmin")),
         perfil_path=_ruta(os.environ.get("SALUD_PERFIL_PATH", "~/.config/salud/perfil.toml")),
         claude=os.environ.get("SALUD_CLAUDE", "").strip() or shutil.which("claude") or "claude",
+        lectura_motor="vertex" if lectura_motor == "vertex" else "claude",
         lectura_modelo=os.environ.get("SALUD_LECTURA_MODELO", "sonnet").strip() or "sonnet",
         fitness_tracker=_ruta(fitness) if fitness else None,
         uv=shutil.which("uv") or str(Path("~/.local/bin/uv").expanduser()),
