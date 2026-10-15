@@ -1132,7 +1132,6 @@ def crear_app(
             )
 
             plan_hoy: list[dict[str, Any]] = []
-            dosis_hoy: dict[str, str] | None = None
             comida_hoy: dict[str, Any] | None = None
 
             if es_hoy:
@@ -1169,46 +1168,6 @@ def crear_app(
                             "pastilla_clase": pastilla_cls,
                         }
                     )
-
-                trat = _tratamiento(con, fecha)
-                if trat is not None and (trat.get("pauta") or trat.get("ultima")):
-                    p_prox = trat.get("prox")
-                    pauta = trat.get("pauta")
-                    if p_prox and pauta:
-                        farmaco = pauta.farmaco
-                        dosis_mg = gramos(pauta.dosis_mg)
-                        if p_prox.estado == "hoy":
-                            t_dosis = f"{farmaco} {dosis_mg} mg · hoy"
-                            d_dosis = f"Toca hoy · {trat['zona_sugerida']}"
-                        elif p_prox.estado == "esperar":
-                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
-                            d_dosis = (
-                                f"Puedes adelantarla desde el {dia_corto(p_prox.adelantar_desde)}"
-                                f" · {trat['zona_sugerida']}"
-                            )
-                        elif p_prox.estado == "puede_adelantar":
-                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
-                            d_dosis = f"Si quieres adelantarla, ya puedes · {trat['zona_sugerida']}"
-                        elif p_prox.estado == "retrasada":
-                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
-                            d_dosis = (
-                                f"Tocaba el {dia_corto(p_prox.prevista)}. Aún puedes ponértela"
-                                f" hasta el {dia_corto(p_prox.limite)} · {trat['zona_sugerida']}"
-                            )
-                        elif p_prox.estado == "saltar":
-                            t_dosis = f"{farmaco} {dosis_mg} mg · {dia_corto(p_prox.prevista)}"
-                            d_dosis = (
-                                f"Han pasado más de {pauta.margen_olvido_dias} días: sáltala y"
-                                f" sigue el {dia_corto(p_prox.siguiente_habitual)}"
-                            )
-                        else:
-                            t_dosis = f"{farmaco} {dosis_mg} mg"
-                            d_dosis = f"Zona sugerida: {trat['zona_sugerida']}"
-                        dosis_hoy = {"titulo": t_dosis, "detalle": d_dosis}
-                    elif pauta:
-                        t_dosis = f"{pauta.farmaco} {gramos(pauta.dosis_mg)} mg"
-                        d_dosis = f"Aún no hay dosis registradas · {trat['zona_sugerida']}"
-                        dosis_hoy = {"titulo": t_dosis, "detalle": d_dosis}
 
                 totales_c, obj_c = _resumen_comida_dia(con, fecha, fecha)
                 f_prot = (
@@ -1261,7 +1220,6 @@ def crear_app(
                 anillo_prep=anillo_prep,
                 tarjetas=_tarjetas(con, fecha),
                 plan_hoy=plan_hoy,
-                dosis_hoy=dosis_hoy,
                 comida_hoy=comida_hoy,
                 sync=db.ultima_sincronizacion(con, GARMIN),
                 mensaje=request.query_params.get("mensaje"),
@@ -2802,21 +2760,10 @@ def crear_app(
                     proximo_detalles.append(p.intensidad)
                 break
 
-            resumen_trat = tratamiento.resumen(con, hoy())
-            if resumen_trat:
-                farmaco = resumen_trat["farmaco"]
-                dias = resumen_trat["dias_desde_ultima"]
-                proximo_detalles.append(f"{farmaco}: día {dias} tras el pinchazo")
-
             proximo_info = None
             if proximo_titulo:
                 proximo_info = {
                     "titulo": proximo_titulo,
-                    "detalle": " · ".join(proximo_detalles),
-                }
-            elif proximo_detalles:
-                proximo_info = {
-                    "titulo": "Sin ejercicio planificado",
                     "detalle": " · ".join(proximo_detalles),
                 }
         finally:

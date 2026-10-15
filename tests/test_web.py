@@ -1,6 +1,6 @@
 import time
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from conftest import GarminFalso
@@ -104,9 +104,10 @@ def test_hoy_con_datos_y_lectura(cliente, settings):
     assert 'aria-label="VFC noche"' in r.text
     assert 'aria-label="Body Battery"' in r.text
     assert 'aria-label="Peso"' in r.text
-    assert 'aria-label="FC en reposo"' in r.text
     assert "Hoy toca" in r.text and "Pádel · 20:00" in r.text
-    assert "Mounjaro 5 mg" in r.text
+    assert "Mounjaro" not in r.text
+    assert "pinchazo" not in r.text
+    assert "inyecc" not in r.text
     assert "Comida de hoy" in r.text and "g proteína" in r.text
     assert r.headers["x-frame-options"] == "DENY"
 
@@ -298,13 +299,16 @@ def test_salud_rediseno_completo(cliente, settings):
     assert 'id="grafica-fc_reposo"' in r.text
     assert 'id="grafica-vfc_noche"' in r.text
 
-    # En Hoy se ve la dosis en Hoy toca y en /tratamiento _tarjeta_tratamiento.html
+    # En Hoy no se ve la dosis y en /tratamiento _tarjeta_tratamiento.html sí
     r_hoy = cliente.get("/")
     assert r_hoy.status_code == 200
-    assert "Mounjaro 5 mg" in r_hoy.text
+    assert "Mounjaro" not in r_hoy.text
+    assert "pinchazo" not in r_hoy.text
+    assert "inyecc" not in r_hoy.text
     r_trat = cliente.get("/tratamiento")
     assert r_trat.status_code == 200
     assert "tarjeta-tratamiento" in r_trat.text
+    assert "Mounjaro" in r_trat.text
 
 
 def test_conexiones_y_pagina_ia_uso(settings):
@@ -526,3 +530,76 @@ def test_avisos_ia_con_motor_agy_no_sale_ninguno(settings):
     assert "La prueba de Google Cloud acaba" not in r_uso.text
     assert "Acabó la prueba de Google Cloud" not in r_uso.text
     assert "agy ya ofrece" not in r_uso.text
+
+
+def test_hoy_discreto_con_pauta_y_dosis(settings):
+    """Hoy con pauta y dosis no muestra el nombre del fármaco, pinchazo ni inyecc."""
+    s = settings
+    con = db.conectar(s.db_path)
+    db.guardar_pauta(con, db.Pauta(farmaco="FarmacoSecreto", dosis_mg=2.5))
+    db.anadir_dosis(
+        con, farmaco="FarmacoSecreto", fecha=HOY.isoformat(), dosis_mg=2.5, zona="muslo derecho"
+    )
+    con.close()
+    c = TestClient(_app(s))
+    r = c.get("/")
+    assert r.status_code == 200
+    assert "FarmacoSecreto" not in r.text
+    assert "pinchazo" not in r.text
+    assert "inyecc" not in r.text
+
+
+def test_comida_consejo_discreto_con_pauta_y_deporte(settings):
+    """¿Qué como? con pauta y deporte planificado no muestra el fármaco ni pinchazo."""
+    s = settings
+    con = db.conectar(s.db_path)
+    db.guardar_pauta(con, db.Pauta(farmaco="FarmacoSecreto", dosis_mg=5.0))
+    db.anadir_dosis(
+        con, farmaco="FarmacoSecreto", fecha=HOY.isoformat(), dosis_mg=5.0, zona="muslo izquierdo"
+    )
+    db.reemplazar_planificado(
+        con,
+        origen="semana_tipo",
+        desde=HOY.isoformat(),
+        hasta=(HOY + timedelta(days=1)).isoformat(),
+        filas=[
+            db.Planificado(
+                fecha=HOY.isoformat(),
+                titulo="Rodaje suave",
+                tipo="ciclismo",
+                inicio="23:59:00",
+                duracion_min=45,
+                intensidad="suave",
+                origen="semana_tipo",
+            )
+        ],
+    )
+    con.close()
+    c = TestClient(_app(s))
+    r = c.get("/comida/consejo")
+    assert r.status_code == 200
+    assert "FarmacoSecreto" not in r.text
+    assert "pinchazo" not in r.text
+    assert "inyecc" not in r.text
+    assert "Ciclismo hoy · 23:59" in r.text
+
+
+def test_comida_consejo_sin_deporte_con_pauta_no_muestra_cabecera_proximo(settings):
+    """¿Qué como? sin deporte pero con pauta no muestra cabecera de próximo
+    solo por el tratamiento.
+    """
+    s = settings
+    con = db.conectar(s.db_path)
+    db.guardar_pauta(con, db.Pauta(farmaco="FarmacoSecreto", dosis_mg=5.0))
+    db.anadir_dosis(
+        con, farmaco="FarmacoSecreto", fecha=HOY.isoformat(), dosis_mg=5.0, zona="muslo izquierdo"
+    )
+    con.close()
+    c = TestClient(_app(s))
+    r = c.get("/comida/consejo")
+    assert r.status_code == 200
+    assert "Nada planificado hoy ni mañana" in r.text
+    assert "Sin ejercicio planificado" not in r.text
+    assert "FarmacoSecreto" not in r.text
+    assert "pinchazo" not in r.text
+    assert "inyecc" not in r.text

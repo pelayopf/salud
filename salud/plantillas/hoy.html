@@ -125,7 +125,7 @@
 {% if es_hoy %}
 <section class="panel hoy-toca" aria-label="Hoy toca">
   <h2>Hoy toca</h2>
-  {% if not plan_hoy and not dosis_hoy %}
+  {% if not plan_hoy %}
   <p class="suave" style="margin: 0;">Nada planificado hoy</p>
   {% else %}
     {% for p in plan_hoy %}
@@ -142,17 +142,6 @@
       {% endif %}
     </div>
     {% endfor %}
-    {% if dosis_hoy %}
-    <div class="fila-hoy-toca{% if plan_hoy %} fila-separada{% endif %}">
-      <span class="icono-cuadro violeta">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3a1 1 0 0 1-1.4 0l-2.6-2.6a1 1 0 0 1 0-1.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/></svg>
-      </span>
-      <div class="info-hoy-toca">
-        <strong>{{ dosis_hoy.titulo }}</strong>
-        <span class="suave">{{ dosis_hoy.detalle }}</span>
-      </div>
-    </div>
-    {% endif %}
   {% endif %}
 </section>
 
