@@ -26,11 +26,14 @@ from salud.ia import (
     RespuestaIA,
     SinDatos,
     Tarea,
+    TopeGasto,
     UsoIA,
     VertexNoDisponible,
+    _en_marcha,
     analizar_comida,
     coste_usd,
     ejecutar,
+    ejecutar_vertex,
     etiqueta_desde_respuesta,
     interpretar_agy,
     interpretar_claude,
@@ -1358,6 +1361,105 @@ def test_ejecutar_vertex_prueba_el_modelo_de_respaldo_antes_que_agy(tmp_path, mo
     falla.add("gemini-3.1-pro-preview")
     assert ejecutar(tarea, settings).motor == "agy"
     assert modelos == ["gemini-4-argon", "gemini-3.1-pro-preview", "agy"]
+
+
+def test_ejecutar_vertex_exito_y_respaldo(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "s.db", ia_motor="vertex", vertex_api_key="k", vertex_proyecto="p"
+    )
+    tarea = Tarea(
+        nombre="lectura",
+        instrucciones="i",
+        esquema={},
+        modelo_vertex="gemini-4-argon",
+        modelo_vertex_respaldo="gemini-3.1-pro-preview",
+    )
+
+    def fake_agy(_t, _s):
+        pytest.fail("ejecutar_vertex no debe llamar a agy")
+
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    # Éxito directo con modelo principal
+    monkeypatch.setitem(
+        MOTORES,
+        "vertex",
+        lambda t, _s: RespuestaIA(datos={"ok": 1}, motor="vertex", modelo=t.modelo_vertex or ""),
+    )
+    res = ejecutar_vertex(tarea, settings)
+    assert res.datos == {"ok": 1}
+    assert res.modelo == "gemini-4-argon"
+
+    # Fallo en principal, éxito en respaldo
+    def fake_vertex_respaldo(t, _s):
+        if t.modelo_vertex == "gemini-4-argon":
+            raise VertexNoDisponible("Saturado")
+        return RespuestaIA(datos={"ok": 2}, motor="vertex", modelo=t.modelo_vertex or "")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex_respaldo)
+    res2 = ejecutar_vertex(tarea, settings)
+    assert res2.datos == {"ok": 2}
+    assert res2.modelo == "gemini-3.1-pro-preview"
+
+
+def test_ejecutar_vertex_falla_sin_caer_a_agy(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "s.db", ia_motor="vertex", vertex_api_key="k", vertex_proyecto="p"
+    )
+    tarea = Tarea(
+        nombre="lectura",
+        instrucciones="i",
+        esquema={},
+        modelo_vertex="gemini-4-argon",
+        modelo_vertex_respaldo="gemini-3.1-pro-preview",
+    )
+
+    def fake_agy(_t, _s):
+        pytest.fail("ejecutar_vertex no debe llamar a agy")
+
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    # Falla con VertexNoDisponible en ambos modelos
+    monkeypatch.setitem(
+        MOTORES,
+        "vertex",
+        lambda _t, _s: (_ for _ in ()).throw(VertexNoDisponible("sin conexión")),
+    )
+    with pytest.raises(VertexNoDisponible, match="sin conexión"):
+        ejecutar_vertex(tarea, settings)
+
+    # Falla con SinDatos
+    monkeypatch.setitem(MOTORES, "vertex", lambda _t, _s: (_ for _ in ()).throw(SinDatos("vacío")))
+    with pytest.raises(SinDatos, match="vacío"):
+        ejecutar_vertex(tarea, settings)
+
+    # Falla con TopeGasto
+    monkeypatch.setattr(
+        "salud.ia.comprobar_tope", lambda _s: (_ for _ in ()).throw(TopeGasto("tope"))
+    )
+    with pytest.raises(TopeGasto, match="tope"):
+        ejecutar_vertex(tarea, settings)
+
+
+def test_ejecutar_vertex_no_adquiere_cerrojo(tmp_path, monkeypatch):
+    settings = Settings(
+        db_path=tmp_path / "s.db", ia_motor="vertex", vertex_api_key="k", vertex_proyecto="p"
+    )
+    tarea = Tarea(nombre="lectura", instrucciones="i", esquema={}, modelo_vertex="gemini-4-argon")
+
+    monkeypatch.setitem(
+        MOTORES,
+        "vertex",
+        lambda t, _s: RespuestaIA(datos={"ok": 1}, motor="vertex", modelo=t.modelo_vertex or ""),
+    )
+    # Adquirimos el cerrojo global _en_marcha simulando otra tarea en paralelo
+    assert _en_marcha.acquire(blocking=False)
+    try:
+        # ejecutar_vertex debe funcionar sin lanzar IAOcupada
+        res = ejecutar_vertex(tarea, settings)
+        assert res.datos == {"ok": 1}
+    finally:
+        _en_marcha.release()
 
 
 def test_uso_ia_dataclass():

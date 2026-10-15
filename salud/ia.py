@@ -740,23 +740,25 @@ def comprobar_tope(settings: Settings, hoy: date | None = None) -> None:
         raise TopeGasto(f"Tope mensual de {tope_mes:.2f} € en Vertex")
 
 
-def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
-    """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy.
+def ejecutar_vertex(tarea: Tarea, settings: Settings) -> RespuestaIA:
+    """Ejecuta una tarea en Vertex con su modelo y modelo de respaldo si lo hay.
 
-    Con el tope de gasto alcanzado, directamente agy.
+    Comprueba el tope de gasto y registra el uso. Si no consigue respuesta,
+    lanza la última excepción (TopeGasto, VertexNoDisponible o SinDatos) sin
+    caer a agy. No adquiere el cerrojo _en_marcha.
     """
     try:
         comprobar_tope(settings)
     except TopeGasto as exc:
-        log.warning("%s: la tarea %s va con agy", exc, tarea.nombre)
         modelo = tarea.modelo_vertex or settings.vertex_modelo
         _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, 0.0, None)
-        return MOTORES["agy"](tarea, settings)
+        raise
     intentos = [tarea]
     if tarea.modelo_vertex_respaldo:
         intentos.append(
             replace(tarea, modelo_vertex=tarea.modelo_vertex_respaldo, modelo_vertex_respaldo=None)
         )
+    ultima_exc: Exception | None = None
     for intento in intentos:
         modelo = intento.modelo_vertex or settings.vertex_modelo
         t0 = time.monotonic()
@@ -766,31 +768,48 @@ def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
             _registrar(settings, tarea, "vertex", modelo, "ok", segundos, resp)
             return resp
         except VertexNoDisponible as exc:
+            ultima_exc = exc
             segundos = round(time.monotonic() - t0, 1)
             _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
             log.warning("Vertex no disponible en tarea %s (%s)", tarea.nombre, exc)
         except SinDatos as exc:
+            ultima_exc = exc
             segundos = round(time.monotonic() - t0, 1)
             _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
-            # Sin datos no se arregla cambiando de modelo de Vertex: directo a agy.
             log.warning("Vertex sin datos en tarea %s (%s)", tarea.nombre, exc)
             break
         except Exception as exc:
             segundos = round(time.monotonic() - t0, 1)
             _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, segundos, None)
             raise
-    log.warning("La tarea %s se repite con agy", tarea.nombre)
-    modelo_agy = tarea.modelo_agy or settings.ia_modelo_agy
-    t0 = time.monotonic()
+    if ultima_exc is not None:
+        raise ultima_exc
+    raise VertexNoDisponible(f"No se pudo ejecutar la tarea {tarea.nombre} en Vertex")
+
+
+def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
+    """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy.
+
+    Con el tope de gasto alcanzado, directamente agy.
+    """
     try:
-        resp = MOTORES["agy"](tarea, settings)
-        segundos = round(time.monotonic() - t0, 1)
-        _registrar(settings, tarea, "agy", modelo_agy, "ok", segundos, resp)
-        return resp
-    except Exception as exc:
-        segundos = round(time.monotonic() - t0, 1)
-        _registrar(settings, tarea, "agy", modelo_agy, type(exc).__name__, segundos, None)
-        raise
+        return ejecutar_vertex(tarea, settings)
+    except (TopeGasto, VertexNoDisponible, SinDatos) as exc:
+        if isinstance(exc, TopeGasto):
+            log.warning("%s: la tarea %s va con agy", exc, tarea.nombre)
+        else:
+            log.warning("La tarea %s se repite con agy", tarea.nombre)
+        modelo_agy = tarea.modelo_agy or settings.ia_modelo_agy
+        t0 = time.monotonic()
+        try:
+            resp = MOTORES["agy"](tarea, settings)
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "agy", modelo_agy, "ok", segundos, resp)
+            return resp
+        except Exception as exc_agy:
+            segundos = round(time.monotonic() - t0, 1)
+            _registrar(settings, tarea, "agy", modelo_agy, type(exc_agy).__name__, segundos, None)
+            raise
 
 
 def ejecutar(
