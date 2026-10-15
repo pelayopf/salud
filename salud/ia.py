@@ -328,19 +328,12 @@ def modelos_agy(settings: Settings) -> list[tuple[str, str]]:
 MODELO_PRO = re.compile(r"gemini.*(pro|argon|ultra)", re.I)
 
 
-def modelos_pro(modelos: Iterable[tuple[str, str] | str]) -> list[str]:
-    """Ids de modelos que casan con Gemini Pro, Argon o Ultra."""
+def modelos_pro(modelos: Iterable[tuple[str, str]]) -> list[str]:
+    """Ids (sin repetir) de los modelos de `agy models` que son Gemini Pro, Argon o Ultra."""
     pro: list[str] = []
-    for item in modelos:
-        if isinstance(item, tuple):
-            mid, nombre = item
-            if MODELO_PRO.search(mid) or MODELO_PRO.search(nombre):
-                if mid not in pro:
-                    pro.append(mid)
-        elif isinstance(item, str):
-            if MODELO_PRO.search(item):
-                if item not in pro:
-                    pro.append(item)
+    for mid, nombre in modelos:
+        if (MODELO_PRO.search(mid) or MODELO_PRO.search(nombre)) and mid not in pro:
+            pro.append(mid)
     return pro
 
 
