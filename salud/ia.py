@@ -93,12 +93,52 @@ class Adjunto:
 
 
 @dataclass(frozen=True)
+class UsoIA:
+    """Tokens usados en una llamada a un motor de IA."""
+
+    entrada: int
+    salida: int
+    razonamiento: int
+
+
+# Dólares por millón de tokens (entrada, salida) en Vertex, endpoint global,
+# contexto ≤ 200K. El razonamiento se cobra como salida. Estimación: la cifra
+# oficial está en la facturación de Google Cloud. Flash: precio de lanzamiento
+# hasta el 2026-12-31 (después 1,5 / 7,5). Argon: la salida no está publicada
+# con claridad; se toma 10 por prudencia.
+PRECIOS_VERTEX_USD: dict[str, tuple[float, float]] = {
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-4-argon": (1.0, 10.0),
+    "gemini-3.1-pro-preview": (2.0, 12.0),
+    "gemini-2.5-pro": (1.25, 10.0),
+}
+
+
+def coste_usd(motor: str, modelo: str, uso: UsoIA | None) -> float | None:
+    """Coste estimado en USD según motor, modelo y tokens usados.
+
+    agy y claude van por suscripción (coste 0.0). Para Vertex, usa la tabla
+    de precios por millón de tokens si el modelo es conocido y hay datos
+    de uso; en caso contrario devuelve None.
+    """
+    if motor in ("agy", "claude"):
+        return 0.0
+    if motor == "vertex":
+        if uso is None or modelo not in PRECIOS_VERTEX_USD:
+            return None
+        pe, ps = PRECIOS_VERTEX_USD[modelo]
+        return (uso.entrada * pe + (uso.salida + uso.razonamiento) * ps) / 1e6
+    return None
+
+
+@dataclass(frozen=True)
 class RespuestaIA:
     """Respuesta devuelta por un motor de IA."""
 
     datos: dict[str, Any]
     motor: str
     modelo: str
+    uso: UsoIA | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +241,23 @@ def interpretar_agy(salida: str, stderr: str = "") -> dict[str, Any]:
     return structured
 
 
+def _extraer_uso_agy(salida: str) -> UsoIA | None:
+    """Extrae tokens usados del JSON de respuesta de agy si están disponibles."""
+    try:
+        datos = json.loads(salida)
+        if isinstance(datos, dict):
+            usage = datos.get("usage")
+            if isinstance(usage, dict):
+                return UsoIA(
+                    entrada=int(usage.get("input_tokens") or 0),
+                    salida=int(usage.get("output_tokens") or 0),
+                    razonamiento=int(usage.get("thinking_tokens") or 0),
+                )
+    except Exception:
+        pass
+    return None
+
+
 def motor_agy(tarea: Tarea, settings: Settings) -> RespuestaIA:
     """Ejecuta una tarea usando agy en un entorno aislado con órdenes denegadas."""
     with tempfile.TemporaryDirectory(prefix="salud-ia-", dir="/tmp") as tmp:
@@ -275,7 +332,8 @@ def motor_agy(tarea: Tarea, settings: Settings) -> RespuestaIA:
                 raise ErrorIA("No se pudo lanzar agy") from exc
             try:
                 datos = interpretar_agy(proceso.stdout, proceso.stderr)
-                return RespuestaIA(datos=datos, motor="agy", modelo=modelo)
+                uso = _extraer_uso_agy(proceso.stdout)
+                return RespuestaIA(datos=datos, motor="agy", modelo=modelo, uso=uso)
             except SinDatos:
                 # Un solo reintento, y solo si da tiempo dentro de lo que espera la web.
                 if intento == 2 or time.monotonic() - inicio > tarea.tiempo_maximo_s / 2:
@@ -367,7 +425,30 @@ def motor_claude(tarea: Tarea, settings: Settings) -> RespuestaIA:
             raise ErrorIA("No se pudo lanzar Claude Code") from exc
 
         datos = interpretar_claude(proceso.stdout)
-        return RespuestaIA(datos=datos, motor="claude", modelo=modelo)
+        uso = _extraer_uso_claude(proceso.stdout)
+        return RespuestaIA(datos=datos, motor="claude", modelo=modelo, uso=uso)
+
+
+def _extraer_uso_claude(salida: str) -> UsoIA | None:
+    """Extrae tokens usados de la salida de Claude Code si están disponibles."""
+    for linea in reversed(salida.splitlines()):
+        linea = linea.strip()
+        if not linea:
+            continue
+        try:
+            obj = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "result":
+            usage = obj.get("usage")
+            if isinstance(usage, dict):
+                return UsoIA(
+                    entrada=int(usage.get("input_tokens") or 0),
+                    salida=int(usage.get("output_tokens") or 0),
+                    razonamiento=int(usage.get("thinking_tokens") or 0),
+                )
+            break
+    return None
 
 
 def _extraer_error_vertex(resp: httpx.Response) -> str:
@@ -495,10 +576,16 @@ def motor_vertex(
     except (json.JSONDecodeError, ValueError) as exc:
         raise SinDatos("Vertex no devolvió los datos pedidos") from exc
 
-    if not isinstance(datos, dict):
-        raise SinDatos("Vertex no devolvió los datos pedidos")
+    meta = cuerpo_resp.get("usageMetadata")
+    uso = None
+    if isinstance(meta, dict):
+        uso = UsoIA(
+            entrada=int(meta.get("promptTokenCount") or 0),
+            salida=int(meta.get("candidatesTokenCount") or 0),
+            razonamiento=int(meta.get("thoughtsTokenCount") or 0),
+        )
 
-    return RespuestaIA(datos=datos, motor="vertex", modelo=modelo)
+    return RespuestaIA(datos=datos, motor="vertex", modelo=modelo, uso=uso)
 
 
 MOTORES: dict[str, Motor] = {

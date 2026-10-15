@@ -12,6 +12,7 @@ from salud.config import ConfigError, Settings, load_settings
 from salud.ia import (
     MAX_BYTES_IMAGEN,
     MOTORES,
+    PRECIOS_VERTEX_USD,
     TIEMPO_COMIDA_S,
     TIEMPO_MAXIMO_S,
     Adjunto,
@@ -23,8 +24,10 @@ from salud.ia import (
     RespuestaIA,
     SinDatos,
     Tarea,
+    UsoIA,
     VertexNoDisponible,
     analizar_comida,
+    coste_usd,
     ejecutar,
     etiqueta_desde_respuesta,
     interpretar_agy,
@@ -1353,3 +1356,162 @@ def test_ejecutar_vertex_prueba_el_modelo_de_respaldo_antes_que_agy(tmp_path, mo
     falla.add("gemini-3.1-pro-preview")
     assert ejecutar(tarea, settings).motor == "agy"
     assert modelos == ["gemini-4-argon", "gemini-3.1-pro-preview", "agy"]
+
+
+def test_uso_ia_dataclass():
+    uso = UsoIA(entrada=100, salida=50, razonamiento=10)
+    assert uso.entrada == 100
+    assert uso.salida == 50
+    assert uso.razonamiento == 10
+    resp = RespuestaIA(datos={"ok": True}, motor="vertex", modelo="gemini-3.8-flash", uso=uso)
+    assert resp.uso == uso
+
+
+def test_motor_vertex_usage_metadata(tmp_path):
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+        vertex_modelo="gemini-3.8-flash",
+    )
+    tarea = Tarea(nombre="t", instrucciones="instrucciones", esquema={})
+
+    cuerpo = {
+        "candidates": [
+            {
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": json.dumps({"res": 1})}]},
+            }
+        ],
+        "usageMetadata": {
+            "promptTokenCount": 150,
+            "candidatesTokenCount": 40,
+            "thoughtsTokenCount": 25,
+        },
+    }
+    cliente = httpx.Client(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, json=cuerpo))
+    )
+    res = motor_vertex(tarea, settings, cliente=cliente)
+    assert res.uso == UsoIA(entrada=150, salida=40, razonamiento=25)
+
+    # Con claves que falten, van a 0
+    cuerpo_parcial = {
+        "candidates": [
+            {
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": json.dumps({"res": 1})}]},
+            }
+        ],
+        "usageMetadata": {
+            "promptTokenCount": 80,
+        },
+    }
+    cliente_parcial = httpx.Client(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, json=cuerpo_parcial))
+    )
+    res_parcial = motor_vertex(tarea, settings, cliente=cliente_parcial)
+    assert res_parcial.uso == UsoIA(entrada=80, salida=0, razonamiento=0)
+
+
+def test_motor_agy_con_usage(tmp_path, monkeypatch):
+    token = tmp_path / "token"
+    token.write_text("x")
+    settings = Settings(db_path=tmp_path / "s.db", agy="agy", agy_token=token)
+    tarea = Tarea(nombre="t", instrucciones="hola", esquema={"type": "object"})
+
+    salida_con_uso = {
+        "status": "SUCCESS",
+        "structured_output": {"ok": True},
+        "usage": {
+            "input_tokens": 120,
+            "output_tokens": 45,
+            "thinking_tokens": 15,
+        },
+    }
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda orden, **_kw: subprocess.CompletedProcess(
+            orden, 0, stdout=json.dumps(salida_con_uso), stderr=""
+        ),
+    )
+    res = motor_agy(tarea, settings)
+    assert res.uso == UsoIA(entrada=120, salida=45, razonamiento=15)
+
+
+def test_motor_claude_con_usage(tmp_path, monkeypatch):
+    settings = Settings(db_path=tmp_path / "s.db", claude="claude")
+    tarea = Tarea(nombre="t", instrucciones="hola", esquema={"type": "object"})
+
+    salida_con_uso = "\n".join(
+        [
+            json.dumps({"type": "progress", "text": "pensando"}),
+            json.dumps(
+                {
+                    "type": "result",
+                    "is_error": False,
+                    "structured_output": {"ok": True},
+                    "usage": {
+                        "input_tokens": 200,
+                        "output_tokens": 80,
+                        "thinking_tokens": 30,
+                    },
+                }
+            ),
+        ]
+    )
+
+    def fake_run_claude(orden, **_kw):
+        return subprocess.CompletedProcess(orden, 0, stdout=salida_con_uso, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run_claude)
+    res = motor_claude(tarea, settings)
+    assert res.uso == UsoIA(entrada=200, salida=80, razonamiento=30)
+
+    # Sin bloque usage -> None
+    salida_sin_uso = json.dumps(
+        {
+            "type": "result",
+            "is_error": False,
+            "structured_output": {"ok": True},
+        }
+    )
+
+    def fake_run_sin_uso(orden, **_kw):
+        return subprocess.CompletedProcess(orden, 0, stdout=salida_sin_uso, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run_sin_uso)
+    res_sin_uso = motor_claude(tarea, settings)
+    assert res_sin_uso.uso is None
+
+
+def test_coste_usd():
+    assert PRECIOS_VERTEX_USD["gemini-3.8-flash"] == (0.75, 3.75)
+    uso = UsoIA(entrada=1000, salida=200, razonamiento=100)
+
+    # agy y claude son 0.0 (van por suscripción)
+    assert coste_usd("agy", "gemini-3.8-flash-low", uso) == 0.0
+    assert coste_usd("agy", "gemini-3.8-flash-low", None) == 0.0
+    assert coste_usd("claude", "haiku", uso) == 0.0
+    assert coste_usd("claude", "haiku", None) == 0.0
+
+    # Vertex con modelo conocido
+    # gemini-3.8-flash: (0.75, 3.75)
+    # entrada: 1000 * 0.75 = 750
+    # salida + razonamiento: (200 + 100) * 3.75 = 1125
+    # total: (750 + 1125) / 1e6 = 1875 / 1e6 = 0.001875
+    c_flash = coste_usd("vertex", "gemini-3.8-flash", uso)
+    assert c_flash is not None
+    assert pytest.approx(c_flash) == 0.001875
+
+    # gemini-4-argon: (1.0, 10.0)
+    # 1000 * 1.0 + (200 + 100) * 10.0 = 1000 + 3000 = 4000 -> 0.004
+    assert pytest.approx(coste_usd("vertex", "gemini-4-argon", uso) or 0.0) == 0.004
+
+    # Vertex sin uso o modelo desconocido -> None
+    assert coste_usd("vertex", "gemini-3.8-flash", None) is None
+    assert coste_usd("vertex", "modelo-inventado", uso) is None
+
+    # Motor desconocido -> None
+    assert coste_usd("desconocido", "m", uso) is None
