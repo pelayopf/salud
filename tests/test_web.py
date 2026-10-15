@@ -374,6 +374,7 @@ def test_conexiones_y_pagina_ia_uso(settings):
     assert "Proyección a fin de mes: 0,04 € (estimado)" in r_ia.text
     # Como la prueba sigue vigente (hasta el 31 ene), texto suave sin .aviso
     assert "Vas sobrado: la prueba cubre 263,99 € más" in r_ia.text
+    assert "tras la prueba, el tope mensual baja al 90 % del crédito" in r_ia.text
     assert 'class="aviso"' not in r_ia.text
 
     # Tabla por modelo

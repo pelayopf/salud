@@ -1748,10 +1748,10 @@ def crear_app(
             tabla_modelos=tabla_modelos,
             gasto_hoy_eur=gasto_hoy_eur,
             tope_dia_eur=settings.ia_tope_dia_eur,
-            tope_mes_eur=settings.ia_tope_mes_eur,
+            tope_mes_eur=ia.tope_mes_efectivo(settings, hoy_d),
             tope_alcanzado=(
                 gasto_hoy_eur >= settings.ia_tope_dia_eur
-                or gasto_mes_eur >= settings.ia_tope_mes_eur
+                or gasto_mes_eur >= ia.tope_mes_efectivo(settings, hoy_d)
             ),
         )
 

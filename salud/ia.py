@@ -646,6 +646,17 @@ def _registrar(
         log.exception("Error al registrar uso de IA en base de datos")
 
 
+def tope_mes_efectivo(settings: Settings, hoy: date) -> float:
+    """Tope mensual de gasto en Vertex.
+
+    Hasta `ia_prueba_hasta` (incluido), `ia_tope_mes_eur`.
+    Después, `min(ia_tope_mes_eur, 0.9 * ia_credito_mes_eur)`.
+    """
+    if hoy <= settings.ia_prueba_hasta:
+        return settings.ia_tope_mes_eur
+    return min(settings.ia_tope_mes_eur, 0.9 * settings.ia_credito_mes_eur)
+
+
 def comprobar_tope(settings: Settings, hoy: date | None = None) -> None:
     """TopeGasto si el gasto estimado en Vertex de hoy o de este mes llega a su tope.
 
@@ -663,8 +674,9 @@ def comprobar_tope(settings: Settings, hoy: date | None = None) -> None:
         raise TopeGasto("No se pudo comprobar el gasto en Vertex") from exc
     if dia * settings.ia_usd_eur >= settings.ia_tope_dia_eur:
         raise TopeGasto(f"Tope diario de {settings.ia_tope_dia_eur:.2f} € en Vertex")
-    if mes * settings.ia_usd_eur >= settings.ia_tope_mes_eur:
-        raise TopeGasto(f"Tope mensual de {settings.ia_tope_mes_eur:.2f} € en Vertex")
+    tope_mes = tope_mes_efectivo(settings, hoy)
+    if mes * settings.ia_usd_eur >= tope_mes:
+        raise TopeGasto(f"Tope mensual de {tope_mes:.2f} € en Vertex")
 
 
 def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:

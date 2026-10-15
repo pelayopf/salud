@@ -1716,3 +1716,69 @@ def test_tope_sin_base_legible_no_arriesga(tmp_path):
         pass
     else:
         raise AssertionError("sin base legible, debía cortar")
+
+
+def test_tope_mes_efectivo_antes_y_despues():
+    from datetime import date
+
+    from salud.ia import tope_mes_efectivo
+
+    settings = Settings(
+        db_path=Path("s.db"),
+        ia_prueba_hasta=date(2027, 1, 14),
+        ia_tope_mes_eur=15.0,
+        ia_credito_mes_eur=8.80,
+    )
+    # Antes y el mismo día de la fecha límite
+    assert tope_mes_efectivo(settings, date(2027, 1, 13)) == 15.0
+    assert tope_mes_efectivo(settings, date(2027, 1, 14)) == 15.0
+
+    # Después de la prueba: 90 % de 8,80 = 7,92
+    assert tope_mes_efectivo(settings, date(2027, 1, 15)) == pytest.approx(7.92)
+
+    # Si el tope configurado es inferior al 90 % del crédito, manda el menor
+    settings_menor = Settings(
+        db_path=Path("s.db"),
+        ia_prueba_hasta=date(2027, 1, 14),
+        ia_tope_mes_eur=5.0,
+        ia_credito_mes_eur=8.80,
+    )
+    assert tope_mes_efectivo(settings_menor, date(2027, 1, 15)) == 5.0
+
+
+def test_comprobar_tope_corta_con_8_euros_despues_y_no_antes(tmp_path):
+    from datetime import date
+
+    from salud import db as db_mod
+    from salud.ia import TopeGasto, comprobar_tope
+
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        ia_prueba_hasta=date(2027, 1, 14),
+        ia_tope_dia_eur=10.0,
+        ia_tope_mes_eur=15.0,
+        ia_credito_mes_eur=8.80,
+        ia_usd_eur=1.0,
+    )
+    con = db_mod.conectar(settings.db_path)
+    # 8 € gastados en enero de 2027
+    db_mod.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-4-argon",
+        estado="ok",
+        segundos=10.0,
+        uso=(1000, 200, 0),
+        coste_usd=8.0,
+        cuando="2027-01-10T12:00:00+00:00",
+    )
+    con.close()
+
+    # El día 14 (prueba vigente, tope 15 €): 8 € pasa
+    comprobar_tope(settings, date(2027, 1, 14))
+
+    # El día 15 (prueba caducada, tope 7,92 €): 8 € corta
+    with pytest.raises(TopeGasto, match="Tope mensual de 7.92 € en Vertex"):
+        comprobar_tope(settings, date(2027, 1, 15))
