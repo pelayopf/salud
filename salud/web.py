@@ -2672,11 +2672,7 @@ def crear_app(
                 for fila in platos_validos.values():
                     nombre = fila["nombre"]
                     marca = "Artema Alimentación"
-                    existente = con.execute(
-                        "SELECT id FROM productos_propios WHERE nombre = ? AND marca = ?",
-                        (nombre, marca),
-                    ).fetchone()
-                    if existente is None:
+                    if db.producto_propio_por_nombre(con, nombre, marca) is None:
                         peso = (
                             float(fila["peso_g"])
                             if fila["peso_g"] is not None and fila["peso_g"] > 0

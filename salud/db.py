@@ -1308,6 +1308,15 @@ def producto_propio_por_codigo(con: sqlite3.Connection, codigo: str) -> sqlite3.
     return con.execute("SELECT * FROM productos_propios WHERE codigo = ?", (codigo,)).fetchone()
 
 
+def producto_propio_por_nombre(
+    con: sqlite3.Connection, nombre: str, marca: str
+) -> sqlite3.Row | None:
+    """Lee un producto propio por nombre y marca, o None si no existe."""
+    return con.execute(
+        "SELECT * FROM productos_propios WHERE nombre = ? AND marca = ?", (nombre, marca)
+    ).fetchone()
+
+
 def productos_propios(con: sqlite3.Connection, limite: int = 50) -> list[sqlite3.Row]:
     """Lista los productos propios ordenados por fecha de actualización descendente."""
     return con.execute(
