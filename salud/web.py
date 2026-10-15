@@ -42,6 +42,7 @@ from starlette.staticfiles import StaticFiles
 from . import (
     acceso,
     alimentos,
+    artema,
     calendario,
     ciqual,
     consejo,
@@ -2555,6 +2556,160 @@ def crear_app(
             mensaje=request.query_params.get("mensaje"),
         )
 
+    def ver_pedido_artema(request: Request) -> Response:
+        fecha_str = _fecha(request).isoformat()
+        momento = momento_valido(request.query_params.get("momento"))
+        con = abrir_db()
+        try:
+            filas = db.platos_artema(con, solo_disponibles=True)
+            platos = [artema.Plato.desde_fila(f) for f in filas]
+        finally:
+            con.close()
+
+        if not platos:
+            return _render(
+                "comida_artema.html",
+                seccion="comida",
+                pestana=None,
+                fecha=fecha_str,
+                momento_elegido=momento,
+                platos=[],
+                recomendados=[],
+                resto=[],
+                resumen=None,
+                catalogo_desactualizado=False,
+                actualizado_fecha="",
+                actualizado_texto="",
+                mensaje=request.query_params.get("mensaje"),
+                error=request.query_params.get("error"),
+            )
+
+        recomendados = artema.recomendar(platos, n=8, max_por_proteina=3)
+        handles_rec = {p.handle for p in recomendados}
+        resto = [p for p in platos if p.handle not in handles_rec]
+
+        n_rec = len(recomendados)
+        total_eur = sum(p.precio for p in recomendados)
+        media_prot = (sum(p.proteinas or 0.0 for p in recomendados) / n_rec) if n_rec else 0.0
+        media_kcal = (sum(p.kcal or 0.0 for p in recomendados) / n_rec) if n_rec else 0.0
+        resumen = {
+            "cantidad": n_rec,
+            "total_eur": total_eur,
+            "media_proteina": media_prot,
+            "media_kcal": media_kcal,
+        }
+
+        fechas_act = [p.actualizado for p in platos if p.actualizado]
+        fecha_max_str = max(fechas_act) if fechas_act else ""
+        catalogo_desactualizado = False
+        actualizado_fecha = ""
+        actualizado_texto = "Desconocida"
+        if fecha_max_str:
+            try:
+                dt_act = datetime.fromisoformat(fecha_max_str)
+                actualizado_fecha = dt_act.strftime("%d/%m/%Y")
+                dt_hoy = hoy()
+                dias = (dt_hoy - dt_act.date()).days
+                actualizado_texto = (
+                    f"{actualizado_fecha} (hace {dias} días)"
+                    if dias > 0
+                    else f"{actualizado_fecha} (hoy)"
+                )
+                if dias > 4:
+                    catalogo_desactualizado = True
+            except Exception:
+                actualizado_texto = fecha_max_str
+
+        return _render(
+            "comida_artema.html",
+            seccion="comida",
+            pestana=None,
+            fecha=fecha_str,
+            momento_elegido=momento,
+            platos=platos,
+            recomendados=recomendados,
+            resto=resto,
+            resumen=resumen,
+            catalogo_desactualizado=catalogo_desactualizado,
+            actualizado_fecha=actualizado_fecha,
+            actualizado_texto=actualizado_texto,
+            mensaje=request.query_params.get("mensaje"),
+            error=request.query_params.get("error"),
+        )
+
+    def actualizar_catalogo_artema_web(_request: Request) -> Response:
+        def _trabajo() -> None:
+            con_hilo = abrir_db()
+            try:
+                with httpx.Client(headers=artema.HEADERS, timeout=20.0) as http:
+                    artema.actualizar(con_hilo, http)
+            except Exception:
+                log.exception("Error al actualizar catálogo de Artema")
+            finally:
+                con_hilo.close()
+
+        threading.Thread(target=_trabajo, daemon=True).start()
+        return _volver("Actualizando catálogo de Artema...", "/comida/artema")
+
+    def abrir_cesta_artema(request: Request) -> Response:
+        handles = request.query_params.getlist("p")
+        guardar = request.query_params.get("guardar") == "1"
+
+        con = abrir_db()
+        try:
+            cuentas: dict[str, int] = {}
+            platos_validos: dict[str, sqlite3.Row] = {}
+            for h in handles:
+                p_fila = db.plato_artema(con, h)
+                if p_fila is not None and p_fila["disponible"]:
+                    cuentas[h] = cuentas.get(h, 0) + 1
+                    platos_validos[h] = p_fila
+
+            if not cuentas:
+                return _volver("No has seleccionado ningún plato válido", "/comida/artema")
+
+            if guardar:
+                for fila in platos_validos.values():
+                    nombre = fila["nombre"]
+                    marca = "Artema Alimentación"
+                    existente = con.execute(
+                        "SELECT id FROM productos_propios WHERE nombre = ? AND marca = ?",
+                        (nombre, marca),
+                    ).fetchone()
+                    if existente is None:
+                        peso = (
+                            float(fila["peso_g"])
+                            if fila["peso_g"] is not None and fila["peso_g"] > 0
+                            else None
+                        )
+
+                        def _por_100(v: Any) -> float | None:
+                            if v is None or peso is None or peso <= 0:
+                                return None
+                            return round(float(v) * 100.0 / peso, 1)
+
+                        db.guardar_producto_propio(
+                            con,
+                            id_=None,
+                            codigo=None,
+                            nombre=nombre,
+                            marca=marca,
+                            unidad="g",
+                            kcal=_por_100(fila["kcal"]),
+                            proteinas=_por_100(fila["proteinas"]),
+                            hidratos=_por_100(fila["hidratos"]),
+                            grasas=_por_100(fila["grasas"]),
+                            origen="artema",
+                            racion_g=peso,
+                            racion_nombre="ración",
+                        )
+
+            items = [f"{platos_validos[h]['variant_id']}:{cuentas[h]}" for h in cuentas]
+            url_cesta = f"https://artema.club/cart/{','.join(items)}"
+            return RedirectResponse(url_cesta, status_code=303)
+        finally:
+            con.close()
+
     async def leer_etiqueta_foto(request: Request) -> Response:
         cuerpo = await _leer_foto(request)
         if isinstance(cuerpo, Response):
@@ -3047,6 +3202,9 @@ def crear_app(
             Route("/comida/propio/{id:int}", ver_comida_propio),
             Route("/comida/generico/{codigo}", ver_generico),
             Route("/comida/etiqueta", leer_etiqueta_foto, methods=["POST"]),
+            Route("/comida/artema", ver_pedido_artema),
+            Route("/comida/artema/actualizar", actualizar_catalogo_artema_web, methods=["POST"]),
+            Route("/comida/artema/cesta", abrir_cesta_artema),
             Route("/comida/anadir", anadir, methods=["POST"]),
             Route("/comida/{id:int}/borrar", borrar, methods=["POST"]),
             Route("/sincronizar", sincronizar, methods=["POST"]),

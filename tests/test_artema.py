@@ -10,9 +10,12 @@ from typing import Any
 
 import httpx
 import pytest
+from conftest import GarminFalso
+from starlette.testclient import TestClient
 
 from salud import artema, cli, db
 from salud.config import Settings
+from salud.web import crear_app
 
 FIXTURES = Path(__file__).parent / "fixtures" / "artema"
 
@@ -407,3 +410,211 @@ def test_recomendar_con_fixtures_reales(con):
         "albongas-salsa",
         "macarrones-bolonesa",
     ]
+
+
+# ── Web: Pedido de Artema y cesta ─────────────────────────────────────────────
+
+
+def cliente_web(settings: Settings) -> TestClient:
+    app = crear_app(
+        settings,
+        abrir_db=lambda: db.conectar(settings.db_path),
+        conectar_garmin=GarminFalso,
+    )
+    return TestClient(app, follow_redirects=False)
+
+
+def test_web_artema_sin_catalogo(settings):
+    cliente = cliente_web(settings)
+    resp = cliente.get("/comida/artema")
+    assert resp.status_code == 200
+    assert "Aún no se ha descargado el catálogo de platos de Artema" in resp.text
+    assert 'action="/comida/artema/actualizar"' in resp.text
+
+
+def test_web_artema_con_platos_marca_recomendados(con, settings):
+    pollos = [
+        plato_test(f"pollo-{i}", f"Pollo {i}", proteinas=40.0 - i, kcal=400.0) for i in range(4)
+    ]
+    db.guardar_platos_artema(con, pollos)
+
+    cliente = cliente_web(settings)
+    resp = cliente.get("/comida/artema")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "Recomendados" in html
+    assert "Resto de platos" in html
+    # Los 3 primeros recomendados marcados
+    assert 'value="pollo-0" checked' in html
+    assert 'value="pollo-1" checked' in html
+    assert 'value="pollo-2" checked' in html
+    # El cuarto plato queda en resto y desmarcado
+    assert 'value="pollo-3"' in html
+    assert 'value="pollo-3" checked' not in html
+    # Enlaces externos
+    assert 'href="https://artema.club/products/pollo-0"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener"' in html
+
+
+def test_web_tarjeta_acceso_en_comida_buscar(settings):
+    cliente = cliente_web(settings)
+    resp = cliente.get("/comida/buscar")
+    assert resp.status_code == 200
+    assert 'href="/comida/artema' in resp.text
+    assert "Pedido de Artema" in resp.text
+
+
+def test_web_cesta_redirige_a_shopify(con, settings):
+    p1 = artema.Plato(
+        handle="plato-1",
+        variant_id=5001,
+        nombre="Plato 1",
+        url="https://artema.club/products/plato-1",
+        categoria="Principal",
+        precio=6.0,
+        en_oferta=False,
+        precio_original=None,
+        peso_g=300.0,
+        kcal=400.0,
+        proteinas=25.0,
+        hidratos=20.0,
+        grasas=10.0,
+        azucares=2.0,
+        saturadas=1.0,
+        sal=1.0,
+        ingredientes=None,
+        disponible=True,
+        actualizado="2026-09-01T10:00:00",
+    )
+    p2 = artema.Plato(
+        handle="plato-2",
+        variant_id=5002,
+        nombre="Plato 2",
+        url="https://artema.club/products/plato-2",
+        categoria="Principal",
+        precio=7.0,
+        en_oferta=False,
+        precio_original=None,
+        peso_g=300.0,
+        kcal=450.0,
+        proteinas=30.0,
+        hidratos=20.0,
+        grasas=10.0,
+        azucares=2.0,
+        saturadas=1.0,
+        sal=1.0,
+        ingredientes=None,
+        disponible=True,
+        actualizado="2026-09-01T10:00:00",
+    )
+    db.guardar_platos_artema(con, [p1, p2])
+
+    cliente = cliente_web(settings)
+    # plato-1 repetido dos veces, plato-2 una vez
+    resp = cliente.get("/comida/artema/cesta?p=plato-1&p=plato-1&p=plato-2")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "https://artema.club/cart/5001:2,5002:1"
+
+
+def test_web_cesta_handle_desconocido_ignorado(con, settings):
+    p1 = artema.Plato(
+        handle="plato-1",
+        variant_id=5001,
+        nombre="Plato 1",
+        url="https://artema.club/products/plato-1",
+        categoria="Principal",
+        precio=6.0,
+        en_oferta=False,
+        precio_original=None,
+        peso_g=300.0,
+        kcal=400.0,
+        proteinas=25.0,
+        hidratos=20.0,
+        grasas=10.0,
+        azucares=2.0,
+        saturadas=1.0,
+        sal=1.0,
+        ingredientes=None,
+        disponible=True,
+        actualizado="2026-09-01T10:00:00",
+    )
+    db.guardar_platos_artema(con, [p1])
+
+    cliente = cliente_web(settings)
+    resp = cliente.get("/comida/artema/cesta?p=plato-1&p=fantasma")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "https://artema.club/cart/5001:1"
+
+
+def test_web_cesta_ninguno_valido_redirige_con_error(settings):
+    cliente = cliente_web(settings)
+    resp = cliente.get("/comida/artema/cesta?p=fantasma")
+    assert resp.status_code == 303
+    assert "/comida/artema?" in resp.headers["location"]
+    assert "mensaje=" in resp.headers["location"]
+
+
+def test_web_cesta_guardar_crea_productos_propios_por_100g_sin_duplicar(con, settings):
+    p = artema.Plato(
+        handle="merluza-horno",
+        variant_id=7001,
+        nombre="Merluza al horno",
+        url="https://artema.club/products/merluza-horno",
+        categoria="Principal",
+        precio=5.99,
+        en_oferta=False,
+        precio_original=None,
+        peso_g=200.0,
+        kcal=300.0,
+        proteinas=20.0,
+        hidratos=30.0,
+        grasas=10.0,
+        azucares=2.0,
+        saturadas=1.0,
+        sal=1.0,
+        ingredientes="Merluza, patatas",
+        disponible=True,
+        actualizado="2026-09-01T10:00:00",
+    )
+    db.guardar_platos_artema(con, [p])
+
+    cliente = cliente_web(settings)
+
+    # Primera llamada con guardar=1
+    resp = cliente.get("/comida/artema/cesta?p=merluza-horno&guardar=1")
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "https://artema.club/cart/7001:1"
+
+    propios = db.productos_propios(con)
+    assert len(propios) == 1
+    prod = propios[0]
+    assert prod["nombre"] == "Merluza al horno"
+    assert prod["marca"] == "Artema Alimentación"
+    assert prod["origen"] == "artema"
+    assert prod["unidad"] == "g"
+    # Valores por 100 g: racion de 200g -> factor 0.5
+    assert prod["kcal"] == 150.0
+    assert prod["proteinas"] == 10.0
+    assert prod["hidratos"] == 15.0
+    assert prod["grasas"] == 5.0
+    assert prod["racion_g"] == 200.0
+    assert prod["racion_nombre"] == "ración"
+
+    # Segunda llamada: no duplica el producto
+    resp2 = cliente.get("/comida/artema/cesta?p=merluza-horno&guardar=1")
+    assert resp2.status_code == 303
+    assert len(db.productos_propios(con)) == 1
+
+    # Comprobar que en la ficha del producto sale el rótulo esperado
+    resp_prod = cliente.get(f"/comida/propio/{prod['id']}")
+    assert resp_prod.status_code == 200
+    assert "de la etiqueta de Artema" in resp_prod.text
+
+
+def test_web_artema_actualizar_post_redirige(settings):
+    cliente = cliente_web(settings)
+    resp = cliente.post("/comida/artema/actualizar")
+    assert resp.status_code == 303
+    assert "/comida/artema?" in resp.headers["location"]

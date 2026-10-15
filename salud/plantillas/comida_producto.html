@@ -17,6 +17,8 @@
     <span class="etiqueta neutro">estimado con IA y revisado</span>
     {% elif producto.origen == "manual" %}
     <span class="etiqueta neutro">corregido por ti</span>
+    {% elif producto.origen == "artema" %}
+    <span class="etiqueta neutro">de la etiqueta de Artema</span>
     {% endif %}
   </div>
   {% if producto.marca %}

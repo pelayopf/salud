@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block titulo %}Pedido de Artema · Salud{% endblock %}
+{% block contenido %}
+{% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% if error %}<p class="aviso error" role="alert">{{ error }}</p>{% endif %}
+
+{% include "_comida_cabecera.html" %}
+
+<div class="cabecera-dia">
+  <a class="flecha" href="/comida?fecha={{ fecha }}{% if momento_elegido %}&momento={{ momento_elegido | urlencode }}{% endif %}" aria-label="Volver a comida">‹</a>
+  <h1>Pedido de Artema</h1>
+  <span class="flecha vacia"></span>
+</div>
+
+{% if not platos %}
+<section class="panel">
+  <p class="suave">Aún no se ha descargado el catálogo de platos de Artema. Se cargará con la próxima sincronización.</p>
+  <form method="post" action="/comida/artema/actualizar">
+    <button type="submit" class="boton primario">Actualizar catálogo ahora</button>
+  </form>
+</section>
+{% else %}
+
+{% if catalogo_desactualizado %}
+<p class="aviso">El catálogo tiene más de 4 días (actualizado el {{ actualizado_fecha }}). Los precios o disponibilidad podrían haber cambiado.</p>
+{% endif %}
+
+<section class="panel comida-resumen" aria-label="Resumen del pedido">
+  <div class="lista">
+    <div class="fila">
+      <span>Platos seleccionados</span>
+      <strong id="resumen-cantidad">{{ resumen.cantidad }} platos</strong>
+    </div>
+    <div class="fila">
+      <span>Total estimado</span>
+      <strong id="resumen-total">{{ resumen.total_eur | cifra }} €</strong>
+    </div>
+    <div class="fila">
+      <span>Media por plato</span>
+      <strong id="resumen-media">{{ resumen.media_proteina | gramos }} g proteína · {{ resumen.media_kcal | cifra }} kcal</strong>
+    </div>
+    <div class="fila">
+      <span>Actualizado</span>
+      <span class="suave">{{ actualizado_texto }}</span>
+    </div>
+  </div>
+</section>
+
+<form method="get" action="/comida/artema/cesta" class="formulario-artema">
+  <section class="panel">
+    <div class="acciones-artema">
+      <label class="guardar-label">
+        <input type="checkbox" name="guardar" value="1" checked id="guardar">
+        Guardar los marcados en Mis productos
+      </label>
+      <button type="submit" class="boton primario">Abrir la cesta en Artema</button>
+    </div>
+  </section>
+
+  <section class="grupo-resultados">
+    <h2>Recomendados</h2>
+    <div class="panel lista-resultados">
+      {% for p in recomendados %}
+      <div class="fila-resultado fila-plato-artema">
+        <label class="casilla-plato">
+          <input type="checkbox" name="p" value="{{ p.handle }}" checked data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
+        </label>
+        <div class="resultado-info">
+          <div>
+            <a href="{{ p.url }}" target="_blank" rel="noopener" class="enlace-plato"><strong>{{ p.nombre }}</strong></a>
+            {% if p.en_oferta %}<span class="etiqueta naranja">oferta</span>{% endif %}
+          </div>
+          <span class="suave">
+            {% if p.kcal is not none %}{{ p.kcal | cifra }} kcal{% endif %}
+            {% if p.proteinas is not none %} · P: {{ p.proteinas | gramos }} g{% endif %}
+            {% if p.hidratos is not none %} · HC: {{ p.hidratos | gramos }} g{% endif %}
+            {% if p.sal is not none %} · Sal: {{ p.sal | cifra(2) }} g{% endif %}
+          </span>
+        </div>
+        <div class="resultado-precio">
+          <strong>{{ p.precio | cifra }} €</strong>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if resto %}
+  <section class="grupo-resultados seccion-resto">
+    <h2>Resto de platos</h2>
+    <div class="panel lista-resultados">
+      {% for p in resto %}
+      <div class="fila-resultado fila-plato-artema">
+        <label class="casilla-plato">
+          <input type="checkbox" name="p" value="{{ p.handle }}" data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
+        </label>
+        <div class="resultado-info">
+          <div>
+            <a href="{{ p.url }}" target="_blank" rel="noopener" class="enlace-plato"><strong>{{ p.nombre }}</strong></a>
+            {% if p.en_oferta %}<span class="etiqueta naranja">oferta</span>{% endif %}
+          </div>
+          <span class="suave">
+            {% if p.kcal is not none %}{{ p.kcal | cifra }} kcal{% endif %}
+            {% if p.proteinas is not none %} · P: {{ p.proteinas | gramos }} g{% endif %}
+            {% if p.hidratos is not none %} · HC: {{ p.hidratos | gramos }} g{% endif %}
+            {% if p.sal is not none %} · Sal: {{ p.sal | cifra(2) }} g{% endif %}
+          </span>
+        </div>
+        <div class="resultado-precio">
+          <strong>{{ p.precio | cifra }} €</strong>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="acciones-artema-final">
+    <button type="submit" class="boton primario">Abrir la cesta en Artema</button>
+  </div>
+</form>
+
+<script>
+  (function() {
+    const form = document.querySelector('.formulario-artema');
+    if (!form) return;
+    const casillas = form.querySelectorAll('input[type="checkbox"][name="p"]');
+    const elCantidad = document.getElementById('resumen-cantidad');
+    const elTotal = document.getElementById('resumen-total');
+    const elMedia = document.getElementById('resumen-media');
+
+    function actualizarResumen() {
+      let count = 0;
+      let total = 0;
+      let prot = 0;
+      let kcal = 0;
+      casillas.forEach(c => {
+        if (c.checked) {
+          count++;
+          total += parseFloat(c.dataset.precio || 0);
+          prot += parseFloat(c.dataset.prot || 0);
+          kcal += parseFloat(c.dataset.kcal || 0);
+        }
+      });
+      if (elCantidad) elCantidad.textContent = count + ' platos';
+      if (elTotal) elTotal.textContent = total.toFixed(2).replace('.', ',') + ' €';
+      if (elMedia) {
+        if (count > 0) {
+          elMedia.textContent = (prot / count).toFixed(1).replace('.', ',') + ' g proteína · ' + Math.round(kcal / count) + ' kcal';
+        } else {
+          elMedia.textContent = '0 g proteína · 0 kcal';
+        }
+      }
+    }
+
+    casillas.forEach(c => c.addEventListener('change', actualizarResumen));
+  })();
+</script>
+{% endif %}
+{% endblock %}
