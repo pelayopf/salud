@@ -26,7 +26,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from . import db, tratamiento
+from . import calendario, db, tratamiento
 from .config import Settings
 from .metricas import CATALOGO, nombre_tipo, texto
 
@@ -143,6 +143,12 @@ Si falta algo importante (por ejemplo, el reloj aún no ha mandado el sueño de 
 y la franja equilibrada de su VFC.
 - Ten en cuenta la carga de los últimos días (actividades, carga aguda y crónica) y lo que \
 tenga previsto según su perfil.
+- Respeta su plan de deporte (`plan_deporte`, sacado de su calendario y su \
+semana tipo): el entreno de hoy debe encajar con lo que ya tiene. Si hoy tiene \
+un partido o una sesión intensa planificada, ese es el entreno: no propongas \
+otro aparte; como mucho, una activación suave o movilidad, y di cómo llegar \
+bien. Si mañana tiene algo intenso, que hoy no le reste. Si lo planificado ya \
+está hecho, dilo y propon recuperación.
 - El entreno, concreto: tipo, duración e intensidad (zonas de FC, o vatios a partir del FTP). \
 Si toca descansar, dilo y explica por qué.
 - La comida, según el entreno de hoy, lo que comió ayer si lo puedes consultar y sus objetivos.
@@ -234,6 +240,28 @@ def contexto(con: sqlite3.Connection, fecha: date) -> dict[str, Any]:
     ]
     sync = db.ultima_sincronizacion(con, "garmin")
     anterior = db.lectura(con, ayer)
+    items_plan = calendario.plan(con, fecha, fecha + timedelta(days=2), fecha)
+    actividades_plan = db.actividades(
+        con, fecha.isoformat(), (fecha + timedelta(days=2)).isoformat()
+    )
+    plan_deporte = []
+    for p in items_plan:
+        d_p = date.fromisoformat(p.fecha)
+        item = {
+            "fecha": p.fecha,
+            "dia": DIAS_SEMANA[d_p.weekday()],
+            "hora": p.inicio,
+            "titulo": p.titulo,
+            "deporte": nombre_tipo(p.tipo) if p.tipo else None,
+            "duracion_min": p.duracion_min,
+            "intensidad": p.intensidad,
+            "origen": (
+                "calendario" if p.origen in (calendario.GOOGLE, "calendario") else "semana tipo"
+            ),
+            "hecho": calendario.hecho(p, actividades_plan),
+        }
+        plan_deporte.append({k: v for k, v in item.items() if v is not None})
+
     return {
         "hoy": _fecha_larga(fecha),
         "ultima_sincronizacion_garmin": (
@@ -243,6 +271,7 @@ def contexto(con: sqlite3.Connection, fecha: date) -> dict[str, Any]:
         f"medias_{DIAS_MEDIA}_dias": medias,
         "ultimos_valores": ultimos,
         "actividades": [{k: v for k, v in a.items() if v is not None} for a in actividades],
+        "plan_deporte": plan_deporte,
         "lectura_de_ayer": (
             {
                 "titular": anterior["contenido"]["titular"],
