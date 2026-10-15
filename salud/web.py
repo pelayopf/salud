@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import logging
 import math
@@ -1586,9 +1587,15 @@ def crear_app(
             else None
         )
         restante = entrada.bloqueado_hasta - reloj()
+        hoy_d = hoy()
+        inicio_mes = hoy_d.replace(day=1).isoformat()
+        fin_mes = hoy_d.isoformat()
         con = abrir_db()
         try:
             sync_garmin = db.ultima_sincronizacion(con, GARMIN)
+            filas_mes = db.uso_ia_resumen(con, inicio_mes, fin_mes)
+            gasto_ia_mes_usd = sum(float(r["coste_usd"]) for r in filas_mes)
+            gasto_ia_mes_eur = gasto_ia_mes_usd * settings.ia_usd_eur
         finally:
             con.close()
         return _render(
@@ -1596,6 +1603,7 @@ def crear_app(
             seccion="conexiones",
             sesion_desde=desde,
             sync=sync_garmin,
+            gasto_ia_mes_eur=gasto_ia_mes_eur,
             bloqueado_min=int(restante // 60) + 1 if restante > 0 else 0,
             id_codigo=id_codigo,
             error=error,
@@ -1624,6 +1632,116 @@ def crear_app(
 
     def ver_conexiones(request: Request) -> Response:
         return _conexiones(request)
+
+    def ver_ia_uso(_request: Request) -> Response:
+        hoy_d = hoy()
+        dias_en_mes = calendar.monthrange(hoy_d.year, hoy_d.month)[1]
+        inicio_mes = hoy_d.replace(day=1).isoformat()
+        fin_mes = hoy_d.replace(day=dias_en_mes).isoformat()
+
+        dias_30 = [hoy_d - timedelta(days=i) for i in reversed(range(30))]
+        desde_30d = dias_30[0].isoformat()
+        hasta_30d = dias_30[-1].isoformat()
+
+        desde_prueba = settings.ia_prueba_desde.isoformat()
+        hasta_prueba = settings.ia_prueba_hasta.isoformat()
+
+        con = abrir_db()
+        try:
+            filas_mes = db.uso_ia_resumen(con, inicio_mes, fin_mes)
+            filas_30d = db.uso_ia_resumen(con, desde_30d, hasta_30d)
+            filas_prueba = db.uso_ia_resumen(con, desde_prueba, hasta_prueba)
+        finally:
+            con.close()
+
+        # 1. Gasto mes en EUR
+        gasto_mes_usd = sum(float(r["coste_usd"]) for r in filas_mes)
+        gasto_mes_eur = gasto_mes_usd * settings.ia_usd_eur
+        credito_mes_eur = settings.ia_credito_mes_eur
+        pct_mes = (
+            min(100.0, round((gasto_mes_eur / credito_mes_eur) * 100, 1))
+            if credito_mes_eur > 0
+            else 0.0
+        )
+        pasado_mes = gasto_mes_eur > credito_mes_eur
+
+        # 2. Prueba gratuita
+        gasto_prueba_usd = sum(float(r["coste_usd"]) for r in filas_prueba)
+        gasto_prueba_eur = gasto_prueba_usd * settings.ia_usd_eur
+        prueba_restante_eur = max(0.0, settings.ia_credito_prueba_eur - gasto_prueba_eur)
+        idx_mes_prueba = settings.ia_prueba_hasta.month - 1
+        fecha_hasta_prueba_str = (
+            f"{settings.ia_prueba_hasta.day} {graficas.MESES_CORTOS[idx_mes_prueba]}"
+        )
+
+        # 3. Proyección fin de mes
+        dias_transcurridos = hoy_d.day
+        gasto_medio_diario = gasto_mes_eur / dias_transcurridos if dias_transcurridos > 0 else 0.0
+        proyeccion_mes_eur = gasto_medio_diario * dias_en_mes
+
+        # 4. Aviso si supera el 80% del crédito mensual y la prueba ya caducó
+        prueba_caducada = hoy_d > settings.ia_prueba_hasta
+        mostrar_aviso = (proyeccion_mes_eur > 0.8 * credito_mes_eur) and prueba_caducada
+
+        # 5. Gráfica columnas 30 días
+        gasto_por_dia: dict[str, float] = defaultdict(float)
+        for r in filas_30d:
+            gasto_por_dia[r["fecha"]] += float(r["coste_usd"]) * settings.ia_usd_eur
+        barras = [
+            (graficas.fecha_corta(d.isoformat()), round(gasto_por_dia[d.isoformat()], 4))
+            for d in dias_30
+        ]
+        grafica_30d = graficas.columnas(
+            barras,
+            unidad="€",
+            titulo="Gasto diario últimos 30 días",
+        )
+
+        # 6. Tabla por modelo este mes
+        modelos_mes: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {
+                "motor": "",
+                "modelo": "",
+                "llamadas": 0,
+                "entrada": 0,
+                "salida": 0,
+                "razonamiento": 0,
+                "coste_usd": 0.0,
+                "fallos": 0,
+            }
+        )
+        for r in filas_mes:
+            m = r["modelo"]
+            entry = modelos_mes[m]
+            entry["motor"] = r["motor"]
+            entry["modelo"] = m
+            entry["llamadas"] += int(r["llamadas"])
+            entry["entrada"] += int(r["entrada"])
+            entry["salida"] += int(r["salida"])
+            entry["razonamiento"] += int(r["razonamiento"])
+            entry["coste_usd"] += float(r["coste_usd"])
+            entry["fallos"] += int(r["fallos"])
+
+        tabla_modelos = []
+        for entry in sorted(modelos_mes.values(), key=lambda x: str(x["modelo"])):
+            entry["coste_eur"] = entry["coste_usd"] * settings.ia_usd_eur
+            tabla_modelos.append(entry)
+
+        return _render(
+            "ia_uso.html",
+            seccion="conexiones",
+            gasto_mes_eur=gasto_mes_eur,
+            credito_mes_eur=credito_mes_eur,
+            pct_mes=pct_mes,
+            pasado_mes=pasado_mes,
+            prueba_restante_eur=prueba_restante_eur,
+            fecha_hasta_prueba_str=fecha_hasta_prueba_str,
+            proyeccion_mes_eur=proyeccion_mes_eur,
+            mostrar_aviso=mostrar_aviso,
+            prueba_caducada=prueba_caducada,
+            grafica_30d=grafica_30d,
+            tabla_modelos=tabla_modelos,
+        )
 
     async def garmin_entrar(request: Request) -> Response:
         datos = await _formulario(request)
@@ -2914,6 +3032,7 @@ def crear_app(
             Route("/sincronizar", sincronizar, methods=["POST"]),
             Route("/lectura", pedir_lectura, methods=["POST"]),
             Route("/conexiones", ver_conexiones),
+            Route("/ia/uso", ver_ia_uso),
             Route("/conexiones/garmin/entrar", garmin_entrar, methods=["POST"]),
             Route("/conexiones/garmin/codigo", garmin_codigo, methods=["POST"]),
             Route("/conexiones/garmin/probar", garmin_probar, methods=["POST"]),

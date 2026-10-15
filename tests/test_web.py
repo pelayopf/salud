@@ -304,3 +304,116 @@ def test_salud_rediseno_completo(cliente, settings):
     r_trat = cliente.get("/tratamiento")
     assert r_trat.status_code == 200
     assert "tarjeta-tratamiento" in r_trat.text
+
+
+def test_conexiones_y_pagina_ia_uso(settings):
+    s = replace(
+        settings,
+        ia_usd_eur=0.92,
+        ia_credito_mes_eur=8.80,
+        ia_credito_prueba_eur=264.0,
+        ia_prueba_desde=date(2026, 1, 1),
+        ia_prueba_hasta=date(2026, 1, 31),
+    )
+    con = db.conectar(s.db_path)
+    db.registrar_uso_ia(
+        con,
+        tarea="etiqueta",
+        motor="vertex",
+        modelo="gemini-3.8-flash",
+        estado="ok",
+        segundos=1.2,
+        uso=(1000, 200, 50),
+        coste_usd=0.005,
+        cuando="2026-01-05T12:00:00+00:00",
+    )
+    db.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-4-argon",
+        estado="VertexNoDisponible",
+        segundos=0.9,
+        uso=None,
+        coste_usd=None,
+        cuando="2026-01-08T15:00:00+00:00",
+    )
+    db.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-3.1-pro-preview",
+        estado="ok",
+        segundos=2.5,
+        uso=(2000, 400, 100),
+        coste_usd=0.010,
+        cuando="2026-01-08T15:00:03+00:00",
+    )
+    con.close()
+
+    cliente = TestClient(_app(s))
+
+    # 1. Enlace y cifra en /conexiones
+    r_con = cliente.get("/conexiones")
+    assert r_con.status_code == 200
+    assert "Uso de la IA" in r_con.text
+    assert 'href="/ia/uso"' in r_con.text
+    assert "0,01 € este mes" in r_con.text
+
+    # 2. Página /ia/uso
+    r_ia = cliente.get("/ia/uso")
+    assert r_ia.status_code == 200
+    assert "Uso de la IA" in r_ia.text
+    # Cifra del mes
+    assert "0,01 € / 8,80 €" in r_ia.text
+    # Prueba gratuita vigente
+    assert "Prueba gratuita:" in r_ia.text
+    assert "263,99 € hasta el 31 ene (estimado)" in r_ia.text
+    # Proyección (días transcurridos = 10, mes de enero = 31 días)
+    # 0.0138 / 10 * 31 = 0.04278 € -> 0,04 €
+    assert "Proyección a fin de mes: 0,04 € (estimado)" in r_ia.text
+    # Como la prueba sigue vigente (hasta el 31 ene), texto suave sin .aviso
+    assert "Vas sobrado: la prueba cubre 263,99 € más" in r_ia.text
+    assert 'class="aviso"' not in r_ia.text
+
+    # Tabla por modelo
+    assert "gemini-3.8-flash" in r_ia.text
+    assert "gemini-4-argon" in r_ia.text
+    assert "gemini-3.1-pro-preview" in r_ia.text
+    assert "Al respaldo" in r_ia.text
+
+    # Enlace oficial
+    assert "https://console.cloud.google.com/billing" in r_ia.text
+    assert "Cifra oficial en Google Cloud" in r_ia.text
+
+
+def test_pagina_ia_uso_aviso_cuando_prueba_caduca(settings):
+    s = replace(
+        settings,
+        ia_usd_eur=1.0,
+        ia_credito_mes_eur=8.80,
+        ia_prueba_desde=date(2026, 1, 1),
+        ia_prueba_hasta=date(2026, 1, 5),
+    )
+    con = db.conectar(s.db_path)
+    # 3.0 € gastados en 10 días -> proyección: 3.0 / 10 * 31 = 9.30 € > 7.04 €
+    db.registrar_uso_ia(
+        con,
+        tarea="comida",
+        motor="vertex",
+        modelo="gemini-3.8-flash",
+        estado="ok",
+        segundos=1.0,
+        uso=(100000, 20000, 0),
+        coste_usd=3.0,
+        cuando="2026-01-08T12:00:00+00:00",
+    )
+    con.close()
+
+    cliente = TestClient(_app(s))
+    r = cliente.get("/ia/uso")
+    assert r.status_code == 200
+    assert 'class="aviso"' in r.text
+    assert "supera el 80 % del crédito mensual" in r.text
+    assert "la prueba gratuita ya ha caducado" in r.text
+    assert "Vas sobrado" not in r.text

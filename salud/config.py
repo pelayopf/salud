@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -66,6 +67,12 @@ class Settings:
     # saturación, y entonces va Gemini 3.1 Pro (~35 s) antes de caer a agy.
     vertex_modelo_consejo: str = "gemini-4-argon"
     vertex_modelo_consejo_respaldo: str = "gemini-3.1-pro-preview"
+    # Control de gasto de IA (Vertex): estimación de coste frente a créditos
+    ia_usd_eur: float = 0.92
+    ia_credito_mes_eur: float = 8.80
+    ia_credito_prueba_eur: float = 264.0
+    ia_prueba_desde: date = date(2026, 10, 15)
+    ia_prueba_hasta: date = date(2027, 1, 14)
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -104,6 +111,32 @@ def load_settings() -> Settings:
         raise ConfigError(
             "SALUD_IA_MOTOR=vertex requiere SALUD_VERTEX_API_KEY y SALUD_VERTEX_PROYECTO"
         )
+    try:
+        ia_usd_eur = float(os.environ.get("SALUD_IA_USD_EUR", "0.92").strip() or 0.92)
+    except ValueError:
+        ia_usd_eur = 0.92
+    try:
+        ia_credito_mes_eur = float(
+            os.environ.get("SALUD_IA_CREDITO_MES_EUR", "8.80").strip() or 8.80
+        )
+    except ValueError:
+        ia_credito_mes_eur = 8.80
+    try:
+        ia_credito_prueba_eur = float(
+            os.environ.get("SALUD_IA_CREDITO_PRUEBA_EUR", "264.0").strip() or 264.0
+        )
+    except ValueError:
+        ia_credito_prueba_eur = 264.0
+    desde_str = os.environ.get("SALUD_IA_PRUEBA_DESDE", "").strip()
+    try:
+        ia_prueba_desde = date.fromisoformat(desde_str) if desde_str else date(2026, 10, 15)
+    except ValueError:
+        ia_prueba_desde = date(2026, 10, 15)
+    hasta_str = os.environ.get("SALUD_IA_PRUEBA_HASTA", "").strip()
+    try:
+        ia_prueba_hasta = date.fromisoformat(hasta_str) if hasta_str else date(2027, 1, 14)
+    except ValueError:
+        ia_prueba_hasta = date(2027, 1, 14)
     return Settings(
         db_path=_ruta(os.environ.get("SALUD_DB_PATH", "~/.local/share/salud/salud.db")),
         usuarios=frozenset(u.strip().lower() for u in usuarios.split(",") if u.strip()),
@@ -136,6 +169,11 @@ def load_settings() -> Settings:
         vertex_modelo=vertex_modelo,
         vertex_modelo_consejo=vertex_modelo_consejo,
         vertex_modelo_consejo_respaldo=vertex_modelo_consejo_respaldo,
+        ia_usd_eur=ia_usd_eur,
+        ia_credito_mes_eur=ia_credito_mes_eur,
+        ia_credito_prueba_eur=ia_credito_prueba_eur,
+        ia_prueba_desde=ia_prueba_desde,
+        ia_prueba_hasta=ia_prueba_hasta,
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
         url_publica=os.environ.get("SALUD_URL_PUBLICA", "").strip().rstrip("/"),

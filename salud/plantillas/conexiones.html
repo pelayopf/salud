@@ -52,6 +52,19 @@
   {% endif %}
 </section>
 
+<section class="panel conexion" aria-labelledby="titulo-ia">
+  <div class="cabecera">
+    <h2 id="titulo-ia">Uso de la IA</h2>
+    <span class="etiqueta">{{ gasto_ia_mes_eur | cifra(2) }} € este mes</span>
+  </div>
+  <p class="suave">
+    Gasto estimado en Vertex AI frente a los créditos disponibles.
+  </p>
+  <div class="acciones">
+    <a href="/ia/uso" class="boton secundario">Ver uso de la IA</a>
+  </div>
+</section>
+
 {% if acceso().publica %}
 <section class="panel conexion" aria-labelledby="titulo-sesion">
   <div class="cabecera">

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Uso de la IA · Salud{% endblock %}
+{% block contenido %}
+<p class="migas"><a href="/conexiones">← Conexiones</a></p>
+<h1>Uso de la IA</h1>
+
+{% if mostrar_aviso %}
+<p class="aviso">Atención: la proyección a fin de mes ({{ proyeccion_mes_eur | cifra(2) }} €) supera el 80 % del crédito mensual ({{ credito_mes_eur | cifra(2) }} €) y la prueba gratuita ya ha caducado.</p>
+{% endif %}
+
+<section class="panel" aria-labelledby="titulo-gasto-mes">
+  <div class="cabecera">
+    <h2 id="titulo-gasto-mes">Gasto este mes</h2>
+    <span class="etiqueta{% if pasado_mes %} estado-ambar{% endif %}">
+      {{ gasto_mes_eur | cifra(2) }} € / {{ credito_mes_eur | cifra(2) }} € (estimado)
+    </span>
+  </div>
+  <div class="progreso">
+    <div class="progreso-barra{% if pasado_mes %} pasado{% endif %}" style="width: {{ pct_mes }}%"></div>
+  </div>
+  <p class="suave">
+    Prueba gratuita: {{ prueba_restante_eur | cifra(2) }} € hasta el {{ fecha_hasta_prueba_str }} (estimado)
+  </p>
+  <p class="suave">
+    Proyección a fin de mes: {{ proyeccion_mes_eur | cifra(2) }} € (estimado)
+  </p>
+  {% if not prueba_caducada %}
+  <p class="suave">Vas sobrado: la prueba cubre {{ prueba_restante_eur | cifra(2) }} € más.</p>
+  {% endif %}
+</section>
+
+<section class="panel grafica-panel" aria-labelledby="titulo-grafica-30d">
+  <div class="cabecera">
+    <h2 id="titulo-grafica-30d">Gasto diario últimos 30 días</h2>
+  </div>
+  {% if grafica_30d %}
+  <div class="lienzo">{{ grafica_30d.svg }}</div>
+  {% else %}
+  <p class="suave">Aún no hay llamadas registradas en los últimos 30 días.</p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="titulo-modelos">
+  <div class="cabecera">
+    <h2 id="titulo-modelos">Detalle por modelo este mes</h2>
+  </div>
+  {% if tabla_modelos %}
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Modelo</th>
+        <th scope="col" class="cifra-tabla">Llamadas</th>
+        <th scope="col" class="cifra-tabla">Entrada</th>
+        <th scope="col" class="cifra-tabla">Salida</th>
+        <th scope="col" class="cifra-tabla">Razonamiento</th>
+        <th scope="col" class="cifra-tabla">Coste</th>
+        <th scope="col" class="cifra-tabla">Al respaldo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in tabla_modelos %}
+      <tr>
+        <td><strong>{{ m.modelo }}</strong> <span class="suave">({{ m.motor }})</span></td>
+        <td class="cifra-tabla">{{ m.llamadas }}</td>
+        <td class="cifra-tabla">{{ m.entrada | cifra }}</td>
+        <td class="cifra-tabla">{{ m.salida | cifra }}</td>
+        <td class="cifra-tabla">{{ m.razonamiento | cifra }}</td>
+        <td class="cifra-tabla">{{ m.coste_eur | cifra(4) }} €</td>
+        <td class="cifra-tabla">{{ m.fallos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="suave">Sin llamadas este mes.</p>
+  {% endif %}
+</section>
+
+<p class="suave nota-conexiones">
+  <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer">Cifra oficial en Google Cloud</a>
+</p>
+{% endblock %}
