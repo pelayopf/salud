@@ -502,6 +502,8 @@ def test_web_artema_con_platos_marca_recomendados(con, settings):
     # El cuarto plato queda en resto y desmarcado
     assert 'value="pollo-3"' in html
     assert 'value="pollo-3" checked' not in html
+    # Cada casilla lleva su variante para abrir la cesta desde el navegador
+    assert 'data-variante="' in html
     # Enlaces externos
     assert 'href="https://artema.club/products/pollo-0"' in html
     assert 'target="_blank"' in html

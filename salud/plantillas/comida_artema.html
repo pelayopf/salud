@@ -63,7 +63,7 @@
       {% for p in recomendados %}
       <div class="fila-resultado fila-plato-artema">
         <label class="casilla-plato">
-          <input type="checkbox" name="p" value="{{ p.handle }}" checked data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
+          <input type="checkbox" name="p" data-variante="{{ p.variant_id }}" value="{{ p.handle }}" checked data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
         </label>
         <div class="resultado-info">
           <div>
@@ -92,7 +92,7 @@
       {% for p in resto %}
       <div class="fila-resultado fila-plato-artema">
         <label class="casilla-plato">
-          <input type="checkbox" name="p" value="{{ p.handle }}" data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
+          <input type="checkbox" name="p" data-variante="{{ p.variant_id }}" value="{{ p.handle }}" data-precio="{{ p.precio }}" data-kcal="{{ p.kcal or 0 }}" data-prot="{{ p.proteinas or 0 }}">
         </label>
         <div class="resultado-info">
           <div>
@@ -154,6 +154,21 @@
     }
 
     casillas.forEach(c => c.addEventListener('change', actualizarResumen));
+
+    // La cesta se abre en una ventana nueva: en la app instalada eso es el
+    // navegador y no la pestaña integrada. Guardar en Mis productos lo sigue
+    // haciendo el servidor, en segundo plano.
+    form.addEventListener('submit', ev => {
+      const marcadas = Array.from(casillas).filter(c => c.checked);
+      if (marcadas.length === 0) return;
+      ev.preventDefault();
+      const cesta = 'https://artema.club/cart/' +
+        marcadas.map(c => c.dataset.variante + ':1').join(',');
+      if (document.getElementById('guardar').checked) {
+        fetch(form.action + '?' + new URLSearchParams(new FormData(form)), {redirect: 'manual'});
+      }
+      if (!window.open(cesta, '_blank')) window.location.href = cesta;
+    });
   })();
 </script>
 {% endif %}
