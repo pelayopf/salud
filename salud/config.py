@@ -70,6 +70,10 @@ class Settings:
     # Control de gasto de IA (Vertex): estimación de coste frente a créditos
     ia_usd_eur: float = 0.92
     ia_credito_mes_eur: float = 8.80
+    # Topes de gasto estimado en Vertex: al llegar, la IA pasa a agy hasta el día
+    # (o mes) siguiente. El presupuesto de Google solo avisa; esto corta.
+    ia_tope_dia_eur: float = 1.0
+    ia_tope_mes_eur: float = 15.0
     ia_credito_prueba_eur: float = 264.0
     ia_prueba_desde: date = date(2026, 10, 15)
     ia_prueba_hasta: date = date(2027, 1, 14)
@@ -83,6 +87,15 @@ class Settings:
 
 def _ruta(valor: str) -> Path:
     return Path(valor).expanduser()
+
+
+def _euros(variable: str, defecto: float) -> float:
+    """Importe en euros de una variable de entorno; el defecto si falta o no es un número ≥ 0."""
+    try:
+        valor = float(os.environ.get(variable, "").strip().replace(",", "."))
+    except ValueError:
+        return defecto
+    return valor if valor >= 0 else defecto
 
 
 def load_settings() -> Settings:
@@ -171,6 +184,8 @@ def load_settings() -> Settings:
         vertex_modelo_consejo_respaldo=vertex_modelo_consejo_respaldo,
         ia_usd_eur=ia_usd_eur,
         ia_credito_mes_eur=ia_credito_mes_eur,
+        ia_tope_dia_eur=_euros("SALUD_IA_TOPE_DIA_EUR", 1.0),
+        ia_tope_mes_eur=_euros("SALUD_IA_TOPE_MES_EUR", 15.0),
         ia_credito_prueba_eur=ia_credito_prueba_eur,
         ia_prueba_desde=ia_prueba_desde,
         ia_prueba_hasta=ia_prueba_hasta,

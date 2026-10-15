@@ -1640,3 +1640,79 @@ def test_ejecutar_db_falla_no_rompe_tarea(tmp_path, monkeypatch):
     # Debe ejecutarse sin lanzar excepción aunque falle la base
     res = ejecutar(tarea, settings)
     assert res.datos == {"ok": True}
+
+
+def test_tope_de_gasto_pasa_a_agy(tmp_path, monkeypatch):
+    """Con el gasto estimado de hoy en el tope, Vertex no se llama y la tarea va por agy."""
+    from datetime import datetime
+
+    from salud import db as db_mod
+    from salud.ia import ZONA, TopeGasto, comprobar_tope
+
+    settings = Settings(
+        db_path=tmp_path / "s.db",
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+        ia_tope_dia_eur=1.0,
+        ia_tope_mes_eur=15.0,
+        ia_usd_eur=1.0,
+    )
+    hoy = datetime.now(ZONA)
+    con = db_mod.conectar(settings.db_path)
+    db_mod.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-4-argon",
+        estado="ok",
+        segundos=30,
+        uso=(1, 1, 1),
+        coste_usd=0.6,
+    )
+    comprobar_tope(settings, hoy.date())  # 0,6 € de 1 €: pasa
+    db_mod.registrar_uso_ia(
+        con,
+        tarea="consejo",
+        motor="vertex",
+        modelo="gemini-4-argon",
+        estado="ok",
+        segundos=30,
+        uso=(1, 1, 1),
+        coste_usd=0.5,
+    )
+    con.close()
+    try:
+        comprobar_tope(settings, hoy.date())
+    except TopeGasto as exc:
+        assert "diario" in str(exc)
+    else:
+        raise AssertionError("debía saltar el tope diario")
+
+    llamadas: list[str] = []
+
+    def fake_vertex(_t: Tarea, _s: Settings) -> RespuestaIA:
+        llamadas.append("vertex")
+        return RespuestaIA(datos={}, motor="vertex", modelo="m")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        llamadas.append("agy")
+        return RespuestaIA(datos={"ok": True}, motor="agy", modelo="flash")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+    assert ejecutar(Tarea(nombre="comida", instrucciones="i", esquema={}), settings).motor == "agy"
+    assert llamadas == ["agy"]
+
+
+def test_tope_sin_base_legible_no_arriesga(tmp_path):
+    from salud.ia import TopeGasto, comprobar_tope
+
+    # Una carpeta donde debería estar la base: no se puede abrir.
+    settings = Settings(db_path=tmp_path, ia_tope_dia_eur=1.0)
+    try:
+        comprobar_tope(settings)
+    except TopeGasto:
+        pass
+    else:
+        raise AssertionError("sin base legible, debía cortar")

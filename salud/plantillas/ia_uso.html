@@ -24,6 +24,14 @@
   <p class="suave">
     Proyección a fin de mes: {{ proyeccion_mes_eur | cifra(2) }} € (estimado)
   </p>
+  <p class="suave">
+    Topes: hoy {{ gasto_hoy_eur | cifra(2) }} € de {{ tope_dia_eur | cifra(2) }} € · este mes
+    {{ gasto_mes_eur | cifra(2) }} € de {{ tope_mes_eur | cifra(2) }} €. Al llegar a un tope, la IA
+    deja de usar Vertex y va por agy hasta el día (o el mes) siguiente.
+  </p>
+  {% if tope_alcanzado %}
+  <p class="aviso">Tope de gasto alcanzado: ahora la IA va por agy.</p>
+  {% endif %}
   {% if not prueba_caducada %}
   <p class="suave">Vas sobrado: la prueba cubre {{ prueba_restante_eur | cifra(2) }} € más.</p>
   {% endif %}

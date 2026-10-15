@@ -1657,6 +1657,9 @@ def crear_app(
         # 1. Gasto mes en EUR
         gasto_mes_usd = sum(float(r["coste_usd"]) for r in filas_mes)
         gasto_mes_eur = gasto_mes_usd * settings.ia_usd_eur
+        gasto_hoy_eur = settings.ia_usd_eur * sum(
+            float(r["coste_usd"]) for r in filas_mes if r["fecha"] == hoy_d.isoformat()
+        )
         credito_mes_eur = settings.ia_credito_mes_eur
         pct_mes = (
             min(100.0, round((gasto_mes_eur / credito_mes_eur) * 100, 1))
@@ -1743,6 +1746,13 @@ def crear_app(
             prueba_caducada=prueba_caducada,
             grafica_30d=grafica_30d,
             tabla_modelos=tabla_modelos,
+            gasto_hoy_eur=gasto_hoy_eur,
+            tope_dia_eur=settings.ia_tope_dia_eur,
+            tope_mes_eur=settings.ia_tope_mes_eur,
+            tope_alcanzado=(
+                gasto_hoy_eur >= settings.ia_tope_dia_eur
+                or gasto_mes_eur >= settings.ia_tope_mes_eur
+            ),
         )
 
     async def garmin_entrar(request: Request) -> Response:

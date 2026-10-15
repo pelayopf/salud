@@ -30,8 +30,10 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -39,6 +41,8 @@ from . import db
 from .config import Settings
 
 log = logging.getLogger(__name__)
+# Los días y meses del tope de gasto, en hora de Pelayo.
+ZONA = ZoneInfo("Europe/Madrid")
 
 MAX_BYTES_IMAGEN = 8 * 1024 * 1024
 TIEMPO_MAXIMO_S = 90
@@ -74,6 +78,10 @@ class CupoAgotado(ErrorIA):
 
 class SinDatos(ErrorIA):
     """agy terminó bien pero sin devolver los datos pedidos (fallo intermitente)."""
+
+
+class TopeGasto(ErrorIA):
+    """Se ha llegado al tope de gasto estimado en Vertex del día o del mes."""
 
 
 class VertexNoDisponible(ErrorIA):
@@ -638,8 +646,39 @@ def _registrar(
         log.exception("Error al registrar uso de IA en base de datos")
 
 
+def comprobar_tope(settings: Settings, hoy: date | None = None) -> None:
+    """TopeGasto si el gasto estimado en Vertex de hoy o de este mes llega a su tope.
+
+    Si no se puede leer la base, también TopeGasto: con dinero, mejor no arriesgar.
+    """
+    hoy = hoy or datetime.now(ZONA).date()
+    try:
+        con = db.conectar(settings.db_path)
+        try:
+            dia = db.gasto_vertex_usd(con, hoy.isoformat(), hoy.isoformat())
+            mes = db.gasto_vertex_usd(con, hoy.replace(day=1).isoformat(), hoy.isoformat())
+        finally:
+            con.close()
+    except Exception as exc:
+        raise TopeGasto("No se pudo comprobar el gasto en Vertex") from exc
+    if dia * settings.ia_usd_eur >= settings.ia_tope_dia_eur:
+        raise TopeGasto(f"Tope diario de {settings.ia_tope_dia_eur:.2f} € en Vertex")
+    if mes * settings.ia_usd_eur >= settings.ia_tope_mes_eur:
+        raise TopeGasto(f"Tope mensual de {settings.ia_tope_mes_eur:.2f} € en Vertex")
+
+
 def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
-    """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy."""
+    """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy.
+
+    Con el tope de gasto alcanzado, directamente agy.
+    """
+    try:
+        comprobar_tope(settings)
+    except TopeGasto as exc:
+        log.warning("%s: la tarea %s va con agy", exc, tarea.nombre)
+        modelo = tarea.modelo_vertex or settings.vertex_modelo
+        _registrar(settings, tarea, "vertex", modelo, type(exc).__name__, 0.0, None)
+        return MOTORES["agy"](tarea, settings)
     intentos = [tarea]
     if tarea.modelo_vertex_respaldo:
         intentos.append(

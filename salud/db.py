@@ -990,6 +990,20 @@ def borrar_borrador_comida(con: sqlite3.Connection, id_: int) -> bool:
 # --- Lectura -----------------------------------------------------------------
 
 
+def gasto_vertex_usd(con: sqlite3.Connection, desde: str, hasta: str) -> float:
+    """Coste estimado en dólares de las llamadas a Vertex entre dos fechas locales (incluidas)."""
+    try:
+        con.create_function("fecha_local_madrid", 1, fecha_local)
+    except sqlite3.OperationalError:
+        pass
+    fila = con.execute(
+        "SELECT COALESCE(SUM(coste_usd), 0.0) FROM uso_ia"
+        " WHERE motor = 'vertex' AND fecha_local_madrid(cuando) BETWEEN ? AND ?",
+        (desde, hasta),
+    ).fetchone()
+    return float(fila[0])
+
+
 def uso_ia_resumen(con: sqlite3.Connection, desde: str, hasta: str) -> list[sqlite3.Row]:
     """Resumen de uso de la IA agrupado por día (fecha local Madrid), motor y modelo.
 
