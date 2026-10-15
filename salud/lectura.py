@@ -431,19 +431,12 @@ def generar(
         )
         try:
             resp = ejecutor_vertex(tarea, settings)
-            try:
-                contenido = validar(resp.datos)
-            except LecturaError as exc:
-                previa = db.lectura(con, fecha.isoformat())
-                if previa is None or previa["estado"] != "ok":
-                    db.guardar_lectura(
-                        con,
-                        fecha.isoformat(),
-                        error=str(exc),
-                        modelo=f"vertex:{resp.modelo}",
-                        segundos=round(time.monotonic() - inicio, 1),
-                    )
-                raise
+            contenido = validar(resp.datos)
+        except (ia.ErrorIA, LecturaError) as exc:
+            # Vertex sin respuesta, con el tope alcanzado o con una lectura incompleta:
+            # se repite con Claude, que es lo que se hacía siempre.
+            log.warning("Fallo en lectura por Vertex (%s); se intenta con Claude", exc)
+        else:
             db.guardar_lectura(
                 con,
                 fecha.isoformat(),
@@ -452,8 +445,6 @@ def generar(
                 segundos=round(time.monotonic() - inicio, 1),
             )
             return contenido
-        except ia.ErrorIA as exc:
-            log.warning("Fallo en lectura por Vertex (%s); se intenta con Claude", exc)
 
     mcp = configuracion_mcp(settings)
     entrada = mensaje(ctx, txt_perfil, mcp is not None)

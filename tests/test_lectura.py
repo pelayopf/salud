@@ -336,27 +336,26 @@ def test_validacion_comun_rechaza_estado_desconocido_y_campos_faltan(con, settin
     with pytest.raises(LecturaError, match="Estado desconocido: 'azul'"):
         lectura.interpretar(_salida(BUENA | {"estado": "azul"}))
 
-    # Camino Vertex (generar)
+    # Camino Vertex (generar): una lectura inválida de Vertex no se guarda; se repite con Claude.
     s_vertex = replace(settings, lectura_motor="vertex")
+    llamadas_claude: list[str] = []
 
-    # Vertex devuelve dict con campo faltante -> LecturaError
-    def vertex_incompleto(_t, _s):
-        return ia.RespuestaIA(
-            datos={k: v for k, v in BUENA.items() if k != "comida"},
-            motor="vertex",
-            modelo="gemini-4-argon",
+    def claude_bueno(_orden, _entrada, _dir):
+        llamadas_claude.append("claude")
+        return _salida(BUENA)
+
+    for datos_malos in (
+        {k: v for k, v in BUENA.items() if k != "comida"},
+        BUENA | {"estado": "azul"},
+    ):
+
+        def vertex_malo(_t, _s, datos=datos_malos):
+            return ia.RespuestaIA(datos=datos, motor="vertex", modelo="gemini-4-argon")
+
+        resultado = lectura.generar(
+            con, s_vertex, date(2026, 1, 10), ejecutor=claude_bueno, ejecutor_vertex=vertex_malo
         )
-
-    with pytest.raises(LecturaError, match="falta: comida"):
-        lectura.generar(con, s_vertex, date(2026, 1, 10), ejecutor_vertex=vertex_incompleto)
-
-    # Vertex devuelve dict con estado desconocido -> LecturaError
-    def vertex_estado_malo(_t, _s):
-        return ia.RespuestaIA(
-            datos=BUENA | {"estado": "azul"},
-            motor="vertex",
-            modelo="gemini-4-argon",
-        )
-
-    with pytest.raises(LecturaError, match="Estado desconocido: 'azul'"):
-        lectura.generar(con, s_vertex, date(2026, 1, 10), ejecutor_vertex=vertex_estado_malo)
+        assert resultado == BUENA
+        guardada = db.lectura(con, "2026-01-10")
+        assert guardada is not None and guardada["modelo"] == settings.lectura_modelo
+    assert llamadas_claude == ["claude", "claude"]
