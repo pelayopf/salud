@@ -4,6 +4,10 @@
 <p class="migas"><a href="/conexiones">← Conexiones</a></p>
 <h1>Uso de la IA</h1>
 
+{% for av in avisos_ia %}
+<p class="aviso"><a href="/ia/uso">{{ av }}</a></p>
+{% endfor %}
+
 {% if mostrar_aviso %}
 <p class="aviso">Atención: la proyección a fin de mes ({{ proyeccion_mes_eur | cifra(2) }} €) supera el 80 % del crédito mensual ({{ credito_mes_eur | cifra(2) }} €) y la prueba gratuita ya ha caducado.</p>
 {% endif %}

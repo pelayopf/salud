@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import hashlib
+import json
 import logging
 import math
 import secrets
@@ -167,6 +168,47 @@ def _tratamiento(con: sqlite3.Connection, dia: date) -> dict[str, Any]:
         "dosis_hechas": dosis_hechas,
         "dias_ciclo": dias,
     }
+
+
+def _avisos_ia(con: sqlite3.Connection, settings: Settings, hoy_d: date) -> list[str]:
+    """Avisos sobre la IA (Vertex y agy) para Hoy y Uso de la IA."""
+    if settings.ia_motor != "vertex":
+        return []
+
+    avisos: list[str] = []
+
+    # 1. Fin de la prueba de Google Cloud
+    dias_restantes = (settings.ia_prueba_hasta - hoy_d).days
+    tope_despues = min(settings.ia_tope_mes_eur, 0.9 * settings.ia_credito_mes_eur)
+    tope_str = f"{cifra(tope_despues, 2)}"
+
+    if 0 <= dias_restantes <= 30:
+        dia_txt = dia_corto(settings.ia_prueba_hasta)
+        avisos.append(
+            f"La prueba de Google Cloud acaba el {dia_txt} (quedan {dias_restantes} días): "
+            f"decide si seguir con Vertex. Después, el tope mensual baja a {tope_str} €."
+        )
+    elif 1 <= -dias_restantes <= 7:
+        avisos.append(
+            f"Acabó la prueba de Google Cloud: la IA usa solo el crédito mensual "
+            f"(tope {tope_str} €)."
+        )
+
+    # 2. Modelos Pro en agy
+    raw_pros = db.leer_estado_ia(con, "modelos_pro_agy")
+    if raw_pros:
+        try:
+            pros = json.loads(raw_pros)
+            if isinstance(pros, list) and pros:
+                modelos_str = ", ".join(pros)
+                avisos.append(
+                    f"agy ya ofrece {modelos_str}: se puede dejar Vertex y volver a agy "
+                    "(quitar SALUD_IA_MOTOR=vertex)."
+                )
+        except Exception:
+            pass
+
+    return avisos
 
 
 PLANTILLAS.filters["horas"] = horas_y_minutos
@@ -1223,6 +1265,7 @@ def crear_app(
                 comida_hoy=comida_hoy,
                 sync=db.ultima_sincronizacion(con, GARMIN),
                 mensaje=request.query_params.get("mensaje"),
+                avisos_ia=_avisos_ia(con, settings, hoy()),
             )
         finally:
             con.close()
@@ -1651,6 +1694,7 @@ def crear_app(
             filas_mes = db.uso_ia_resumen(con, inicio_mes, fin_mes)
             filas_30d = db.uso_ia_resumen(con, desde_30d, hasta_30d)
             filas_prueba = db.uso_ia_resumen(con, desde_prueba, hasta_prueba)
+            avisos_ia = _avisos_ia(con, settings, hoy_d)
         finally:
             con.close()
 
@@ -1753,6 +1797,7 @@ def crear_app(
                 gasto_hoy_eur >= settings.ia_tope_dia_eur
                 or gasto_mes_eur >= ia.tope_mes_efectivo(settings, hoy_d)
             ),
+            avisos_ia=avisos_ia,
         )
 
     async def garmin_entrar(request: Request) -> Response:

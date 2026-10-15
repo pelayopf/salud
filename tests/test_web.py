@@ -26,18 +26,19 @@ LECTURA = {
 }
 
 
-def _app(settings, garmin=None, lector=None):
+def _app(settings, garmin=None, lector=None, hoy=None):
     def conectar():
         if garmin is None:
             raise GarminNoConectado("No hay sesión de Garmin")
         return garmin
 
+    fn_hoy = hoy if hoy is not None else (lambda: HOY)
     return crear_app(
         settings,
         abrir_db=lambda: db.conectar(settings.db_path),
         conectar_garmin=conectar,
         lector=lector,
-        hoy=lambda: HOY,
+        hoy=fn_hoy,
     )
 
 
@@ -418,3 +419,110 @@ def test_pagina_ia_uso_aviso_cuando_prueba_caduca(settings):
     assert "supera el 80 % del crédito mensual" in r.text
     assert "la prueba gratuita ya ha caducado" in r.text
     assert "Vas sobrado" not in r.text
+
+
+def test_avisos_ia_fin_prueba_y_modelos_pro_en_hoy_y_uso(settings):
+    import json
+
+    s = replace(
+        settings,
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+        ia_prueba_hasta=date(2027, 1, 14),
+        ia_tope_mes_eur=15.0,
+        ia_credito_mes_eur=8.80,
+    )
+    con = db.conectar(s.db_path)
+    db.guardar_estado_ia(
+        con, "modelos_pro_agy", json.dumps(["gemini-3.1-pro-preview", "gemini-4-argon"])
+    )
+    con.close()
+
+    # 1. Faltan 10 días para el fin de la prueba (2027-01-04)
+    dia_10d = date(2027, 1, 4)
+    cliente = TestClient(_app(s, hoy=lambda: dia_10d))
+
+    r_hoy = cliente.get("/")
+    assert r_hoy.status_code == 200
+    assert (
+        "La prueba de Google Cloud acaba el jueves 14 ene (quedan 10 días):"
+        " decide si seguir con Vertex. Después, el tope mensual baja a 7,92 €." in r_hoy.text
+    )
+    assert (
+        "agy ya ofrece gemini-3.1-pro-preview, gemini-4-argon:"
+        " se puede dejar Vertex y volver a agy (quitar SALUD_IA_MOTOR=vertex)." in r_hoy.text
+    )
+    assert 'href="/ia/uso"' in r_hoy.text
+
+    r_uso = cliente.get("/ia/uso")
+    assert r_uso.status_code == 200
+    assert (
+        "La prueba de Google Cloud acaba el jueves 14 ene (quedan 10 días):"
+        " decide si seguir con Vertex. Después, el tope mensual baja a 7,92 €." in r_uso.text
+    )
+    assert (
+        "agy ya ofrece gemini-3.1-pro-preview, gemini-4-argon:"
+        " se puede dejar Vertex y volver a agy (quitar SALUD_IA_MOTOR=vertex)." in r_uso.text
+    )
+
+    # 2. Faltan más de 30 días (2026-12-01) -> no sale aviso de fin de prueba
+    dia_lejos = date(2026, 12, 1)
+    cliente_lejos = TestClient(_app(s, hoy=lambda: dia_lejos))
+    r_lejos = cliente_lejos.get("/")
+    assert "La prueba de Google Cloud acaba el" not in r_lejos.text
+    assert "Acabó la prueba de Google Cloud" not in r_lejos.text
+    # El de modelos pro sigue saliendo porque hay modelos pro
+    assert "agy ya ofrece" in r_lejos.text
+
+    # 3. Ya acabó la prueba, dentro de los 7 días siguientes (2027-01-17, 3 días después)
+    dia_acabado = date(2027, 1, 17)
+    cliente_acabado = TestClient(_app(s, hoy=lambda: dia_acabado))
+    r_acabado_hoy = cliente_acabado.get("/")
+    assert (
+        "Acabó la prueba de Google Cloud: la IA usa solo el crédito mensual (tope 7,92 €)."
+        in r_acabado_hoy.text
+    )
+    r_acabado_uso = cliente_acabado.get("/ia/uso")
+    assert (
+        "Acabó la prueba de Google Cloud: la IA usa solo el crédito mensual (tope 7,92 €)."
+        in r_acabado_uso.text
+    )
+
+    # 4. Pasados más de 7 días (2027-01-23, 9 días después) -> ya no sale el aviso de acabó
+    dia_despues = date(2027, 1, 23)
+    cliente_despues = TestClient(_app(s, hoy=lambda: dia_despues))
+    r_despues = cliente_despues.get("/")
+    assert "Acabó la prueba de Google Cloud" not in r_despues.text
+    assert "La prueba de Google Cloud acaba el" not in r_despues.text
+
+
+def test_avisos_ia_con_motor_agy_no_sale_ninguno(settings):
+    import json
+
+    s = replace(
+        settings,
+        ia_motor="agy",
+        ia_prueba_hasta=date(2027, 1, 14),
+        ia_tope_mes_eur=15.0,
+        ia_credito_mes_eur=8.80,
+    )
+    con = db.conectar(s.db_path)
+    db.guardar_estado_ia(
+        con, "modelos_pro_agy", json.dumps(["gemini-3.1-pro-preview", "gemini-4-argon"])
+    )
+    con.close()
+
+    # Aunque falten 10 días y haya modelos pro, con motor agy no sale ninguno
+    dia_10d = date(2027, 1, 4)
+    cliente = TestClient(_app(s, hoy=lambda: dia_10d))
+
+    r_hoy = cliente.get("/")
+    assert "La prueba de Google Cloud acaba" not in r_hoy.text
+    assert "Acabó la prueba de Google Cloud" not in r_hoy.text
+    assert "agy ya ofrece" not in r_hoy.text
+
+    r_uso = cliente.get("/ia/uso")
+    assert "La prueba de Google Cloud acaba" not in r_uso.text
+    assert "Acabó la prueba de Google Cloud" not in r_uso.text
+    assert "agy ya ofrece" not in r_uso.text

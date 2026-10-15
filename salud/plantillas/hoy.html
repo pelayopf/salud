@@ -66,6 +66,9 @@
 
 {% block contenido %}
 {% if mensaje %}<p class="aviso">{{ mensaje }}</p>{% endif %}
+{% for av in avisos_ia %}
+<p class="aviso"><a href="/ia/uso">{{ av }}</a></p>
+{% endfor %}
 
 {% if lectura and lectura.contenido %}
 {% set c = lectura.contenido %}
