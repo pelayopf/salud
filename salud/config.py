@@ -62,7 +62,10 @@ class Settings:
     vertex_proyecto: str | None = None
     vertex_region: str = "global"
     vertex_modelo: str = "gemini-3.8-flash"
-    vertex_modelo_consejo: str = "gemini-3.1-pro"
+    # Consejo: Gemini 4 Argon (probado 2026-10-15, ~40 s); a veces da 429 por
+    # saturación, y entonces va Gemini 3.1 Pro (~35 s) antes de caer a agy.
+    vertex_modelo_consejo: str = "gemini-4-argon"
+    vertex_modelo_consejo_respaldo: str = "gemini-3.1-pro-preview"
     # Dirección secreta iCal del calendario con los deportes; es un secreto.
     gcal_ics: str | None = None
     # Web pública (Cloudflare Tunnel): correos de Google con acceso.
@@ -91,7 +94,11 @@ def load_settings() -> Settings:
     vertex_region = os.environ.get("SALUD_VERTEX_REGION", "").strip() or "global"
     vertex_modelo = os.environ.get("SALUD_VERTEX_MODELO", "").strip() or "gemini-3.8-flash"
     vertex_modelo_consejo = (
-        os.environ.get("SALUD_VERTEX_MODELO_CONSEJO", "").strip() or "gemini-3.1-pro"
+        os.environ.get("SALUD_VERTEX_MODELO_CONSEJO", "").strip() or "gemini-4-argon"
+    )
+    vertex_modelo_consejo_respaldo = (
+        os.environ.get("SALUD_VERTEX_MODELO_CONSEJO_RESPALDO", "").strip()
+        or "gemini-3.1-pro-preview"
     )
     if ia_motor == "vertex" and (not vertex_api_key or not vertex_proyecto):
         raise ConfigError(
@@ -128,6 +135,7 @@ def load_settings() -> Settings:
         vertex_region=vertex_region,
         vertex_modelo=vertex_modelo,
         vertex_modelo_consejo=vertex_modelo_consejo,
+        vertex_modelo_consejo_respaldo=vertex_modelo_consejo_respaldo,
         gcal_ics=os.environ.get("SALUD_GCAL_ICS", "").strip() or None,
         cuentas_google=frozenset(c.strip().lower() for c in cuentas.split(",") if c.strip()),
         url_publica=os.environ.get("SALUD_URL_PUBLICA", "").strip().rstrip("/"),

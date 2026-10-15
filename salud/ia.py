@@ -112,6 +112,8 @@ class Tarea:
     modelo_agy: str | None = None
     modelo_claude: str | None = None
     modelo_vertex: str | None = None
+    # Otro modelo de Vertex si el primero no está disponible (429, 404…), antes de ir a agy.
+    modelo_vertex_respaldo: str | None = None
     razonamiento: Literal["low", "medium", "high"] | None = None
     # Lo que se espera a la IA. 90 s para lo que se espera delante de la
     # pantalla; más para lo que va en segundo plano (el consejo).
@@ -508,6 +510,26 @@ MOTORES: dict[str, Motor] = {
 _en_marcha = threading.Lock()
 
 
+def _vertex_con_respaldo(tarea: Tarea, settings: Settings) -> RespuestaIA:
+    """Vertex con su modelo; si no está disponible, con `modelo_vertex_respaldo`; si no, agy."""
+    intentos = [tarea]
+    if tarea.modelo_vertex_respaldo:
+        intentos.append(
+            replace(tarea, modelo_vertex=tarea.modelo_vertex_respaldo, modelo_vertex_respaldo=None)
+        )
+    for intento in intentos:
+        try:
+            return MOTORES["vertex"](intento, settings)
+        except VertexNoDisponible as exc:
+            log.warning("Vertex no disponible en tarea %s (%s)", tarea.nombre, exc)
+        except SinDatos as exc:
+            # Sin datos no se arregla cambiando de modelo de Vertex: directo a agy.
+            log.warning("Vertex sin datos en tarea %s (%s)", tarea.nombre, exc)
+            break
+    log.warning("La tarea %s se repite con agy", tarea.nombre)
+    return MOTORES["agy"](tarea, settings)
+
+
 def ejecutar(
     tarea: Tarea,
     settings: Settings,
@@ -522,19 +544,9 @@ def ejecutar(
     motor_usado = settings.ia_motor
     try:
         if motor is None and settings.ia_motor == "vertex":
-            try:
-                resp = MOTORES["vertex"](tarea, settings)
-                motor_usado = resp.motor
-                return resp
-            except (VertexNoDisponible, SinDatos) as exc:
-                log.warning(
-                    "Vertex no disponible en tarea %s (%s); se repite con agy",
-                    tarea.nombre,
-                    exc,
-                )
-                resp = MOTORES["agy"](tarea, settings)
-                motor_usado = resp.motor
-                return resp
+            resp = _vertex_con_respaldo(tarea, settings)
+            motor_usado = resp.motor
+            return resp
         else:
             motor_fn = motor or MOTORES[settings.ia_motor]
             resp = motor_fn(tarea, settings)

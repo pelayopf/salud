@@ -418,7 +418,7 @@ def test_sin_cupo_de_sonnet_el_consejo_va_con_el_respaldo(con, settings):
 
 
 def test_pedir_consejo_guarda_modelo_vertex(con, settings: Settings):
-    """El consejo guarda modelo='vertex:gemini-3.1-pro' con un motor falso."""
+    """El consejo guarda modelo='vertex:gemini-4-argon' con un motor falso."""
     ahora = datetime(2026, 1, 10, 18, 0, tzinfo=ZONA)
 
     def fake_ejecutar(tarea: ia.Tarea, _settings: Settings) -> ia.RespuestaIA:
@@ -434,8 +434,8 @@ def test_pedir_consejo_guarda_modelo_vertex(con, settings: Settings):
                 "avisos": [],
             },
             motor="vertex",
-            modelo=tarea.modelo_vertex or "gemini-3.1-pro",
+            modelo=tarea.modelo_vertex or "gemini-4-argon",
         )
 
     res = consejo.pedir_consejo(con, settings, ahora, ejecutar=fake_ejecutar)
-    assert res["modelo"] == "vertex:gemini-3.1-pro"
+    assert res["modelo"] == "vertex:gemini-4-argon"

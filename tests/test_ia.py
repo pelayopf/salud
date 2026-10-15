@@ -1316,3 +1316,40 @@ def test_ejecutar_vertex_otro_error_no_repite(tmp_path, monkeypatch):
 
     with pytest.raises(ErrorIA, match="Petición incorrecta 400"):
         ejecutar(tarea, settings)
+
+
+def test_ejecutar_vertex_prueba_el_modelo_de_respaldo_antes_que_agy(tmp_path, monkeypatch):
+    """Argon saturado (429) → Gemini 3.1 Pro en Vertex; si también falla, agy."""
+    settings = Settings(
+        db_path=tmp_path / "s.db", ia_motor="vertex", vertex_api_key="k", vertex_proyecto="p"
+    )
+    tarea = Tarea(
+        nombre="consejo",
+        instrucciones="i",
+        esquema={},
+        modelo_vertex="gemini-4-argon",
+        modelo_vertex_respaldo="gemini-3.1-pro-preview",
+    )
+    modelos: list[str | None] = []
+    falla = {"gemini-4-argon"}
+
+    def fake_vertex(t: Tarea, _s: Settings) -> RespuestaIA:
+        modelos.append(t.modelo_vertex)
+        if t.modelo_vertex in falla:
+            raise VertexNoDisponible("Vertex: sin cupo o demasiadas peticiones")
+        return RespuestaIA(datos={"ok": True}, motor="vertex", modelo=t.modelo_vertex or "")
+
+    def fake_agy(_t: Tarea, _s: Settings) -> RespuestaIA:
+        modelos.append("agy")
+        return RespuestaIA(datos={"ok": True}, motor="agy", modelo="sonnet")
+
+    monkeypatch.setitem(MOTORES, "vertex", fake_vertex)
+    monkeypatch.setitem(MOTORES, "agy", fake_agy)
+
+    assert ejecutar(tarea, settings).modelo == "gemini-3.1-pro-preview"
+    assert modelos == ["gemini-4-argon", "gemini-3.1-pro-preview"]
+
+    modelos.clear()
+    falla.add("gemini-3.1-pro-preview")
+    assert ejecutar(tarea, settings).motor == "agy"
+    assert modelos == ["gemini-4-argon", "gemini-3.1-pro-preview", "agy"]

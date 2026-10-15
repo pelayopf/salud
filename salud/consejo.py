@@ -230,6 +230,7 @@ def pedir_consejo(
         ESQUEMA,
         modelo_agy=settings.ia_modelo_consejo,
         modelo_vertex=settings.vertex_modelo_consejo,
+        modelo_vertex_respaldo=settings.vertex_modelo_consejo_respaldo,
         razonamiento="high",
         tiempo_maximo_s=TIEMPO_CONSEJO_S,
     )
