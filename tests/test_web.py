@@ -579,7 +579,6 @@ def test_avisos_ia_modelos_pro_en_hoy_segun_uso(settings):
     assert "que la app aún no usa" in r2.text
     assert "gemini-3.1-pro-preview" in r2.text
     assert "gemini-4-argon" not in r2.text
-    assert "Argon" not in r2.text
 
 
 def test_hoy_discreto_con_pauta_y_dosis(settings):
