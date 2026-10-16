@@ -8,7 +8,7 @@ from starlette.testclient import TestClient
 
 from salud import db, sync
 from salud.garmin import GarminNoConectado
-from salud.web import crear_app
+from salud.web import crear_app, modelos_pro_nuevos
 
 HOY = date(2026, 1, 10)
 LECTURA = {
@@ -465,8 +465,8 @@ def test_avisos_ia_fin_prueba_y_modelos_pro_en_hoy_y_uso(settings):
         " decide si seguir con Vertex. Después, el tope mensual baja a 7,92 €." in r_hoy.text
     )
     assert (
-        "agy ya ofrece gemini-3.1-pro-preview, gemini-4-argon:"
-        " se puede dejar Vertex y volver a agy (quitar SALUD_IA_MOTOR=vertex)." in r_hoy.text
+        "agy ofrece gemini-3.1-pro-preview, que la app aún no usa:"
+        " valorar ponerlo de respaldo o volver a agy." in r_hoy.text
     )
     assert 'href="/ia/uso"' in r_hoy.text
 
@@ -477,8 +477,8 @@ def test_avisos_ia_fin_prueba_y_modelos_pro_en_hoy_y_uso(settings):
         " decide si seguir con Vertex. Después, el tope mensual baja a 7,92 €." in r_uso.text
     )
     assert (
-        "agy ya ofrece gemini-3.1-pro-preview, gemini-4-argon:"
-        " se puede dejar Vertex y volver a agy (quitar SALUD_IA_MOTOR=vertex)." in r_uso.text
+        "agy ofrece gemini-3.1-pro-preview, que la app aún no usa:"
+        " valorar ponerlo de respaldo o volver a agy." in r_uso.text
     )
 
     # 2. Faltan más de 30 días (2026-12-01) -> no sale aviso de fin de prueba
@@ -488,7 +488,7 @@ def test_avisos_ia_fin_prueba_y_modelos_pro_en_hoy_y_uso(settings):
     assert "La prueba de Google Cloud acaba el" not in r_lejos.text
     assert "Acabó la prueba de Google Cloud" not in r_lejos.text
     # El de modelos pro sigue saliendo porque hay modelos pro
-    assert "agy ya ofrece" in r_lejos.text
+    assert "agy ofrece gemini-3.1-pro-preview" in r_lejos.text
 
     # 3. Ya acabó la prueba, dentro de los 7 días siguientes (2027-01-17, 3 días después)
     dia_acabado = date(2027, 1, 17)
@@ -535,12 +535,51 @@ def test_avisos_ia_con_motor_agy_no_sale_ninguno(settings):
     r_hoy = cliente.get("/")
     assert "La prueba de Google Cloud acaba" not in r_hoy.text
     assert "Acabó la prueba de Google Cloud" not in r_hoy.text
-    assert "agy ya ofrece" not in r_hoy.text
+    assert "agy ofrece" not in r_hoy.text
 
     r_uso = cliente.get("/ia/uso")
     assert "La prueba de Google Cloud acaba" not in r_uso.text
     assert "Acabó la prueba de Google Cloud" not in r_uso.text
-    assert "agy ya ofrece" not in r_uso.text
+    assert "agy ofrece" not in r_uso.text
+
+
+def test_modelos_pro_nuevos_filtra_usados(settings):
+    assert modelos_pro_nuevos(["gemini-4-argon-high", "gemini-4-argon-low"], settings) == []
+    assert modelos_pro_nuevos(
+        ["gemini-3.1-pro-preview", "gemini-4-argon-medium"], settings
+    ) == ["gemini-3.1-pro-preview"]
+
+
+def test_avisos_ia_modelos_pro_en_hoy_segun_uso(settings):
+    import json
+
+    s = replace(
+        settings,
+        ia_motor="vertex",
+        vertex_api_key="k",
+        vertex_proyecto="p",
+    )
+    con = db.conectar(s.db_path)
+    db.guardar_estado_ia(con, "modelos_pro_agy", json.dumps(["gemini-4-argon-high"]))
+    con.close()
+
+    cliente = TestClient(_app(s))
+    r = cliente.get("/")
+    assert r.status_code == 200
+    assert "que la app aún no usa" not in r.text
+
+    con = db.conectar(s.db_path)
+    db.guardar_estado_ia(
+        con, "modelos_pro_agy", json.dumps(["gemini-3.1-pro-preview", "gemini-4-argon-high"])
+    )
+    con.close()
+
+    r2 = cliente.get("/")
+    assert r2.status_code == 200
+    assert "que la app aún no usa" in r2.text
+    assert "gemini-3.1-pro-preview" in r2.text
+    assert "gemini-4-argon" not in r2.text
+    assert "Argon" not in r2.text
 
 
 def test_hoy_discreto_con_pauta_y_dosis(settings):

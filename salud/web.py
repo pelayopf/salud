@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import secrets
 import sqlite3
 import threading
@@ -171,6 +172,26 @@ def _tratamiento(con: sqlite3.Connection, dia: date) -> dict[str, Any]:
     }
 
 
+def modelos_pro_nuevos(pros: list[str], settings: Settings) -> list[str]:
+    """Modelos base de pros que la app aún no usa, sin repetir y en su orden de aparición."""
+    usados = {
+        re.sub(r"-(low|medium|high)$", "", m)
+        for m in (
+            settings.ia_modelo_consejo,
+            settings.ia_modelo_consejo_respaldo,
+            settings.ia_modelo_comida,
+            settings.ia_modelo_comida_respaldo,
+            settings.ia_modelo_agy,
+        )
+    }
+    nuevos: list[str] = []
+    for m in pros:
+        base = re.sub(r"-(low|medium|high)$", "", m)
+        if base not in usados and base not in nuevos:
+            nuevos.append(base)
+    return nuevos
+
+
 def _avisos_ia(con: sqlite3.Connection, settings: Settings, hoy_d: date) -> list[str]:
     """Avisos sobre la IA (Vertex y agy) para Hoy y Uso de la IA."""
     if settings.ia_motor != "vertex":
@@ -201,12 +222,13 @@ def _avisos_ia(con: sqlite3.Connection, settings: Settings, hoy_d: date) -> list
         try:
             pros = json.loads(raw_pros)
             if isinstance(pros, list) and pros:
-                modelos_str = ", ".join(pros)
-                avisos.append(
-                    f"agy ya ofrece {modelos_str}: se puede dejar Vertex y volver a agy "
-                    "(quitar SALUD_IA_MOTOR=vertex)."
-                )
-        except Exception:
+                nuevos = modelos_pro_nuevos(pros, settings)
+                if nuevos:
+                    avisos.append(
+                        f"agy ofrece {', '.join(nuevos)}, que la app aún no usa: "
+                        "valorar ponerlo de respaldo o volver a agy."
+                    )
+        except (json.JSONDecodeError, TypeError):
             pass
 
     return avisos

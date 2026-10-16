@@ -51,16 +51,15 @@ class Settings:
     # una estimación sencilla (2-5 min, una sola petición, sin reintentos); Low no
     # razona (0 tokens, 5-15 s) y en datos estructurados acierta igual. No usar
     # High para estas tareas.
-    # Consejo (planificar el día; pocas veces al día): Sonnet desde agy, el más
-    # concreto (~25 s, ~2 % del cupo semanal Claude/GPT); si se agota ese cupo,
-    # Flash Medium (~1 min, bien). Low da consejos algo más vagos.
-    ia_modelo_consejo: str = "claude-sonnet-5-5-medium"
+    # Consejo (planificar el día; pocas veces al día): Argon Medium desde agy
+    # (cupo propio de Argon, semanal); si se agota, Flash Medium (~1 min, bien).
+    # Low da consejos algo más vagos.
+    ia_modelo_consejo: str = "gemini-4-argon-medium"
     ia_modelo_consejo_respaldo: str = "gemini-3.8-flash-medium"
     # "Añadir con IA" (varias veces al día): Flash Low, que con texto y con foto
-    # acertó como Sonnet en 8-15 s sin gastar cupo de Claude/GPT. Sonnet solo si
-    # se agota el cupo de Gemini.
+    # acertó en 8-15 s; si se agota el cupo de Gemini, Argon Low (otro cupo).
     ia_modelo_comida: str = "gemini-3.8-flash-low"
-    ia_modelo_comida_respaldo: str = "claude-sonnet-5-5-medium"
+    ia_modelo_comida_respaldo: str = "gemini-4-argon-low"
     # Motor "vertex" (Gemini por Vertex AI con clave de API de cuenta de servicio).
     vertex_api_key: str | None = field(default=None, repr=False)
     vertex_proyecto: str | None = None
@@ -182,13 +181,13 @@ def load_settings() -> Settings:
         ia_modelo_agy=os.environ.get("SALUD_IA_MODELO_AGY", "").strip() or "gemini-3.8-flash-low",
         ia_modelo_claude=os.environ.get("SALUD_IA_MODELO_CLAUDE", "").strip() or "haiku",
         ia_modelo_consejo=os.environ.get("SALUD_IA_MODELO_CONSEJO", "").strip()
-        or "claude-sonnet-5-5-medium",
+        or "gemini-4-argon-medium",
         ia_modelo_consejo_respaldo=os.environ.get("SALUD_IA_MODELO_CONSEJO_RESPALDO", "").strip()
         or "gemini-3.8-flash-medium",
         ia_modelo_comida=os.environ.get("SALUD_IA_MODELO_COMIDA", "").strip()
         or "gemini-3.8-flash-low",
         ia_modelo_comida_respaldo=os.environ.get("SALUD_IA_MODELO_COMIDA_RESPALDO", "").strip()
-        or "claude-sonnet-5-5-medium",
+        or "gemini-4-argon-low",
         vertex_api_key=vertex_api_key,
         vertex_proyecto=vertex_proyecto,
         vertex_region=vertex_region,
