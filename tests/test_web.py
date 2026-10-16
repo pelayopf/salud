@@ -545,9 +545,9 @@ def test_avisos_ia_con_motor_agy_no_sale_ninguno(settings):
 
 def test_modelos_pro_nuevos_filtra_usados(settings):
     assert modelos_pro_nuevos(["gemini-4-argon-high", "gemini-4-argon-low"], settings) == []
-    assert modelos_pro_nuevos(
-        ["gemini-3.1-pro-preview", "gemini-4-argon-medium"], settings
-    ) == ["gemini-3.1-pro-preview"]
+    assert modelos_pro_nuevos(["gemini-3.1-pro-preview", "gemini-4-argon-medium"], settings) == [
+        "gemini-3.1-pro-preview"
+    ]
 
 
 def test_avisos_ia_modelos_pro_en_hoy_segun_uso(settings):
