@@ -51,6 +51,7 @@ from . import (
     garmin,
     graficas,
     ia,
+    idihealth,
     lectura,
     metricas,
     nutricion,
@@ -3187,6 +3188,8 @@ def crear_app(
 
     return Starlette(
         routes=[
+            # API de IA de IdiHealth: solo en la tailnet y con su token
+            *([] if publica else idihealth.rutas(settings, analizar=analizar_fn)),
             Route("/", ver_hoy),
             Route("/salud", ver_salud),
             Route("/tendencias", redirigir_tendencias),

@@ -85,6 +85,8 @@ class Settings:
     cuentas_google: frozenset[str] = frozenset()
     url_publica: str = ""
     google_oauth: Path | None = None  # JSON con client_id y client_secret
+    # Token de la API de IA de IdiHealth (salud/idihealth.py); sin él no hay API.
+    idihealth_token: str | None = field(default=None, repr=False)
 
 
 def _ruta(valor: str) -> Path:
@@ -162,6 +164,7 @@ def load_settings() -> Settings:
     except ValueError:
         ia_prueba_hasta = date(2027, 1, 14)
     return Settings(
+        idihealth_token=os.environ.get("SALUD_IDIHEALTH_TOKEN", "").strip() or None,
         db_path=_ruta(os.environ.get("SALUD_DB_PATH", "~/.local/share/salud/salud.db")),
         usuarios=frozenset(u.strip().lower() for u in usuarios.split(",") if u.strip()),
         garmin_tokens=_ruta(os.environ.get("SALUD_GARMIN_TOKENS", "~/.local/share/salud/garmin")),
